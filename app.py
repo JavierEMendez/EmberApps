@@ -293,6 +293,26 @@ def reset_password(uid):
 
 # ─── DEFAULT INPUTS TEMPLATE ──────────────────────────────────────────────────
 def default_inputs(name="New Project"):
+    # Lot size defaults match Excel Cost Inputs rows 72-87 exactly
+    # Columns: FF, on, yield/ac, pace lots/mo, home_price, wsd/ff, paving/ff, landscaping/lot, urd/lot, lots_per_streetlight, fence/ff
+    lot_size_defaults = [
+        {"front_footage":25,  "on":0, "yield_per_ac":8.25, "pace":5,    "home_price":200000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":4, "fence_cost_per_ff":94},
+        {"front_footage":30,  "on":0, "yield_per_ac":5.54, "pace":5,    "home_price":360000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":4, "fence_cost_per_ff":94},
+        {"front_footage":35,  "on":0, "yield_per_ac":8.25, "pace":6,    "home_price":275000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":4, "fence_cost_per_ff":94},
+        {"front_footage":40,  "on":1, "yield_per_ac":5.5,  "pace":7,    "home_price":330168,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":4, "fence_cost_per_ff":94},
+        {"front_footage":45,  "on":1, "yield_per_ac":5.0,  "pace":6,    "home_price":380000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":4, "fence_cost_per_ff":94},
+        {"front_footage":50,  "on":1, "yield_per_ac":4.5,  "pace":5,    "home_price":430000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":4, "fence_cost_per_ff":94},
+        {"front_footage":55,  "on":0, "yield_per_ac":4.0,  "pace":5,    "home_price":500000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":4, "fence_cost_per_ff":94},
+        {"front_footage":60,  "on":1, "yield_per_ac":3.5,  "pace":2,    "home_price":580000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":4, "fence_cost_per_ff":94},
+        {"front_footage":65,  "on":0, "yield_per_ac":3.0,  "pace":2,    "home_price":615000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":3, "fence_cost_per_ff":94},
+        {"front_footage":70,  "on":0, "yield_per_ac":2.5,  "pace":1,    "home_price":675000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":3, "fence_cost_per_ff":94},
+        {"front_footage":75,  "on":0, "yield_per_ac":2.0,  "pace":1,    "home_price":720000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":3, "fence_cost_per_ff":94},
+        {"front_footage":80,  "on":1, "yield_per_ac":1.5,  "pace":0.75, "home_price":750000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":3, "fence_cost_per_ff":94},
+        {"front_footage":85,  "on":0, "yield_per_ac":5.5,  "pace":0.75, "home_price":325000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":2, "fence_cost_per_ff":94},
+        {"front_footage":90,  "on":0, "yield_per_ac":5.5,  "pace":0.75, "home_price":360000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":2, "fence_cost_per_ff":94},
+        {"front_footage":95,  "on":0, "yield_per_ac":1.15, "pace":0.75, "home_price":385000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":2, "fence_cost_per_ff":94},
+        {"front_footage":100, "on":0, "yield_per_ac":1.0,  "pace":0.75, "home_price":410000,    "wsd_per_ff":290, "paving_per_ff":220, "dev_start_month":1, "landscaping_per_lot":2000, "urd_per_lot":35, "lots_per_streetlight":2, "fence_cost_per_ff":94},
+    ]
     return {
         "project_name": name,
         "address": "",
@@ -302,7 +322,7 @@ def default_inputs(name="New Project"):
         "closing_costs_pct": 0.045,
         "closing_date": "",
         "default_other_pct": 0.17,
-        "sectional_other_pct": 0.20,
+        "sectional_other_pct": 0.17,       # Excel B6 = 0.17
         "landscaping_other_pct": 0.12,
         "contingency": 0.05,
         "site_work_pct": 0.01,
@@ -310,10 +330,10 @@ def default_inputs(name="New Project"):
         "cost_per_mailbox": 200,
         "cost_per_streetlight": 1700,
         "default_start_month": 1,
-        "det_storage_rate": 0.5,
-        "det_depth": 3,
-        "det_num_projects": 1,
-        "parks_pct": 0.02,
+        "det_storage_rate": 1.1,            # Excel B31 = 1.1
+        "det_depth": 9,                     # Excel B33 = 9
+        "det_num_projects": 6,              # Excel B34 = 6
+        "parks_pct": 0.03,                  # Excel B51 = 3%
         "drill_site_acres": 0,
         "commercial_pod_acres": 0,
         "residential_pod_acres": 0,
@@ -327,29 +347,34 @@ def default_inputs(name="New Project"):
         "det_costs": [{"other_pct":0.17,"landscaping_per_foot":2} for _ in range(6)],
         "other_costs": [{"base_cost":0,"other_pct":0.17,"start_month":1,"duration":1} for _ in range(6)],
         "road_costs": [{"other_pct":0.17,"start_month":1,"landscaping_per_sf":0,"light_spacing":0} for _ in range(6)],
-        "lot_sizes": [{"on":0,"lot_sf":5000,"depth":120,"yield_per_ac":0,"pace":0,"home_price":0,"wsd_per_ff":0,"paving_per_ff":0,"dev_start_month":1,"landscaping_per_lot":0,"urd_per_lot":0,"lots_per_streetlight":0,"fence_cost_per_ff":0} for _ in range(16)],
-        "timing_method": "1 Takedown",
-        "bem_period": 0,
-        "bem_pct": 0,
-        "brokerage_fees": 0.03,
-        "lot_closing_costs": 0.01,
+        "lot_sizes": lot_size_defaults,
+        "timing_method": "50/25/25",        # Excel B2 = 50/25/25
+        "bem_period": 9,                    # Excel B3 = 9
+        "bem_pct": 0.18,                    # Excel B4 = 18%
+        "brokerage_fees": 0.03,             # Excel B5 = 3%
+        "lot_closing_costs": 0.015,         # Excel B6 = 1.5%
         "take1_pct": 0.50,
         "take2_pct": 0.25,
         "take3_pct": 0.25,
         "price_per_ff": {str(yr): 1800 for yr in range(11)},
-        "res_pods": [{"acres":0,"price_per_acre":0,"closing_costs_pct":0.01,"implied_lots_per_acre":0,"impact_fee_per_lot":0,"sale_period":0} for _ in range(6)],
-        "comm_pods": [{"acres":0,"price_per_sf":0,"closing_costs_pct":0.01,"sale_period":0,"av_per_acre":0,"av_delay_months":0} for _ in range(6)],
-        "mud_bond": {"amount":0,"reimbursement_pct":0.8,"period":0,"rate":0,"term":0,"annual_payment":0},
-        "wcid_bond": {"amount":0,"reimbursement_pct":0.8,"period":0,"rate":0,"term":0,"annual_payment":0},
+        "res_pod_acreage": 0,
+        "res_pod_count": 1,
+        "res_pods": [{"price_per_acre":120000,"closing_costs_pct":0.045,"implied_lots_per_acre":3.5,"impact_fee_per_lot":10000,"sale_period":12} for _ in range(6)],
+        "comm_pod_acreage": 0,
+        "comm_pod_count": 6,
+        "comm_pods": [{"price_per_sf":8,"closing_costs_pct":0.045,"sale_period":12+i*24,"av_per_acre":1200000,"av_delay_months":18} for i in range(6)],
+        "mud_bond": {"toggle":1,"amount":0,"reimbursement_pct":0.85,"first_bond_period":48,"bond_interval":12,"pct_to_dev":0.85,"receivables_fee":0.025,"debt_ratio":0.12},
+        "wcid_bond": {"toggle":1,"amount":0,"reimbursement_pct":0.85,"first_bond_period":48,"bond_interval":12,"pct_to_dev":0.85,"receivables_fee":0.025,"debt_ratio":0.042},
         "marketing_pct": 0.02,
-        "prof_svc_pct": 0.015,
-        "dmf_pct": 0.025,
-        "personnel_monthly": 50000,
-        "legal_monthly": 10000,
-        "mud_monthly": 35000,
-        "mud_pct": 0,
-        "insurance_monthly": 10000,
-        "bookkeeping_monthly": 10000,
+        "prof_svc_pct": 0.015,              # Excel B95 = 1.5%
+        "dmf_pct": 0.025,                   # Excel B99 = 2.5%
+        "personnel_monthly": 50000,         # Excel C103 = 50,000
+        "marketing_personnel_monthly": 15000, # Excel C104 = 15,000
+        "legal_monthly": 10000,             # Excel C108 = 10,000
+        "mud_monthly": 35000,               # Excel C112 = 35,000
+        "mud_pct": 0.2,                     # Excel D112 = 20% (what % of project MUD runs)
+        "insurance_monthly": 10000,         # Excel C116 = 10,000
+        "bookkeeping_monthly": 10000,       # Excel C120 = 10,000
     }
 
 @app.route("/api/projects/<int:pid>/export_excel", methods=["GET"])
