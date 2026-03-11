@@ -444,8 +444,38 @@ def calculate(inp: dict) -> dict:
     # MUD / WCID bonds
     mud_row   = inp.get("mud_bond", {})
     wcid_row  = inp.get("wcid_bond", {})
-    mud_bond_rev  = safe(mud_row.get("amount")) * safe(mud_row.get("reimbursement_pct", 0.8)) if mud_row else 0
-    wcid_bond_rev = safe(wcid_row.get("amount")) * safe(wcid_row.get("reimbursement_pct", 0.8)) if wcid_row else 0
+
+    # ── 3b. ASSESSED VALUE & BOND REVENUES ───────────────────────────────────
+    # lot_av must be computed here (before Section 4) so bond revenues are available
+    lot_av = 0.0
+    for lr in lot_rows:
+        if safe(lr.get("on", 0)) and lr.get("total_lots", 0):
+            hp = safe(lr.get("home_price", 0))
+            ff = lr.get("ff", 0)
+            lot_av += lr["total_lots"] * hp * 0.01 * mround(ff * 0.01 * 120, 100)
+
+    comm_av = 0.0
+    for i, cp in enumerate(comm_pods):
+        if i >= comm_pod_count:
+            break
+        comm_av += acres_per_comm_pod * safe(cp.get("av_per_acre", 0))
+
+    total_av = lot_av + comm_av
+
+    mud_toggle  = int(safe(mud_row.get("toggle",  1))) if mud_row else 0
+    wcid_toggle = int(safe(wcid_row.get("toggle", 1))) if wcid_row else 0
+    if mud_toggle and total_av > 0:
+        mud_bond_rev = (total_av * safe(mud_row.get("debt_ratio", 0.12))
+                        * safe(mud_row.get("pct_to_dev", 0.85))
+                        * (1 - safe(mud_row.get("receivables_fee", 0.025))))
+    else:
+        mud_bond_rev = 0.0
+    if wcid_toggle and total_av > 0:
+        wcid_bond_rev = (total_av * safe(wcid_row.get("debt_ratio", 0.042))
+                         * safe(wcid_row.get("pct_to_dev", 0.85))
+                         * (1 - safe(wcid_row.get("receivables_fee", 0.025))))
+    else:
+        wcid_bond_rev = 0.0
 
     # ── 4. CASHFLOW ENGINE ────────────────────────────────────────────────────
     MAX_MONTHS = 360
@@ -595,18 +625,15 @@ def calculate(inp: dict) -> dict:
 
     # Commercial pod revenues — each pod uses its own sale_period (Excel I55, I56, ...)
     comm_pod_revenue = 0.0
-    comm_av = 0.0
     for i, cp in enumerate(comm_pods):
         if i >= comm_pod_count:
             break
         psf = safe(cp.get("price_per_sf"))
         cc = safe(cp.get("closing_costs_pct", 0.045))
-        av_per_acre = safe(cp.get("av_per_acre", 0))
         sale_period = int(safe(cp.get("sale_period", proj_months)))
         # Excel H55: price_per_sf * 43560 * (1-cc) * acres_per_pod
         pod_rev = acres_per_comm_pod * 43560 * psf * (1 - cc)
         comm_pod_revenue += pod_rev
-        comm_av += acres_per_comm_pod * av_per_acre
         if pod_rev > 0 and 1 <= sale_period <= MAX_MONTHS:
             rev_monthly[sale_period] += pod_rev
 
@@ -672,14 +699,6 @@ def calculate(inp: dict) -> dict:
     gm_per_ac           = gross_profit / dev_ac
     amenities_per_lot   = total_amenity_cost / total_lots if total_lots else 0
     infra_per_lot       = infra_cost / total_lots if total_lots else 0
-
-    # Lot AV
-    lot_av = 0
-    for lr in lot_rows:
-        if safe(lr.get("on", 0)) and lr.get("total_lots", 0):
-            hp = safe(lr.get("home_price", 0))
-            ff = lr.get("ff", 0)
-            lot_av += lr["total_lots"] * hp * 0.01 * mround(ff * 0.01 * 120, 100)  # AV ≈ HP * 1% * MROUND(ff*depth, 100)
 
     home_sales_per_year = sum(r.get("pace", 0) for r in lot_rows if safe(r.get("on", 0))) * 12
     lots_18mo = sum(r.get("lots_18mo", 0) for r in lot_rows if safe(r.get("on", 0)))

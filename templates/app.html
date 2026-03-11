@@ -1243,17 +1243,21 @@ function toggleLotRow(i) {
   const sel = document.getElementById(`ci-ls-on-${i}`);
   const row = document.getElementById(`ci-lot-row-${i}`);
   const isOn = sel.value === '1';
+  // All editable fields that should be saved/restored on toggle
+  const lotFields = ['yield','pace','hp','dsm','lpl','urd','lsl','fen'];
   if (isOn) {
     row.classList.remove('lot-off');
-    // Restore saved values
-    ['yield','pace','hp'].forEach(k => {
-      const el = document.getElementById(`ci-ls-${k === 'hp' ? 'hp' : k}-${i}`);
-      if (el) { el.value = el.getAttribute('data-saved') || ''; el.removeAttribute('tabindex'); }
+    lotFields.forEach(k => {
+      const el = document.getElementById(`ci-ls-${k}-${i}`);
+      if (el) {
+        const saved = el.getAttribute('data-saved');
+        if (saved != null && saved !== '') el.value = saved;
+        el.removeAttribute('tabindex');
+      }
     });
   } else {
-    // Save current values before hiding
-    ['yield','pace','hp'].forEach(k => {
-      const el = document.getElementById(`ci-ls-${k === 'hp' ? 'hp' : k}-${i}`);
+    lotFields.forEach(k => {
+      const el = document.getElementById(`ci-ls-${k}-${i}`);
       if (el) {
         if (el.value) el.setAttribute('data-saved', el.value);
         el.value = '';
@@ -1400,7 +1404,7 @@ async function loadInputs() {
   _df('amenity_costs', AMN_DEFAULTS);
   _df('det_costs',     Array.from({length:6}, ()=>({other_pct:0.17,landscaping_per_foot:2})));
   _df('other_costs',   Array.from({length:6}, ()=>({base_cost:0,other_pct:0.17,start_month:1,duration:1})));
-  _df('road_costs',    Array.from({length:6}, ()=>({other_pct:0.17,start_month:1,landscaping_per_sf:0,light_spacing:0})));
+  _df('road_costs',    Array.from({length:6}, ()=>({other_pct:0.17,start_month:1,landscaping_per_sf:2,light_spacing:0})));
   // Standard FF lot size categories (25–100 FF in steps of 5)
   const STD_FF = [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100];
   // Standard lot size defaults from Excel Cost Inputs (matching Python default_inputs exactly)
@@ -1423,11 +1427,12 @@ async function loadInputs() {
     {ff:100, on:0, lot_sf:100*120, depth:120, yield_per_ac:1.0,  pace:0.75, home_price:410000, wsd_per_ff:290, paving_per_ff:220, dev_start_month:1, landscaping_per_lot:2000, urd_per_lot:35, lots_per_streetlight:2, fence_cost_per_ff:94, build_time:8, av_pct:0.85, premium_per_ff:25, escalation:0.06, fence_per_ff:65, marketing_fee:4100, lot_av_pct:0.50, lot_tax_rate:0.02}
   ];
   _df('lot_sizes', STD_LS_DEFAULTS);
-  // Ensure existing lot_sizes rows always have ff set, and backfill any per-row fields missing from older saves
+  // Ensure existing lot_sizes rows always have ff set, and backfill any per-row fields missing from older saves.
+  // Use null-safe merge: stored null/undefined values do NOT override defaults (so toggling a lot on always shows defaults).
   inputs.lot_sizes = inputs.lot_sizes.map((ls, i) => {
     const def = STD_LS_DEFAULTS[i] || {};
-    const filled = {...def, ...ls};  // stored values win; defaults fill missing fields
-    // Always ensure ff is set
+    const filled = {...def};
+    Object.entries(ls).forEach(([k, v]) => { if (v != null) filled[k] = v; });
     filled.ff = filled.ff ?? STD_FF[i] ?? (i + 1) * 5 + 35;
     return filled;
   });
@@ -1620,9 +1625,9 @@ async function loadInputs() {
     // Use type from Tract Inputs dropdown if available (most up-to-date)
     const tractType = document.getElementById(`ti-plant-type-${i}`)?.value;
     const type = tractType || cp.type || rp.type || 'None';
-    // Lookup acres and duration from type (live, no server needed)
-    const lkAc  = {'WWTP':10,'Water Plant':3.5,'Lift Station':0.75,'None':0};
-    const lkDur = {'WWTP':8,'Water Plant':8,'Lift Station':3,'None':0};
+    // Lookup acres and duration from lk_plants (live, no server needed)
+    const lkAc  = Object.fromEntries((t.lk_plants||[]).filter(x=>x.type).map(x=>[x.type,x.acres]));
+    const lkDur = Object.fromEntries((t.lk_plants||[]).filter(x=>x.type).map(x=>[x.type,x.duration]));
     const base   = rp.base_cost ?? cp.base_cost ?? 0;
     const opct   = rp.other_pct ?? cp.other_pct ?? 0.17;
     const ph2b   = rp.ph2_base_cost ?? cp.ph2_base_cost ?? 0;
@@ -1675,8 +1680,8 @@ async function loadInputs() {
     const ra = rawAmenities[i] || {};
     const tractType = document.getElementById(`ti-am-type-${i}`)?.value;
     const type = tractType || ca.type || ra.type || 'None';
-    const lkAc  = {'Large Amenity Center':6,'Small Amenity Center':3,'Pocket Park':0.5,'None':0};
-    const lkDur = {'Large Amenity Center':12,'Small Amenity Center':8,'Pocket Park':2,'None':0};
+    const lkAc  = Object.fromEntries((t.lk_amenities||[]).filter(x=>x.type).map(x=>[x.type,x.acres]));
+    const lkDur = Object.fromEntries((t.lk_amenities||[]).filter(x=>x.type).map(x=>[x.type,x.duration]));
     const base  = ra.base_cost ?? ca.base_cost ?? 0;
     const opct  = ra.other_pct ?? ca.other_pct ?? 0.17;
     const tractAcres = parseFloat(document.getElementById(`ti-am-acres-${i}`)?.value) || 0;
@@ -1777,7 +1782,7 @@ async function loadInputs() {
     const rr = rawRoadCosts[i] || {};
     const opct = rr.other_pct != null ? rr.other_pct : (cr.other_pct ?? 0.17);
     const sm   = rr.start_month || cr.start_month || '';
-    const lpf  = rr.landscaping_per_sf != null ? rr.landscaping_per_sf : (cr.landscaping_per_sf ?? 0);
+    const lpf  = rr.landscaping_per_sf != null ? rr.landscaping_per_sf : (cr.landscaping_per_sf ?? 2);
     const lsp  = rr.light_spacing != null ? rr.light_spacing : (cr.light_spacing || '');
     return `<tr>
       <td class="row-num">${i+1}</td>
@@ -2333,6 +2338,7 @@ async function saveAll() {
       document.getElementById('header-title').innerHTML = `<em>${data.project_name || 'Untitled'}</em><span>${data.address || ''}</span>`;
       await loadProjectList();
       renderOutputsFromFlat(result.outputs);
+      await loadInputs();
       saveText.textContent = 'Saved';
       toast('Saved & recalculated', 'success');
     } else {
@@ -2357,6 +2363,7 @@ async function recalcAndRefresh() {
     const rd = await rr.json();
     if (rd.ok) {
       renderOutputsFromFlat(rd.outputs);
+      await loadInputs();
       toast('Model recalculated', 'success');
     } else {
       toast('Calculation error: ' + (rd.error || 'Unknown'), 'error');

@@ -346,7 +346,7 @@ def default_inputs(name="New Project"):
         "amenity_costs": [{"base_cost":0,"other_pct":0.17,"start_month":1} for _ in range(6)],
         "det_costs": [{"other_pct":0.17,"landscaping_per_foot":2} for _ in range(6)],
         "other_costs": [{"base_cost":0,"other_pct":0.17,"start_month":1,"duration":1} for _ in range(6)],
-        "road_costs": [{"other_pct":0.17,"start_month":1,"landscaping_per_sf":0,"light_spacing":0} for _ in range(6)],
+        "road_costs": [{"other_pct":0.17,"start_month":1,"landscaping_per_sf":2,"light_spacing":0} for _ in range(6)],
         "lot_sizes": lot_size_defaults,
         "timing_method": "50/25/25",        # Excel B2 = 50/25/25
         "bem_period": 9,                    # Excel B3 = 9
