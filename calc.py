@@ -151,8 +151,10 @@ def calculate(inp: dict) -> dict:
     sectional_other_pct    = safe(inp.get("sectional_other_pct", 0.20))
     landscaping_other_pct  = safe(inp.get("landscaping_other_pct", 0.10))
 
-    # Land cost takedowns
-    takedowns = inp.get("takedowns", [])  # list of {period, pct}
+    # Land cost takedowns — default to 1 takedown at 100% period 0 if none entered
+    takedowns = inp.get("takedowns", [])
+    if not takedowns or all(safe(td.get("pct", 0)) == 0 for td in takedowns):
+        takedowns = [{"period": 0, "pct": 1.0}]
     td_rows = []
     for i, td in enumerate(takedowns):
         period = safe(td.get("period"))
@@ -169,7 +171,8 @@ def calculate(inp: dict) -> dict:
     # Plant cost rows
     plant_costs = inp.get("plant_costs", [])  # {base_cost, other_pct, start_month, ph2_base_cost, ph2_other_pct, ph2_start_month}
     plant_cost_rows = []
-    for i, pc in enumerate(plant_costs):
+    for i in range(max(len(plants), len(plant_costs), 8)):
+        pc = plant_costs[i] if i < len(plant_costs) else {}
         ptype = plants[i].get("type", "None") if i < len(plants) else "None"
         dur = PLANT_LOOKUPS.get(ptype, {"duration": 0})["duration"]
         base = safe(pc.get("base_cost"))
@@ -193,7 +196,8 @@ def calculate(inp: dict) -> dict:
     # Amenity cost rows
     amenity_costs = inp.get("amenity_costs", [])
     amenity_cost_rows = []
-    for i, ac in enumerate(amenity_costs):
+    for i in range(max(len(amenities), len(amenity_costs), 6)):
+        ac = amenity_costs[i] if i < len(amenity_costs) else {}
         atype = amenities[i].get("type", "None") if i < len(amenities) else "None"
         dur = AMENITY_LOOKUPS.get(atype, {"duration": 0})["duration"]
         base = safe(ac.get("base_cost"))

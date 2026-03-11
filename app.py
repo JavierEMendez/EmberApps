@@ -360,15 +360,15 @@ def default_inputs(name="New Project"):
     }
 
 @app.route("/api/projects/<int:pid>/export_excel", methods=["GET"])
+@login_required
 def export_excel(pid):
-    if "user_id" not in session:
-        return jsonify({"error": "unauthorized"}), 401
     try:
         from excel_export import export_excel as _export
         conn = get_db()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM projects WHERE id=%s AND user_id=%s", (pid, session["user_id"]))
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM projects WHERE id=%s", (pid,))
         proj = cur.fetchone()
+        cur.close(); conn.close()
         if not proj:
             return jsonify({"error": "not found"}), 404
         inputs = proj["inputs"] or {}
@@ -382,6 +382,50 @@ def export_excel(pid):
         )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/projects/<int:pid>/backup", methods=["GET"])
+@login_required
+def backup_project(pid):
+    """Download all project data as JSON — safe across redeployments."""
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM projects WHERE id=%s", (pid,))
+    proj = dict(cur.fetchone() or {})
+    cur.close(); conn.close()
+    if not proj:
+        return jsonify({"error": "not found"}), 404
+    # Convert datetime fields to strings
+    for k, v in proj.items():
+        if hasattr(v, 'isoformat'):
+            proj[k] = v.isoformat()
+    name = (proj.get("name") or "project").replace(" ", "_")
+    backup_data = json.dumps(proj, indent=2)
+    return send_file(
+        io.BytesIO(backup_data.encode()),
+        mimetype="application/json",
+        as_attachment=True,
+        download_name=f"{name}_backup.json"
+    )
+
+@app.route("/api/projects/restore", methods=["POST"])
+@login_required
+def restore_project():
+    """Restore a project from a JSON backup file."""
+    data = request.json or {}
+    inputs  = data.get("inputs", {})
+    outputs = data.get("outputs", {})
+    name    = data.get("name", "Restored Project")
+    address = data.get("address", "")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO projects (name, address, created_by, inputs, outputs) VALUES (%s,%s,%s,%s,%s) RETURNING id",
+        (name, address, session["user_id"], json.dumps(inputs), json.dumps(outputs))
+    )
+    new_id = cur.fetchone()["id"]
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "id": new_id})
 
 
 if __name__ == "__main__":
