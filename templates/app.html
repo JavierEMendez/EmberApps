@@ -1080,12 +1080,28 @@ async function deleteProject(id, e) {
 
 async function downloadProject() {
   if (!currentProject) return;
-  // Download as JSON for now
-  const res = await fetch(`/api/projects/${currentProject}`);
-  const d = await res.json();
-  const blob = new Blob([JSON.stringify(d, null, 2)], {type:'application/json'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = (d.name || 'project') + '.json'; a.click();
+  const btn = document.getElementById('btn-download');
+  const orig = btn.innerHTML;
+  btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Exporting…';
+  btn.disabled = true;
+  try {
+    // Save first so latest inputs are in DB
+    await saveAll();
+    const res = await fetch(`/api/projects/${currentProject}/export_excel`);
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const proj = await (await fetch(`/api/projects/${currentProject}`)).json();
+    const name = (proj.name || 'project').replace(/\s+/g,'_');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name + '_Underwriting.xlsx';
+    a.click();
+  } catch(e) {
+    alert('Export failed: ' + e.message);
+  } finally {
+    btn.innerHTML = orig;
+    btn.disabled = false;
+  }
 }
 
 // ── TABS ──────────────────────────────────────────────────────────
@@ -1359,13 +1375,24 @@ async function loadInputs() {
   sv('ci-default_start_month', t.default_start_month);
 
   // Land Takedowns — full table with computed rows
+  // editable fields (period, pct) come from t.takedowns; computed fields come from c.takedown_rows
   const tdLabels = ['Takedown Period','% of Tract Taken Down','Purchase Price ($)','Closing Costs ($)','Total Land Cost ($)'];
   const tdKeys   = ['period','pct','purchase_price','closing_costs','total_land_cost'];
   const tdInputs = [true, true, false, false, false]; // true = editable
   const tdFmts   = ['n','pct','$','$','$'];
   const tb = document.getElementById('ci-takedowns-body');
-  const tds = c.land_takedowns || [];
-  const checkVals = { period: c.land_check, purchase_price: c.land_total_purchase, closing_costs: c.land_total_closing, total_land_cost: c.land_total_cost };
+  const rawTds = t.takedowns || [];
+  const calcTds = c.takedown_rows || [];
+  // Merge: editable fields from raw inputs, computed fields from calc outputs
+  const tds = [0,1,2].map(i => ({
+    period:        rawTds[i]?.period  ?? calcTds[i]?.period  ?? '',
+    pct:           rawTds[i]?.pct     ?? calcTds[i]?.pct     ?? '',
+    purchase_price: calcTds[i]?.purchase ?? null,
+    closing_costs:  calcTds[i]?.closing  ?? null,
+    total_land_cost:calcTds[i]?.total    ?? null,
+  }));
+  const tdTotal = calcTds.reduce((s,r) => s + (r?.total||0), 0);
+  const checkVals = { period: null, purchase_price: c.land_total_purchase, closing_costs: c.land_total_closing, total_land_cost: c.land_total_cost };
   tb.innerHTML = tdLabels.map((lbl,ri) => {
     const key = tdKeys[ri];
     const isInput = tdInputs[ri];
@@ -1387,8 +1414,31 @@ async function loadInputs() {
   }).join('');
 
   // Plant Projects — Phase 1 + Phase 2
+  // Merge: type/acres/duration/total_cost from calc outputs; editable base costs from raw inputs
+  const calcPlants = c.plant_cost_rows || [];
+  const rawPlants  = t.plant_costs || [];
+  const mergedPlants = Array.from({length: Math.max(calcPlants.length, rawPlants.length, 8)}, (_,i) => {
+    const cp = calcPlants[i] || {};
+    const rp = rawPlants[i] || {};
+    return {
+      num: i+1,
+      type: cp.type || rp.type || 'None',
+      acres: cp.acres ?? rp.acres ?? 0,
+      base_cost: rp.base_cost ?? cp.base_cost,
+      other_pct: rp.other_pct ?? cp.other_pct,
+      total_cost: cp.total_cost,
+      start_month: rp.start_month ?? cp.start_month,
+      duration: cp.duration ?? rp.duration,
+      notes: rp.notes || '',
+      ph2_base_cost: rp.ph2_base_cost ?? cp.ph2_base_cost,
+      ph2_other_pct: rp.ph2_other_pct ?? cp.ph2_other_pct,
+      ph2_total_cost: cp.ph2_total_cost,
+      ph2_start_month: rp.ph2_start_month ?? cp.ph2_start_month,
+      ph2_duration: cp.ph2_duration ?? rp.ph2_duration,
+    };
+  });
   const cpb = document.getElementById('ci-plants-body');
-  cpb.innerHTML = (t.plant_costs||[]).map((p,i) => {
+  cpb.innerHTML = mergedPlants.map((p,i) => {
     const nm = p.type || '—';
     const ph2border = 'border-left:2px solid rgba(200,169,110,.3)';
     return `<tr>
@@ -1409,8 +1459,26 @@ async function loadInputs() {
     </tr>`;}).join('');
 
   // Amenity Projects
+  // Merge: type/acres/duration/total_cost from calc outputs; editable base costs from raw inputs
+  const calcAmenities = c.amenity_cost_rows || [];
+  const rawAmenities  = t.amenity_costs || [];
+  const mergedAmenities = Array.from({length: Math.max(calcAmenities.length, rawAmenities.length, 6)}, (_,i) => {
+    const ca = calcAmenities[i] || {};
+    const ra = rawAmenities[i] || {};
+    return {
+      num: i+1,
+      type: ca.type || ra.type || 'None',
+      acres: ca.acres ?? ra.acres ?? 0,
+      base_cost: ra.base_cost ?? ca.base_cost,
+      other_pct: ra.other_pct ?? ca.other_pct,
+      total_cost: ca.total_cost,
+      start_month: ra.start_month ?? ca.start_month,
+      duration: ca.duration ?? ra.duration,
+      notes: ra.notes || '',
+    };
+  });
   const cab = document.getElementById('ci-amenities-body');
-  cab.innerHTML = (t.amenity_costs||[]).map((a,i) => `<tr>
+  cab.innerHTML = mergedAmenities.map((a,i) => `<tr>
       <td class="row-num">${a.num||i+1}</td>
       <td style="color:var(--text-dim);font-size:12px;white-space:nowrap">${a.type||'—'}</td>
       <td class="calc-col"><span class="calc-cell">${a.acres||0}</span></td>
@@ -1423,8 +1491,28 @@ async function loadInputs() {
     </tr>`).join('');
 
   // Detention
+  // Merge: acres/base_cost/duration/delivery from calc outputs; editable other_pct/start_month/landscaping from raw inputs
+  const calcDet = c.det_cost_rows || [];
+  const rawDet  = t.det_costs || [];
+  const mergedDet = calcDet.length > 0
+    ? calcDet.map((cd, i) => {
+        const rd = rawDet[i] || {};
+        return {
+          num: i+1,
+          acres: cd.acres,
+          base_cost: cd.base_cost,
+          other_pct: rd.other_pct ?? cd.other_pct,
+          total_cost: cd.total_cost,
+          start_month: rd.start_month ?? cd.start_month,
+          duration: cd.duration,
+          delivery_period: cd.delivery_period,
+          landscaping_per_foot: rd.landscaping_per_foot ?? cd.landscaping_per_foot,
+          total_landscaping: cd.total_landscaping,
+        };
+      })
+    : rawDet;
   const dtb = document.getElementById('ci-detention-body');
-  dtb.innerHTML = (t.det_costs||[]).map((d,i) => `<tr>
+  dtb.innerHTML = mergedDet.map((d,i) => `<tr>
       <td class="row-num">${d.num||i+1}</td>
       <td class="calc-col"><span class="calc-cell">${d.acres?d.acres.toFixed(2):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${fmtC(d.base_cost)}</span></td>
@@ -1756,7 +1844,7 @@ function collectInputs() {
       period: gi(`ci-td-period-${i}`) || 0,
       pct: gnp(`ci-td-pct-${i}`) || 0
     })),
-    plants: (t.plant_costs||[]).map((_,i) => ({
+    plants: Array.from({length:8}, (_,i) => ({
       num: i+1,
       base_cost: gn(`ci-pl-cost-${i}`) || 0,
       other_pct: gnp(`ci-pl-opct-${i}`),
@@ -1766,14 +1854,14 @@ function collectInputs() {
       ph2_other_pct: gnp(`ci-pl2-opct-${i}`),
       ph2_start_month: gi(`ci-pl2-sm-${i}`)
     })),
-    amenities: (t.amenity_costs||[]).map((_,i) => ({
+    amenities: Array.from({length:6}, (_,i) => ({
       num: i+1,
       base_cost: gn(`ci-am-cost-${i}`) || 0,
       other_pct: gnp(`ci-am-opct-${i}`),
       start_month: gi(`ci-am-sm-${i}`) || 1,
       notes: gv(`ci-am-notes-${i}`) || ''
     })),
-    detention: (t.det_costs||[]).map((_,i) => ({
+    detention: Array.from({length: Math.max(1, tract.det_num_projects||6)}, (_,i) => ({
       num: i+1,
       other_pct: gnp(`ci-det-opct-${i}`),
       start_month: gi(`ci-det-sm-${i}`),
