@@ -1247,6 +1247,24 @@ async function loadInputs() {
   const res = await fetch(`/api/projects/${currentProject}`);
   const proj = await res.json();
   inputs = proj.inputs || {};  // flat inputs dict
+  const c = proj.outputs || {};  // calc outputs (for derived/computed fields in cost tab)
+  // Backfill arrays missing from older projects
+  const _df = (key, val) => { if (!inputs[key] || !inputs[key].length) inputs[key] = val; };
+  _df('plants',        Array.from({length:8}, ()=>({type:'None',notes:''})));
+  _df('amenities',     Array.from({length:6}, ()=>({type:'None',acres:0})));
+  _df('other_netouts', Array.from({length:6}, ()=>({description:'',acres:0})));
+  _df('roads',         Array.from({length:6}, ()=>({type:'',linear_feet:0,width:0,road_setback:0,landscaping_setback:0})));
+  _df('plant_costs',   Array.from({length:8}, ()=>({base_cost:0,other_pct:0.17,start_month:1,ph2_base_cost:0,ph2_other_pct:0.17,ph2_start_month:37})));
+  _df('amenity_costs', Array.from({length:6}, ()=>({base_cost:0,other_pct:0.17,start_month:1})));
+  _df('det_costs',     Array.from({length:6}, ()=>({base_cost_per_cyd:0,other_pct:0.17,landscaping_per_foot:0})));
+  _df('other_costs',   Array.from({length:6}, ()=>({base_cost:0,other_pct:0.17,start_month:1,duration:1})));
+  _df('road_costs',    Array.from({length:6}, ()=>({other_pct:0.17,start_month:1,landscaping_per_sf:0,light_spacing:0})));
+  _df('lot_sizes',     Array.from({length:16}, ()=>({on:0,lot_sf:5000,depth:120,yield_per_ac:0,pace:0,home_price:0,wsd_per_ff:0,paving_per_ff:0,dev_start_month:1,landscaping_per_lot:0,urd_per_lot:0,lots_per_streetlight:0,fence_cost_per_ff:0})));
+  _df('res_pods',      Array.from({length:6}, ()=>({acres:0,price_per_acre:0,closing_costs_pct:0.01,implied_lots_per_acre:0,impact_fee_per_lot:0,sale_period:0})));
+  _df('comm_pods',     Array.from({length:6}, ()=>({acres:0,price_per_sf:0,closing_costs_pct:0.01,sale_period:0,av_per_acre:0,av_delay_months:0})));
+  _df('lk_plants',    Array.from({length:8}, ()=>({type:'',acres:0,duration:0})));
+  _df('lk_amenities', Array.from({length:6}, ()=>({type:'',duration:0})));
+  _df('lk_roads',     Array.from({length:6}, ()=>({type:'',wsd:0,paving:0})));
   const t = inputs;  // everything is now flat
 
   // Header
@@ -1273,7 +1291,7 @@ async function loadInputs() {
   const pb = document.getElementById('ti-plants-body');
   pb.innerHTML = (t.plants||[]).map((p,i) => `
     <tr>
-      <td class="row-num">${p.num}</td>
+      <td class="row-num">${p.num||i+1}</td>
       <td><select id="ti-plant-type-${i}" onchange="markDirty()">${plantTypes.map(pt=>`<option value="${pt}" ${p.type===pt?'selected':''}>${pt}</option>`).join('')}</select></td>
       <td><input type="text" id="ti-plant-notes-${i}" value="${p.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
@@ -1283,7 +1301,7 @@ async function loadInputs() {
   const ab = document.getElementById('ti-amenities-body');
   ab.innerHTML = (t.amenities||[]).map((a,i) => `
     <tr>
-      <td class="row-num">${a.num}</td>
+      <td class="row-num">${a.num||i+1}</td>
       <td><select id="ti-am-type-${i}" onchange="markDirty()">${amenityTypes.map(at=>`<option value="${at}" ${a.type===at?'selected':''}>${at}</option>`).join('')}</select></td>
       <td><input type="number" id="ti-am-acres-${i}" value="${a.acres}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
@@ -1292,7 +1310,7 @@ async function loadInputs() {
   const ob = document.getElementById('ti-other-body');
   ob.innerHTML = (t.other_netouts||[]).map((o,i) => `
     <tr>
-      <td class="row-num">${o.num}</td>
+      <td class="row-num">${o.num||i+1}</td>
       <td><input type="text" id="ti-ot-desc-${i}" value="${o.description||''}" oninput="markDirty()"></td>
       <td><input type="number" id="ti-ot-acres-${i}" value="${o.acres}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
@@ -1302,7 +1320,7 @@ async function loadInputs() {
   const rb = document.getElementById('ti-roads-body');
   rb.innerHTML = (t.roads||[]).map((rd,i) => `
     <tr>
-      <td class="row-num">${rd.num}</td>
+      <td class="row-num">${rd.num||i+1}</td>
       <td><select id="ti-rd-type-${i}" onchange="markDirty()">
         <option value="">—</option>
         ${['2 Lane','4 Lane'].map(rt=>`<option value="${rt}" ${rd.type===rt?'selected':''}>${rt}</option>`).join('')}
@@ -1565,10 +1583,10 @@ async function loadInputs() {
     </tr>`).join('');
 
   // Res pods
-  sv('ri-res_pod_acreage', r.res_pod_acreage);
-  sv('ri-res_pod_count', r.res_pod_count || 1);
+  sv('ri-res_pod_acreage', t.res_pod_acreage);
+  sv('ri-res_pod_count', t.res_pod_count || 1);
   const resPodsBody = document.getElementById('ri-res-pods-body');
-  const resCnt = parseInt(r.res_pod_count) || 1;
+  const resCnt = parseInt(t.res_pod_count) || 1;
   resPodsBody.innerHTML = (t.res_pods||[]).map((rp,i) => {
     const active = i < resCnt;
     return `<tr id="ri-rp-row-${i}" class="${active ? '' : 'pod-inactive'}">
@@ -1582,10 +1600,10 @@ async function loadInputs() {
     </tr>`;}).join('');
 
   // Comm pods
-  sv('ri-comm_pod_acreage', r.comm_pod_acreage);
-  sv('ri-comm_pod_count', r.comm_pod_count || 1);
+  sv('ri-comm_pod_acreage', t.comm_pod_acreage);
+  sv('ri-comm_pod_count', t.comm_pod_count || 1);
   const commPodsBody = document.getElementById('ri-comm-pods-body');
-  const commCnt = parseInt(r.comm_pod_count) || 1;
+  const commCnt = parseInt(t.comm_pod_count) || 1;
   commPodsBody.innerHTML = (t.comm_pods||[]).map((cp,i) => {
     const active = i < commCnt;
     return `<tr id="ri-cp-row-${i}" class="${active ? '' : 'pod-inactive'}">
@@ -1619,7 +1637,7 @@ async function loadInputs() {
 
   // Lookups
   const lkp = document.getElementById('lk-plants-body');
-  lkp.innerHTML = (lk.plants||[]).map((p,i) => `
+  lkp.innerHTML = (t.lk_plants||[]).map((p,i) => `
     <tr>
       <td><input type="text" id="lk-pl-type-${i}" value="${p.type||''}" oninput="markDirty()"></td>
       <td><input type="number" step="0.01" id="lk-pl-acres-${i}" value="${p.acres}" class="mono" oninput="markDirty()"></td>
@@ -1627,14 +1645,14 @@ async function loadInputs() {
     </tr>`).join('');
 
   const lka = document.getElementById('lk-amenities-body');
-  lka.innerHTML = (lk.amenities||[]).map((a,i) => `
+  lka.innerHTML = (t.lk_amenities||[]).map((a,i) => `
     <tr>
       <td><input type="text" id="lk-am-type-${i}" value="${a.type||''}" oninput="markDirty()"></td>
       <td><input type="number" id="lk-am-dur-${i}" value="${a.duration}" class="mono" oninput="markDirty()"></td>
     </tr>`).join('');
 
   const lkr = document.getElementById('lk-roads-body');
-  lkr.innerHTML = (lk.roads||[]).map((rd,i) => `
+  lkr.innerHTML = (t.lk_roads||[]).map((rd,i) => `
     <tr>
       <td><input type="text" id="lk-rd-type-${i}" value="${rd.type||''}" oninput="markDirty()"></td>
       <td><input type="number" step="0.01" id="lk-rd-wsd-${i}" value="${rd.wsd}" class="mono" oninput="markDirty()"></td>
@@ -1812,7 +1830,7 @@ function collectInputs() {
     take3_pct: {'1 Takedown':0,'50/50':0,'50/25/25':0.25}[gv('ri-timing_method')] ?? 0.25,
     price_per_ff: ppff,
     home_table: (t.lot_sizes||[]).map((_,i) => ({
-      ff: inputs.revenues.home_table[i].ff,
+      ff: t.lot_sizes[i]?.ff,
       build_time: gi(`ri-ht-bt-${i}`),
       home_price: gn(`ri-ht-hp-${i}`),
       av_pct: gnp(`ri-ht-av-${i}`),
@@ -1862,16 +1880,16 @@ function collectInputs() {
   };
 
   const lookups = {
-    plants: ([]).map((_,i) => ({
+    plants: (t.lk_plants||[]).map((_,i) => ({
       type: gv(`lk-pl-type-${i}`),
       acres: gn(`lk-pl-acres-${i}`),
       duration: gi(`lk-pl-dur-${i}`)
     })),
-    amenities: ([]).map((_,i) => ({
+    amenities: (t.lk_amenities||[]).map((_,i) => ({
       type: gv(`lk-am-type-${i}`),
       duration: gi(`lk-am-dur-${i}`)
     })),
-    roads: ([]).map((_,i) => ({
+    roads: (t.lk_roads||[]).map((_,i) => ({
       type: gv(`lk-rd-type-${i}`),
       wsd: gn(`lk-rd-wsd-${i}`),
       paving: gn(`lk-rd-paving-${i}`)
@@ -1950,8 +1968,13 @@ function collectInputs() {
     comm_pods: revenues.comm_pods,
     mud_bond: revenues.mud_bond || {},
     wcid_bond: revenues.wcid_bond || {},
+    // Lookups
+    lk_plants: lookups.plants,
+    lk_amenities: lookups.amenities,
+    lk_roads: lookups.roads,
   };
 }
+
 // ── SAVE ──────────────────────────────────────────────────────────
 async function saveAll() {
   if (!currentProject) return;
