@@ -1,2 +1,2 @@
 [deploy]
-restartPolicyType = "on_failure"
+restartPolicyType = "ON_FAILURE"
