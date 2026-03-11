@@ -342,7 +342,7 @@ tr.pod-inactive input { pointer-events: none; }
   <!-- SIDEBAR -->
   <nav id="sidebar">
     <div class="sidebar-logo">
-      <img src="/static/ember_logo.png" alt="Ember" class="logo-img">
+      <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img">
       <div class="logo-sub">MPC Underwriting</div>
     </div>
 
@@ -1259,7 +1259,11 @@ async function loadInputs() {
   _df('det_costs',     Array.from({length:6}, ()=>({base_cost_per_cyd:0,other_pct:0.17,landscaping_per_foot:0})));
   _df('other_costs',   Array.from({length:6}, ()=>({base_cost:0,other_pct:0.17,start_month:1,duration:1})));
   _df('road_costs',    Array.from({length:6}, ()=>({other_pct:0.17,start_month:1,landscaping_per_sf:0,light_spacing:0})));
-  _df('lot_sizes',     Array.from({length:16}, ()=>({on:0,lot_sf:5000,depth:120,yield_per_ac:0,pace:0,home_price:0,wsd_per_ff:0,paving_per_ff:0,dev_start_month:1,landscaping_per_lot:0,urd_per_lot:0,lots_per_streetlight:0,fence_cost_per_ff:0})));
+  // Standard FF lot size categories (25–100 FF in steps of 5)
+  const STD_FF = [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100];
+  _df('lot_sizes', STD_FF.map(ff => ({ff, on:0, lot_sf: ff*120, depth:120, yield_per_ac:0, pace:0, home_price:0, wsd_per_ff:0, paving_per_ff:0, dev_start_month:1, landscaping_per_lot:0, urd_per_lot:0, lots_per_streetlight:0, fence_cost_per_ff:0})));
+  // Ensure existing lot_sizes rows always have ff set (backfill if missing)
+  inputs.lot_sizes = inputs.lot_sizes.map((ls, i) => ({...ls, ff: ls.ff ?? STD_FF[i] ?? (i+1)*5+35}));
   _df('res_pods',      Array.from({length:6}, ()=>({acres:0,price_per_acre:0,closing_costs_pct:0.01,implied_lots_per_acre:0,impact_fee_per_lot:0,sale_period:0})));
   _df('comm_pods',     Array.from({length:6}, ()=>({acres:0,price_per_sf:0,closing_costs_pct:0.01,sale_period:0,av_per_acre:0,av_delay_months:0})));
   _df('lk_plants',    Array.from({length:8}, ()=>({type:'',acres:0,duration:0})));
@@ -1803,6 +1807,8 @@ function collectInputs() {
       };
       return {
         ff: ls.ff,
+        lot_sf: ls.lot_sf,
+        depth: ls.depth,
         on: onVal,
         yield_per_ac: getSaved(`ci-ls-yield-${i}`),
         pace: getSaved(`ci-ls-pace-${i}`),
