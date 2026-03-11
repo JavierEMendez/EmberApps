@@ -1,4 +1,4 @@
 flask==3.0.3
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.10
 werkzeug==3.0.3
 gunicorn==22.0.0
