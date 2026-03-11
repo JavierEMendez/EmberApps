@@ -614,7 +614,7 @@ tr.pod-inactive input { pointer-events: none; }
           <div class="overflow-x">
           <table class="data-table">
             <thead><tr>
-              <th>Lot (FF)</th><th>On?</th><th>Yield (lots/ac)</th><th>Sales Pace (lots/mo)</th>
+              <th>Lot (FF)</th><th>On?</th><th>% of Mix</th><th>Yield (lots/ac)</th><th>Sales Pace (lots/mo)</th>
               <th class="calc-th">18-mo Lots</th><th class="calc-th">Total Lots</th><th class="calc-th">Acres/18mo</th>
               <th>Home Price ($)</th>
               <th class="calc-th">WSD $/FF</th><th class="calc-th">Paving $/FF</th><th class="calc-th">Dev Cost/Lot</th>
@@ -806,7 +806,7 @@ tr.pod-inactive input { pointer-events: none; }
           <!-- ④ RESIDENTIAL POD SALES -->
           <div class="section-header">Residential Pod Sales</div>
           <div class="field-grid" style="max-width:600px">
-            <div class="field"><label>Total Acreage</label><input type="number" id="ri-res_pod_acreage" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Total Acreage</label><span class="calc-cell" id="ri-res_pod_acreage" style="display:inline-block;min-width:80px"></span><span style="font-size:11px;color:var(--text-dim);margin-left:6px">← Tract Inputs</span></div>
             <div class="field">
               <label>Project Count</label>
               <select id="ri-res_pod_count" onchange="applyPodCount('res'); markDirty()">
@@ -835,7 +835,7 @@ tr.pod-inactive input { pointer-events: none; }
           <!-- ⑤ COMMERCIAL POD SALES -->
           <div class="section-header">Commercial Pod Sales</div>
           <div class="field-grid" style="max-width:600px">
-            <div class="field"><label>Total Acreage</label><input type="number" id="ri-comm_pod_acreage" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Total Acreage</label><span class="calc-cell" id="ri-comm_pod_acreage" style="display:inline-block;min-width:80px"></span><span style="font-size:11px;color:var(--text-dim);margin-left:6px">← Tract Inputs</span></div>
             <div class="field">
               <label>Project Count</label>
               <select id="ri-comm_pod_count" onchange="applyPodCount('comm'); markDirty()">
@@ -1244,7 +1244,7 @@ function toggleLotRow(i) {
   const row = document.getElementById(`ci-lot-row-${i}`);
   const isOn = sel.value === '1';
   // All editable fields that should be saved/restored on toggle
-  const lotFields = ['yield','pace','hp','dsm','lpl','urd','lsl','fen'];
+  const lotFields = ['mix','yield','pace','hp','dsm','lpl','urd','lsl','fen'];
   if (isOn) {
     row.classList.remove('lot-off');
     lotFields.forEach(k => {
@@ -1629,9 +1629,9 @@ async function loadInputs() {
     const lkAc  = Object.fromEntries((t.lk_plants||[]).filter(x=>x.type).map(x=>[x.type,x.acres]));
     const lkDur = Object.fromEntries((t.lk_plants||[]).filter(x=>x.type).map(x=>[x.type,x.duration]));
     const base   = rp.base_cost ?? cp.base_cost ?? 0;
-    const opct   = rp.other_pct ?? cp.other_pct ?? 0.17;
+    const opct   = rp.other_pct ?? cp.other_pct ?? t.default_other_pct ?? 0.17;
     const ph2b   = rp.ph2_base_cost ?? cp.ph2_base_cost ?? 0;
-    const ph2op  = rp.ph2_other_pct ?? cp.ph2_other_pct ?? 0.17;
+    const ph2op  = rp.ph2_other_pct ?? cp.ph2_other_pct ?? t.default_other_pct ?? 0.17;
     return {
       num: i+1,
       type,
@@ -1683,7 +1683,7 @@ async function loadInputs() {
     const lkAc  = Object.fromEntries((t.lk_amenities||[]).filter(x=>x.type).map(x=>[x.type,x.acres]));
     const lkDur = Object.fromEntries((t.lk_amenities||[]).filter(x=>x.type).map(x=>[x.type,x.duration]));
     const base  = ra.base_cost ?? ca.base_cost ?? 0;
-    const opct  = ra.other_pct ?? ca.other_pct ?? 0.17;
+    const opct  = ra.other_pct ?? ca.other_pct ?? t.default_other_pct ?? 0.17;
     const tractAcres = parseFloat(document.getElementById(`ti-am-acres-${i}`)?.value) || 0;
     const acres = tractAcres || ca.acres || lkAc[type] || 0;
     return {
@@ -1721,7 +1721,7 @@ async function loadInputs() {
     const cd = calcDet[i] || {};
     const rd = rawDet[i] || {};
     const base   = cd.base_cost ?? 0;
-    const opct   = rd.other_pct ?? cd.other_pct ?? 0.17;
+    const opct   = rd.other_pct ?? cd.other_pct ?? t.default_other_pct ?? 0.17;
     const lpf    = rd.landscaping_per_foot ?? cd.landscaping_per_foot ?? 2;
     const acres  = cd.acres ?? 0;
     const sm     = rd.start_month ?? cd.start_month ?? (1 + i * 15);
@@ -1780,7 +1780,7 @@ async function loadInputs() {
   rdb.innerHTML = Array.from({length: Math.max(calcRoads.length, rawRoadCosts.length, 6)}, (_, i) => {
     const cr = calcRoads[i] || {};
     const rr = rawRoadCosts[i] || {};
-    const opct = rr.other_pct != null ? rr.other_pct : (cr.other_pct ?? 0.17);
+    const opct = rr.other_pct != null ? rr.other_pct : (cr.other_pct ?? t.default_other_pct ?? 0.17);
     const sm   = rr.start_month || cr.start_month || '';
     const lpf  = rr.landscaping_per_sf != null ? rr.landscaping_per_sf : (cr.landscaping_per_sf ?? 2);
     const lsp  = rr.light_spacing != null ? rr.light_spacing : (cr.light_spacing || '');
@@ -1812,12 +1812,14 @@ async function loadInputs() {
     const dis = isOn ? '' : 'tabindex="-1"';
     const sv2 = (v) => isOn ? (v??'') : '';
     const ds = (v) => v??'';
+    const pctMix = ls.pct_mix != null ? +(ls.pct_mix * 100).toPrecision(4) : '';
     return `<tr id="ci-lot-row-${i}" class="${dim}">
       <td><span class="acre-badge">${ls.ff} FF</span></td>
       <td><select id="ci-ls-on-${i}" onchange="toggleLotRow(${i}); markDirty()">
         <option value="1" ${isOn?'selected':''}>On</option>
         <option value="0" ${isOn?'':'selected'}>Off</option>
       </select></td>
+      <td><div class="pct-wrap"><input type="number" step="1" id="ci-ls-mix-${i}" value="${isOn ? pctMix : ''}" data-saved="${pctMix}" class="mono" oninput="markDirty()" placeholder="equal" ${dis}></div></td>
       <td><input type="number" step="0.01" id="ci-ls-yield-${i}" value="${sv2(ls.yield_per_ac)}" data-saved="${ds(ls.yield_per_ac)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td><input type="number" step="0.25" id="ci-ls-pace-${i}" value="${sv2(ls.pace)}" data-saved="${ds(ls.pace)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.lots_18mo?ls.lots_18mo.toFixed(0):'—'}</span></td>
@@ -1924,8 +1926,9 @@ async function loadInputs() {
     </tr>`;
   }).join('');
 
-  // Res pods
-  sv('ri-res_pod_acreage', t.res_pod_acreage);
+  // Res pods — acreage is read-only, linked from tract inputs
+  const riResAcEl = document.getElementById('ri-res_pod_acreage');
+  if (riResAcEl) riResAcEl.textContent = (t.residential_pod_acres ?? t.res_pod_acreage ?? 0);
   sv('ri-res_pod_count', t.res_pod_count || 1);
   const resPodsBody = document.getElementById('ri-res-pods-body');
   const resCnt = parseInt(t.res_pod_count) || 1;
@@ -1941,8 +1944,9 @@ async function loadInputs() {
       <td><input type="number" id="ri-rp-sp-${i}" value="${active ? (rp.sale_period||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
     </tr>`;}).join('');
 
-  // Comm pods
-  sv('ri-comm_pod_acreage', t.comm_pod_acreage);
+  // Comm pods — acreage is read-only, linked from tract inputs
+  const riCommAcEl = document.getElementById('ri-comm_pod_acreage');
+  if (riCommAcEl) riCommAcEl.textContent = (t.commercial_pod_acres ?? t.comm_pod_acreage ?? 0);
   sv('ri-comm_pod_count', t.comm_pod_count || 1);
   const commPodsBody = document.getElementById('ri-comm-pods-body');
   const commCnt = parseInt(t.comm_pod_count) || 1;
@@ -2152,6 +2156,7 @@ function collectInputs() {
         // Preserve WSD/paving from stored inputs (display-only calc cells, not re-collected from DOM)
         wsd_per_ff: ls.wsd_per_ff ?? 290,
         paving_per_ff: ls.paving_per_ff ?? 220,
+        pct_mix: (() => { const v = getSaved(`ci-ls-mix-${i}`); return v != null ? v / 100 : null; })(),
         yield_per_ac: getSaved(`ci-ls-yield-${i}`),
         pace: getSaved(`ci-ls-pace-${i}`),
         home_price: getSaved(`ci-ls-hp-${i}`),
@@ -2189,7 +2194,6 @@ function collectInputs() {
     price_per_ff: ppff,
     // home_table fields are merged directly into lot_sizes rows
     // (handled by lot_sizes collection which also reads ht fields)
-    res_pod_acreage: gn('ri-res_pod_acreage'),
     res_pod_count: gi('ri-res_pod_count'),
     res_pods: Array.from({length:6}, (_,i) => ({
       pod: i+1,
@@ -2199,7 +2203,6 @@ function collectInputs() {
       impact_fee_per_lot: gn(`ri-rp-impact-${i}`),
       sale_period: gi(`ri-rp-sp-${i}`),
     })),
-    comm_pod_acreage: gn('ri-comm_pod_acreage'),
     comm_pod_count: gi('ri-comm_pod_count'),
     comm_pods: Array.from({length:6}, (_,i) => ({
       pod: i+1,
@@ -2421,6 +2424,7 @@ function renderOutputsFromFlat(o) {
     if (type === 'yr') return n.toFixed(1) + ' yrs';
     return n.toLocaleString();
   };
+  const fmtAc = v => (v != null && v !== 0) ? parseFloat(v).toFixed(1) + ' ac' : '0.0 ac';
   const irr = o.unlevered_irr ? (o.unlevered_irr*100).toFixed(1)+'%' : '—';
   const gm  = fmt(o.gross_margin_pct, '%');
   const roc = fmt(o.return_on_cost, '%');
@@ -2531,6 +2535,24 @@ function renderOutputsFromFlat(o) {
           </tr>
         </table>
       </div>
+    </div>
+
+    <!-- ACREAGE NET-OUTS SUMMARY -->
+    <div class="fin-card" style="margin-bottom:28px">
+      <div class="fin-card-title">Acreage Summary</div>
+      <table class="info-table" style="width:100%;max-width:520px">
+        <tr style="font-weight:600"><td>Gross Acreage</td><td style="text-align:right">${fmtAc(o.gross_acreage)}</td></tr>
+        <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Plant / Infrastructure</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.plant_net_out_acres)})</td></tr>
+        <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Detention</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.det_net_out_acres)})</td></tr>
+        <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Amenities</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.amenity_net_out_acres)})</td></tr>
+        <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Parks</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.parks_net_out_acres)})</td></tr>
+        <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Other Net-outs</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.other_net_out_acres)})</td></tr>
+        <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Roads / ROW</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.road_net_out_acres)})</td></tr>
+        <tr style="border-top:1px solid var(--border);font-weight:600"><td>Developable Acres</td><td style="text-align:right">${fmtAc(o.dev_acres)}</td></tr>
+        <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Commercial Pods</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.comm_pod_acres_net)})</td></tr>
+        <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Residential Pods</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.res_pod_acres_net)})</td></tr>
+        <tr style="border-top:1px solid var(--border);font-weight:600;color:var(--accent2)"><td>Residential Dev Acres</td><td style="text-align:right">${fmtAc(o.residential_dev_acres)}</td></tr>
+      </table>
     </div>
 
     <!-- PER-ACRE METRICS -->
@@ -2966,28 +2988,100 @@ function renderCashflow(o, container) {
     return;
   }
 
-  const fmt$ = v => v ? '$'+Math.round(v).toLocaleString() : '—';
-  const fmtM = v => v > 0 ? `<span style="color:var(--success)">$${Math.round(v).toLocaleString()}</span>`
-                           : v < 0 ? `<span style="color:var(--danger)">($${Math.round(-v).toLocaleString()})</span>` : '—';
+  // Helper formatters
+  const fmtV = v => !v ? '' : (v > 0 ? '$'+Math.round(v).toLocaleString() : '($'+Math.round(-v).toLocaleString()+')');
+  const fmtRev = v => v > 0 ? `<span style="color:var(--success)">$${Math.round(v).toLocaleString()}</span>` : '';
+  const fmtCost = v => v > 0 ? `<span style="color:var(--danger)">($${Math.round(v).toLocaleString()})</span>` : '';
+  const fmtNet = v => v > 0 ? `<span style="color:var(--success)">$${Math.round(v).toLocaleString()}</span>`
+                             : v < 0 ? `<span style="color:var(--danger)">($${Math.round(-v).toLocaleString()})</span>` : '';
 
-  // Build yearly summary from monthly data
-  const yearMap = {};
+  // Build annual aggregates per line item
+  const LINE_ITEMS = [
+    {key:'rev_lot_sales',   label:'Lot Sales',            cat:'rev'},
+    {key:'rev_res_pods',    label:'Residential Pods',     cat:'rev'},
+    {key:'rev_comm_pods',   label:'Commercial Pods',      cat:'rev'},
+    {key:'rev_mud_wcid',    label:'MUD / WCID Bonds',     cat:'rev'},
+    {key:'revenue',         label:'TOTAL REVENUE',        cat:'rev_total'},
+    {key:'cost_land',       label:'Land',                 cat:'cost'},
+    {key:'cost_plants',     label:'Plant Projects',       cat:'cost'},
+    {key:'cost_amenities',  label:'Amenities',            cat:'cost'},
+    {key:'cost_detention',  label:'Detention',            cat:'cost'},
+    {key:'cost_other',      label:'Other Net-outs',       cat:'cost'},
+    {key:'cost_roads',      label:'Roads & Landscaping',  cat:'cost'},
+    {key:'cost_lot_dev',    label:'Lot Development',      cat:'cost'},
+    {key:'cost_operating',  label:'Operating / Overhead', cat:'cost'},
+    {key:'cost',            label:'TOTAL COST',           cat:'cost_total'},
+    {key:'net',             label:'NET CASHFLOW',         cat:'net'},
+  ];
+
+  // Aggregate by year
+  const yearKeys = [];
+  const byYear = {};  // {yr: {key: total}}
   for (const m of monthly) {
-    if (!yearMap[m.yr]) yearMap[m.yr] = {yr:m.yr, revenue:0, cost:0, net:0};
-    yearMap[m.yr].revenue += m.revenue;
-    yearMap[m.yr].cost    += m.cost;
-    yearMap[m.yr].net     += m.net;
+    if (!byYear[m.yr]) { byYear[m.yr] = {}; yearKeys.push(m.yr); }
+    for (const li of LINE_ITEMS) {
+      byYear[m.yr][li.key] = (byYear[m.yr][li.key] || 0) + (m[li.key] || 0);
+    }
   }
-  const years = Object.values(yearMap).map(y => ({...y, revenue:Math.round(y.revenue), cost:Math.round(y.cost), net:Math.round(y.net)}));
-  let cumCf = 0;
+  // Round
+  for (const yr of yearKeys) {
+    for (const li of LINE_ITEMS) byYear[yr][li.key] = Math.round(byYear[yr][li.key] || 0);
+  }
+  // Row totals
+  const rowTotals = {};
+  for (const li of LINE_ITEMS) rowTotals[li.key] = yearKeys.reduce((s,yr) => s + (byYear[yr][li.key]||0), 0);
 
-  // Quarterly chart data
+  // Cumulative net CF per year
+  let cumNet = 0;
+  const cumByYear = {};
+  for (const yr of yearKeys) { cumNet += byYear[yr]['net'] || 0; cumByYear[yr] = Math.round(cumNet); }
+
+  // Chart data (quarterly)
   const qLabels = quarterly.map(q => `Q${q.qtr} Y${q.yr}`);
-  const qRev    = quarterly.map(q => q.revenue / 1e6);
-  const qCost   = quarterly.map(q => q.cost / 1e6);
-  const qNet    = quarterly.map(q => q.net / 1e6);
+  const qRev = quarterly.map(q => q.revenue / 1e6);
+  const qCost = quarterly.map(q => q.cost / 1e6);
   let cum = 0;
   const qCum = quarterly.map(q => { cum += q.net / 1e6; return +cum.toFixed(2); });
+
+  // Render
+  const numYrs = yearKeys.length;
+  const colW = Math.max(90, Math.min(130, Math.floor(900 / (numYrs + 2))));
+
+  const headerCols = yearKeys.map(yr => `<th style="text-align:right;min-width:${colW}px">Year ${yr}</th>`).join('') +
+    `<th style="text-align:right;min-width:${colW}px;border-left:2px solid var(--border)">Total</th>`;
+
+  const tableRows = LINE_ITEMS.map(li => {
+    const isTotRow = li.cat.includes('total') || li.cat === 'net';
+    const style = isTotRow ? 'font-weight:700;border-top:2px solid var(--border)' : '';
+    const isRev = li.cat === 'rev' || li.cat === 'rev_total';
+    const isCost = li.cat === 'cost' || li.cat === 'cost_total';
+
+    const cells = yearKeys.map(yr => {
+      const v = byYear[yr][li.key] || 0;
+      let disp = '';
+      if (isRev) disp = fmtRev(v);
+      else if (isCost) disp = fmtCost(v);
+      else disp = fmtNet(v);
+      return `<td style="text-align:right;font-size:11px">${disp}</td>`;
+    }).join('');
+
+    const tot = rowTotals[li.key] || 0;
+    let totDisp = '';
+    if (isRev) totDisp = fmtRev(tot);
+    else if (isCost) totDisp = fmtCost(tot);
+    else totDisp = fmtNet(tot);
+
+    const labelStyle = isTotRow ? 'font-weight:700' : 'color:var(--text-dim);padding-left:' + (li.cat==='rev'||li.cat==='cost' ? '16' : '0') + 'px';
+    return `<tr style="${style}"><td style="${labelStyle};white-space:nowrap;font-size:12px">${li.label}</td>${cells}<td style="text-align:right;font-size:11px;border-left:2px solid var(--border)">${totDisp}</td></tr>`;
+  });
+
+  // Cumulative row
+  let cumRunning = 0;
+  const cumCells = yearKeys.map(yr => {
+    cumRunning += byYear[yr]['net'] || 0;
+    return `<td style="text-align:right;font-size:11px">${fmtNet(cumRunning)}</td>`;
+  }).join('');
+  tableRows.push(`<tr style="border-top:1px dashed var(--border)"><td style="color:var(--accent2);font-weight:600;font-size:12px">Cumulative CF</td>${cumCells}<td style="text-align:right;font-size:11px;border-left:2px solid var(--border)">${fmtNet(cumRunning)}</td></tr>`);
 
   container.innerHTML = `
   <div style="padding:28px 32px">
@@ -3002,57 +3096,54 @@ function renderCashflow(o, container) {
       </div>
     </div>
 
-    <div class="section-header">Annual Summary</div>
-    <div class="overflow-x" style="margin-bottom:28px">
-    <table class="data-table" style="max-width:900px">
-      <thead><tr>
-        <th>Year</th><th style="text-align:right">Revenue</th><th style="text-align:right">Cost</th>
-        <th style="text-align:right">Net CF</th><th style="text-align:right">Cumulative CF</th>
-      </tr></thead>
-      <tbody>${years.map(y => {
-        cumCf += y.net;
-        return `<tr>
-          <td style="font-weight:600;color:var(--text)">Year ${y.yr}</td>
-          <td style="text-align:right;font-family:'Inter',sans-serif;color:var(--success)">${y.revenue > 0 ? '$'+y.revenue.toLocaleString() : '—'}</td>
-          <td style="text-align:right;font-family:'Inter',sans-serif;color:var(--danger)">${y.cost > 0 ? '($'+y.cost.toLocaleString()+')' : '—'}</td>
-          <td style="text-align:right;font-family:'Inter',sans-serif">${fmtM(y.net)}</td>
-          <td style="text-align:right;font-family:'Inter',sans-serif">${fmtM(cumCf)}</td>
-        </tr>`;
-      }).join('')}</tbody>
+    <div class="section-header">Project Cashflow — Line Item by Year</div>
+    <div class="overflow-x" style="margin-bottom:32px">
+    <table class="data-table" style="font-size:12px">
+      <thead><tr><th style="min-width:160px">Line Item</th>${headerCols}</tr></thead>
+      <tbody>${tableRows.join('')}</tbody>
     </table>
     </div>
 
     <div class="section-header" style="display:flex;align-items:center;gap:12px">
       Monthly Detail
-      <span style="font-size:11px;color:var(--text-dim);font-style:italic;text-transform:none;letter-spacing:0">(${monthly.length} months)</span>
+      <span style="font-size:11px;color:var(--text-dim);font-style:italic;text-transform:none;letter-spacing:0">(${monthly.filter(m=>m.revenue||m.cost).length} active months shown)</span>
     </div>
     <div class="overflow-x">
-    <table class="data-table" style="font-size:12px">
+    <table class="data-table" style="font-size:11px">
       <thead><tr>
         <th>Mo.</th><th>Yr</th>
-        <th style="text-align:right">Revenue</th><th style="text-align:right">Cost</th>
-        <th style="text-align:right">Net CF</th><th style="text-align:right">Cumulative CF</th>
+        <th style="text-align:right">Lot Sales</th><th style="text-align:right">Pods / Bonds</th>
+        <th style="text-align:right">Total Rev</th>
+        <th style="text-align:right">Land</th><th style="text-align:right">Infra</th>
+        <th style="text-align:right">Lot Dev</th><th style="text-align:right">Operating</th>
+        <th style="text-align:right">Total Cost</th>
+        <th style="text-align:right">Net CF</th><th style="text-align:right">Cumul. CF</th>
       </tr></thead>
       <tbody id="cf-monthly-tbody"></tbody>
     </table>
     </div>
   </div>`;
 
-  // Render monthly rows (build separately to avoid huge template literal)
+  // Monthly rows
   let cum2 = 0;
   const tbody = document.getElementById('cf-monthly-tbody');
   if (tbody) {
-    tbody.innerHTML = monthly.filter(m => m.revenue !== 0 || m.cost !== 0).map(m => {
+    tbody.innerHTML = monthly.filter(m => m.revenue || m.cost).map(m => {
       cum2 += m.net;
-      const netColor = m.net > 0 ? 'var(--success)' : m.net < 0 ? 'var(--danger)' : 'var(--text-dim)';
-      const cumColor = cum2 > 0 ? 'var(--success)' : cum2 < 0 ? 'var(--danger)' : 'var(--text-dim)';
+      const infraCost = (m.cost_plants||0)+(m.cost_amenities||0)+(m.cost_detention||0)+(m.cost_other||0)+(m.cost_roads||0);
+      const podBonds = (m.rev_res_pods||0)+(m.rev_comm_pods||0)+(m.rev_mud_wcid||0);
       return `<tr>
-        <td style="color:var(--text-dim)">${m.month}</td>
-        <td style="color:var(--text-dim)">${m.yr}</td>
-        <td style="text-align:right;font-family:'Inter',sans-serif;color:var(--success)">${m.revenue > 0 ? '$'+m.revenue.toLocaleString() : ''}</td>
-        <td style="text-align:right;font-family:'Inter',sans-serif;color:var(--danger)">${m.cost > 0 ? '($'+m.cost.toLocaleString()+')' : ''}</td>
-        <td style="text-align:right;font-family:'Inter',sans-serif;font-weight:500;color:${netColor}">${m.net !== 0 ? (m.net > 0 ? '$' : '($') + Math.abs(m.net).toLocaleString() + (m.net < 0 ? ')' : '') : '—'}</td>
-        <td style="text-align:right;font-family:'Inter',sans-serif;color:${cumColor}">${(cum2 > 0 ? '$' : '($') + Math.abs(Math.round(cum2)).toLocaleString() + (cum2 < 0 ? ')' : '')}</td>
+        <td style="color:var(--text-dim)">${m.month}</td><td style="color:var(--text-dim)">${m.yr}</td>
+        <td style="text-align:right">${fmtRev(m.rev_lot_sales||0)}</td>
+        <td style="text-align:right">${fmtRev(podBonds)}</td>
+        <td style="text-align:right;font-weight:600">${fmtRev(m.revenue)}</td>
+        <td style="text-align:right">${fmtCost(m.cost_land||0)}</td>
+        <td style="text-align:right">${fmtCost(infraCost)}</td>
+        <td style="text-align:right">${fmtCost(m.cost_lot_dev||0)}</td>
+        <td style="text-align:right">${fmtCost(m.cost_operating||0)}</td>
+        <td style="text-align:right;font-weight:600">${fmtCost(m.cost)}</td>
+        <td style="text-align:right;font-weight:600">${fmtNet(m.net)}</td>
+        <td style="text-align:right">${fmtNet(cum2)}</td>
       </tr>`;
     }).join('');
   }
@@ -3063,43 +3154,27 @@ function renderCashflow(o, container) {
     const qbarCtx = document.getElementById('cf-chart-qbar');
     if (qbarCtx) new Chart(qbarCtx, {
       type: 'bar',
-      data: {
-        labels: qLabels,
-        datasets: [
-          {label:'Revenue', data:qRev, backgroundColor:'rgba(94,158,140,0.7)', borderRadius:2},
-          {label:'Cost',    data:qCost, backgroundColor:'rgba(224,85,85,0.6)', borderRadius:2},
-        ]
-      },
-      options: {
-        responsive:true, maintainAspectRatio:false,
+      data: {labels: qLabels, datasets: [
+        {label:'Revenue', data:qRev, backgroundColor:'rgba(94,158,140,0.7)', borderRadius:2},
+        {label:'Cost',    data:qCost, backgroundColor:'rgba(224,85,85,0.6)', borderRadius:2},
+      ]},
+      options: {responsive:true, maintainAspectRatio:false,
         plugins:{legend:{labels:{color:'#8b95a8',font:{size:11}}}},
-        scales:{
-          x:{ticks:{color:'#7a8299',font:{size:9},maxRotation:60},grid:{color:DIM}},
-          y:{ticks:{color:'#7a8299',font:{size:10},callback:v=>'$'+v.toFixed(1)+'M'},grid:{color:DIM}}
-        }
-      }
+        scales:{x:{ticks:{color:'#7a8299',font:{size:9},maxRotation:60},grid:{color:DIM}},
+                y:{ticks:{color:'#7a8299',font:{size:10},callback:v=>'$'+v.toFixed(1)+'M'},grid:{color:DIM}}}}
     });
     const cumCtx = document.getElementById('cf-chart-cum');
     if (cumCtx) new Chart(cumCtx, {
       type: 'line',
-      data: {
-        labels: qLabels,
-        datasets: [{
-          label:'Cumulative CF',
-          data: qCum,
-          borderColor:'rgba(200,169,110,0.9)',
-          backgroundColor:'rgba(200,169,110,0.08)',
-          borderWidth:2, fill:true, pointRadius:2, tension:0.3
-        }]
-      },
-      options: {
-        responsive:true, maintainAspectRatio:false,
+      data: {labels: qLabels, datasets: [{
+        label:'Cumulative CF', data: qCum,
+        borderColor:'rgba(200,169,110,0.9)', backgroundColor:'rgba(200,169,110,0.08)',
+        borderWidth:2, fill:true, pointRadius:2, tension:0.3
+      }]},
+      options: {responsive:true, maintainAspectRatio:false,
         plugins:{legend:{labels:{color:'#8b95a8',font:{size:11}}}},
-        scales:{
-          x:{ticks:{color:'#7a8299',font:{size:9},maxRotation:60},grid:{color:DIM}},
-          y:{ticks:{color:'#7a8299',font:{size:10},callback:v=>'$'+v.toFixed(1)+'M'},grid:{color:DIM}}
-        }
-      }
+        scales:{x:{ticks:{color:'#7a8299',font:{size:9},maxRotation:60},grid:{color:DIM}},
+                y:{ticks:{color:'#7a8299',font:{size:10},callback:v=>'$'+v.toFixed(1)+'M'},grid:{color:DIM}}}}
     });
   });
 }

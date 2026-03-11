@@ -168,8 +168,17 @@ def calculate(inp: dict) -> dict:
     out["purchase_price"] = purchase_price
     out["closing_costs"]  = closing_costs
     out["total_land_cost"]= total_land
+    out["gross_acreage"]  = gross_ac
+    out["plant_net_out_acres"]   = round(total_plant_acres, 2)
+    out["det_net_out_acres"]     = round(det_total_acres, 2)
+    out["amenity_net_out_acres"] = round(amenity_acres_total, 2)
+    out["parks_net_out_acres"]   = round(parks_acres, 2)
+    out["other_net_out_acres"]   = round(other_acres_total, 2)
+    out["road_net_out_acres"]    = round(road_acres_total, 2)
     out["net_out_total"]  = net_out_total
     out["dev_acres"]      = dev_acres
+    out["comm_pod_acres_net"] = round(comm_pod_acres, 2)
+    out["res_pod_acres_net"]  = round(res_pod_acres, 2)
     out["residential_dev_acres"] = residential_dev_acres
     out["det_acres_each"] = det_acres_each
     out["det_total_acres"] = det_total_acres
@@ -358,6 +367,18 @@ def calculate(inp: dict) -> dict:
     # Lot sizes are 16 rows corresponding to FF 25, 30, 35, ..., 100 (5 FF increments)
     # Column A in Excel is the FF directly — use index-based lookup
     lot_sizes = inp.get("lot_sizes", [])
+
+    # Pre-compute mix percentages so each active lot type gets a share of residential_dev_acres.
+    # Use explicit pct_mix if provided; otherwise divide equally among active types.
+    active_lot_idx = [i for i, ls in enumerate(lot_sizes) if safe(ls.get("on", 0))]
+    explicit_mixes = {i: safe(lot_sizes[i].get("pct_mix", 0)) for i in active_lot_idx}
+    total_explicit = sum(explicit_mixes.values())
+    if total_explicit > 0:
+        lot_mix_pcts = {i: explicit_mixes[i] / total_explicit for i in active_lot_idx}
+    else:
+        n_active = len(active_lot_idx)
+        lot_mix_pcts = {i: 1.0 / n_active for i in active_lot_idx} if n_active else {}
+
     lot_rows = []
     for i, ls in enumerate(lot_sizes):
         # Front footage: use stored value if available, else derive from index
@@ -371,7 +392,9 @@ def calculate(inp: dict) -> dict:
             continue
         yield_ac = safe(ls.get("yield_per_ac"))
         pace     = safe(ls.get("pace"))  # lots/month
-        total_lots_this = int(residential_dev_acres * yield_ac) if yield_ac else 0
+        pct_this = lot_mix_pcts.get(i, 0)
+        lot_acres_this = residential_dev_acres * pct_this
+        total_lots_this = int(lot_acres_this * yield_ac) if yield_ac else 0
         lots_18mo = pace * 18 if pace else 0
         acres_18mo = lots_18mo / yield_ac if yield_ac else 0
         # Dev cost per lot — Excel K col = FF*(WSD+Paving) + landscaping + URD + fence
@@ -447,12 +470,13 @@ def calculate(inp: dict) -> dict:
 
     # ── 3b. ASSESSED VALUE & BOND REVENUES ───────────────────────────────────
     # lot_av must be computed here (before Section 4) so bond revenues are available
+    # AV = total_lots * home_price * av_pct  (av_pct ≈ 0.85 for Texas appraised value)
     lot_av = 0.0
     for lr in lot_rows:
         if safe(lr.get("on", 0)) and lr.get("total_lots", 0):
             hp = safe(lr.get("home_price", 0))
-            ff = lr.get("ff", 0)
-            lot_av += lr["total_lots"] * hp * 0.01 * mround(ff * 0.01 * 120, 100)
+            av_pct_lr = safe(lr.get("av_pct", 0.85))
+            lot_av += lr["total_lots"] * hp * av_pct_lr
 
     comm_av = 0.0
     for i, cp in enumerate(comm_pods):
@@ -780,6 +804,57 @@ def calculate(inp: dict) -> dict:
     out["below_line_total"]      = round(below_line)
 
     # ── 6. CASHFLOW DETAIL (for Cashflows tab) ───────────────────────────────
+    # Per-category monthly tracking (reconstructed for line-item cashflow display)
+    def _spread_cat(arr, amount, start_m, duration):
+        if duration <= 0 or amount <= 0: return
+        per = amount / duration
+        for m in range(int(start_m), int(start_m) + int(duration)):
+            if 1 <= m <= MAX_MONTHS: arr[m] += per
+
+    Z = lambda: [0.0] * (MAX_MONTHS + 1)
+    rc_lot = Z(); rc_res = Z(); rc_comm = Z(); rc_mud = Z()
+    cc_land = Z(); cc_plants = Z(); cc_amen = Z(); cc_det = Z()
+    cc_other = Z(); cc_roads = Z(); cc_lotdev = Z()
+
+    for td in td_rows:
+        mm = max(1, int(td["period"]))
+        if mm <= MAX_MONTHS: cc_land[mm] += td["total"]
+    for r in plant_cost_rows:
+        _spread_cat(cc_plants, r["total_cost"], r["start_month"], r["duration"])
+        _spread_cat(cc_plants, r["ph2_total_cost"], r["ph2_start_month"], r["ph2_duration"])
+    for r in amenity_cost_rows:
+        _spread_cat(cc_amen, r["total_cost"], r["start_month"], r["duration"])
+    for r in det_cost_rows:
+        _spread_cat(cc_det, r["total_cost"], r["start_month"], r["duration"])
+    for r in other_cost_rows:
+        _spread_cat(cc_other, r["total_cost"], r["start_month"], max(r["duration"], 1))
+    for r in road_cost_rows:
+        _spread_cat(cc_roads, r["total_cost"], r["start_month"], r["duration"])
+        _spread_cat(cc_roads, r["total_landscaping"], r["start_month"], r["duration"])
+    for m in range(1, MAX_MONTHS + 1):
+        cc_lotdev[m] = lot_cost_by_month[m]
+        rc_lot[m]    = lot_rev_by_month[m]
+    for i, rp in enumerate(res_pods):
+        if i >= res_pod_count: break
+        ppa_p = safe(rp.get("price_per_acre"))
+        cc_p  = safe(rp.get("closing_costs_pct", 0.045))
+        ifl   = safe(rp.get("impact_fee_per_lot", 0))
+        lpa   = safe(rp.get("implied_lots_per_acre", 0))
+        sp    = int(safe(rp.get("sale_period", proj_months)))
+        pr    = acres_per_res_pod * ppa_p * (1 - cc_p) + ifl * lpa * acres_per_res_pod
+        if pr > 0 and 1 <= sp <= MAX_MONTHS: rc_res[sp] += pr
+    for i, cp in enumerate(comm_pods):
+        if i >= comm_pod_count: break
+        psf_p = safe(cp.get("price_per_sf"))
+        cc_p  = safe(cp.get("closing_costs_pct", 0.045))
+        sp    = int(safe(cp.get("sale_period", proj_months)))
+        pr    = acres_per_comm_pod * 43560 * psf_p * (1 - cc_p)
+        if pr > 0 and 1 <= sp <= MAX_MONTHS: rc_comm[sp] += pr
+    if mud_bond_rev > 0:
+        rc_mud[min(mud_first_period, MAX_MONTHS)] += mud_bond_rev
+    if wcid_bond_rev > 0:
+        rc_mud[min(wcid_first_period, MAX_MONTHS)] += wcid_bond_rev
+
     # Monthly detail limited to project length
     out["cf_monthly"] = [
         {
@@ -788,6 +863,19 @@ def calculate(inp: dict) -> dict:
             "revenue": round(rev_monthly[m]),
             "cost": round(cost_monthly[m]),
             "net": round(rev_monthly[m] - cost_monthly[m]),
+            "rev_lot_sales": round(rc_lot[m]),
+            "rev_res_pods":  round(rc_res[m]),
+            "rev_comm_pods": round(rc_comm[m]),
+            "rev_mud_wcid":  round(rc_mud[m]),
+            "cost_land":     round(cc_land[m]),
+            "cost_plants":   round(cc_plants[m]),
+            "cost_amenities":round(cc_amen[m]),
+            "cost_detention":round(cc_det[m]),
+            "cost_other":    round(cc_other[m]),
+            "cost_roads":    round(cc_roads[m]),
+            "cost_lot_dev":  round(cc_lotdev[m]),
+            "cost_operating":round(max(0, cost_monthly[m] - cc_land[m] - cc_plants[m] - cc_amen[m]
+                                       - cc_det[m] - cc_other[m] - cc_roads[m] - cc_lotdev[m])),
         }
         for m in range(1, proj_months + 1)
     ]
