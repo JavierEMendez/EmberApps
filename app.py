@@ -176,12 +176,10 @@ def get_project(pid):
 def save_project(pid):
     data = request.json or {}
     inputs = data.get("inputs", {})
-    # Run calculation
     try:
         outputs = calculate(inputs)
     except Exception as e:
         return jsonify({"error": f"Calculation error: {e}"}), 500
-
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
@@ -299,18 +297,18 @@ def default_inputs(name="New Project"):
         "project_name": name,
         "address": "",
         "gross_acreage": 0,
-        "land_escalator": 0.05,  # Excel default: 5%
+        "land_escalator": 0.05,
         "purchase_price_per_acre": 0,
-        "closing_costs_pct": 0.045,  # Excel default: 4.5%
+        "closing_costs_pct": 0.045,
         "closing_date": "",
         "default_other_pct": 0.17,
         "sectional_other_pct": 0.20,
-        "landscaping_other_pct": 0.12,  # Excel default: 12%
+        "landscaping_other_pct": 0.12,
         "contingency": 0.05,
-        "site_work_pct": 0.01,  # Excel default: 1%
-        "fenced_pct": 0.25,  # Excel default: 25%
-        "cost_per_mailbox": 200,  # Excel default: $200
-        "cost_per_streetlight": 1700,  # Excel default: $1700,
+        "site_work_pct": 0.01,
+        "fenced_pct": 0.25,
+        "cost_per_mailbox": 200,
+        "cost_per_streetlight": 1700,
         "default_start_month": 1,
         "det_storage_rate": 0.5,
         "det_depth": 3,
@@ -323,39 +321,35 @@ def default_inputs(name="New Project"):
         "amenities": [{"type":"None","acres":0} for _ in range(6)],
         "other_netouts": [{"desc":"","acres":0} for _ in range(6)],
         "roads": [{"type":"","lf":0,"width":0,"road_setback":0,"landscaping_setback":0} for _ in range(6)],
-        "takedowns": [{"period":1,"pct":1.0}],
+        "takedowns": [{"period":0,"pct":0.5},{"period":36,"pct":0.5},{"period":0,"pct":0.0}],
         "plant_costs": [{"base_cost":0,"other_pct":0.17,"start_month":1,"ph2_base_cost":0,"ph2_other_pct":0.17,"ph2_start_month":37} for _ in range(8)],
         "amenity_costs": [{"base_cost":0,"other_pct":0.17,"start_month":1} for _ in range(6)],
-        "det_costs": [{"base_cost_per_cyd":0,"other_pct":0.17,"landscaping_per_foot":0} for _ in range(6)],
+        "det_costs": [{"other_pct":0.17,"landscaping_per_foot":2} for _ in range(6)],
         "other_costs": [{"base_cost":0,"other_pct":0.17,"start_month":1,"duration":1} for _ in range(6)],
         "road_costs": [{"other_pct":0.17,"start_month":1,"landscaping_per_sf":0,"light_spacing":0} for _ in range(6)],
-        "lot_sizes": [
-            {"on":0,"lot_sf":5000,"depth":120,"yield_per_ac":0,"pace":0,"home_price":0,
-             "wsd_per_ff":0,"paving_per_ff":0,"dev_start_month":1,"landscaping_per_lot":0,
-             "urd_per_lot":0,"lots_per_streetlight":0,"fence_cost_per_ff":0} for _ in range(16)
-        ],
+        "lot_sizes": [{"on":0,"lot_sf":5000,"depth":120,"yield_per_ac":0,"pace":0,"home_price":0,"wsd_per_ff":0,"paving_per_ff":0,"dev_start_month":1,"landscaping_per_lot":0,"urd_per_lot":0,"lots_per_streetlight":0,"fence_cost_per_ff":0} for _ in range(16)],
         "timing_method": "1 Takedown",
         "bem_period": 0,
         "bem_pct": 0,
         "brokerage_fees": 0.03,
         "lot_closing_costs": 0.01,
-        "take1_pct": 0.50,  # Excel: 50/25/25
+        "take1_pct": 0.50,
         "take2_pct": 0.25,
         "take3_pct": 0.25,
-        "price_per_ff": {str(yr): 1800 for yr in range(11)},  # Excel defaults: $1800/FF all years
+        "price_per_ff": {str(yr): 1800 for yr in range(11)},
         "res_pods": [{"acres":0,"price_per_acre":0,"closing_costs_pct":0.01,"implied_lots_per_acre":0,"impact_fee_per_lot":0,"sale_period":0} for _ in range(6)],
         "comm_pods": [{"acres":0,"price_per_sf":0,"closing_costs_pct":0.01,"sale_period":0,"av_per_acre":0,"av_delay_months":0} for _ in range(6)],
         "mud_bond": {"amount":0,"reimbursement_pct":0.8,"period":0,"rate":0,"term":0,"annual_payment":0},
         "wcid_bond": {"amount":0,"reimbursement_pct":0.8,"period":0,"rate":0,"term":0,"annual_payment":0},
         "marketing_pct": 0.02,
-        "prof_svc_pct": 0.015,  # Excel default: 1.5%
-        "dmf_pct": 0.025,  # Excel default: 2.5%
-        "personnel_monthly": 50000,  # Excel: $50K/mo general
-        "legal_monthly": 10000,  # Excel: $10K/mo
-        "mud_monthly": 35000,  # Excel: $35K/mo
+        "prof_svc_pct": 0.015,
+        "dmf_pct": 0.025,
+        "personnel_monthly": 50000,
+        "legal_monthly": 10000,
+        "mud_monthly": 35000,
         "mud_pct": 0,
-        "insurance_monthly": 10000,  # Excel: $10K/mo
-        "bookkeeping_monthly": 10000,  # Excel: $10K/mo
+        "insurance_monthly": 10000,
+        "bookkeeping_monthly": 10000,
     }
 
 @app.route("/api/projects/<int:pid>/export_excel", methods=["GET"])
@@ -382,11 +376,9 @@ def export_excel(pid):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-
 @app.route("/api/projects/<int:pid>/backup", methods=["GET"])
 @login_required
 def backup_project(pid):
-    """Download all project data as JSON — safe across redeployments."""
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM projects WHERE id=%s", (pid,))
@@ -394,7 +386,6 @@ def backup_project(pid):
     cur.close(); conn.close()
     if not proj:
         return jsonify({"error": "not found"}), 404
-    # Convert datetime fields to strings
     for k, v in proj.items():
         if hasattr(v, 'isoformat'):
             proj[k] = v.isoformat()
@@ -410,7 +401,6 @@ def backup_project(pid):
 @app.route("/api/projects/restore", methods=["POST"])
 @login_required
 def restore_project():
-    """Restore a project from a JSON backup file."""
     data = request.json or {}
     inputs  = data.get("inputs", {})
     outputs = data.get("outputs", {})
@@ -425,7 +415,6 @@ def restore_project():
     new_id = cur.fetchone()["id"]
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "id": new_id})
-
 
 if __name__ == "__main__":
     init_db()
