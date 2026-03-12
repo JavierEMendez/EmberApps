@@ -557,6 +557,7 @@ def calculate(inp: dict) -> dict:
     # Lot revenue: use $/FF x lot FF x takedown structure
     # Revenue (T1) comes 18 months after dev start (finished lots sell after construction)
     # BEM: bem_pct of revenue received bem_period months before T1 (at sale_month - bem_period)
+    # Excel-precise: also add premiums ($/FF), escalation (% on T2/T3 gross), fence fees ($/FF)
     revenue_start_offset = 18
     for lr in lot_rows:
         if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
@@ -564,9 +565,12 @@ def calculate(inp: dict) -> dict:
         pace = safe(lr.get("pace", 0))
         if pace <= 0:
             continue
-        total = int(lr["total_lots"])
-        sm    = int(safe(lr.get("dev_start_month", default_start_month)))
-        ff    = lr.get("ff", 0)
+        total        = int(lr["total_lots"])
+        sm           = int(safe(lr.get("dev_start_month", default_start_month)))
+        ff           = lr.get("ff", 0)
+        premium_pff  = safe(lr.get("premium_per_ff", 0))   # Revenue Inputs F27 $/FF
+        escalation   = safe(lr.get("escalation", 0))       # Revenue Inputs G27 annual rate
+        fence_fee_pff= safe(lr.get("fence_per_ff", 0))     # Revenue Inputs H27 $/FF
 
         delivered = 0
         m = sm + revenue_start_offset
@@ -587,12 +591,47 @@ def calculate(inp: dict) -> dict:
                 lot_rev_by_month[bem_m] += bem_amount
 
             # Apply takedown timing to remainder
+            t1_rev = remainder * take1_pct
+            t2_rev = remainder * take2_pct
+            t3_rev = remainder * take3_pct
             if m <= MAX_MONTHS:
-                lot_rev_by_month[m] += remainder * take1_pct
+                lot_rev_by_month[m] += t1_rev
             if m + 6 <= MAX_MONTHS:
-                lot_rev_by_month[m + 6] += remainder * take2_pct
+                lot_rev_by_month[m + 6] += t2_rev
             if m + 9 <= MAX_MONTHS:
-                lot_rev_by_month[m + 9] += remainder * take3_pct
+                lot_rev_by_month[m + 9] += t3_rev
+
+            # Premiums (Revenue Inputs F27): premium_$/FF × lots × FF, split at T1/T2/T3
+            if premium_pff and ff:
+                prem_total = batch * ff * premium_pff
+                if m <= MAX_MONTHS:
+                    lot_rev_by_month[m] += prem_total * take1_pct
+                if m + 6 <= MAX_MONTHS:
+                    lot_rev_by_month[m + 6] += prem_total * take2_pct
+                if m + 9 <= MAX_MONTHS:
+                    lot_rev_by_month[m + 9] += prem_total * take3_pct
+
+            # Escalation (Revenue Inputs G27): extra revenue at T2/T3 for price appreciation
+            # Excel: at T2 → esc/12 × 6 × T2_gross; at T3 → esc/12 × 9 × T3_gross
+            # T2/T3 gross uses pre-fee basis: gross_lot_rev × (1 - bem_pct) × take_pct
+            if escalation:
+                gross_remainder = gross_lot_rev * (1 - bem_pct)
+                escal_t2 = (escalation / 12) * 6 * (gross_remainder * take2_pct)
+                escal_t3 = (escalation / 12) * 9 * (gross_remainder * take3_pct)
+                if escal_t2 > 0 and m + 6 <= MAX_MONTHS:
+                    lot_rev_by_month[m + 6] += escal_t2
+                if escal_t3 > 0 and m + 9 <= MAX_MONTHS:
+                    lot_rev_by_month[m + 9] += escal_t3
+
+            # Fence fees revenue (Revenue Inputs H27): fence_$/FF × lots × FF, split at T1/T2/T3
+            if fence_fee_pff and ff:
+                fence_rev = batch * ff * fence_fee_pff
+                if m <= MAX_MONTHS:
+                    lot_rev_by_month[m] += fence_rev * take1_pct
+                if m + 6 <= MAX_MONTHS:
+                    lot_rev_by_month[m + 6] += fence_rev * take2_pct
+                if m + 9 <= MAX_MONTHS:
+                    lot_rev_by_month[m + 9] += fence_rev * take3_pct
 
             delivered += batch
             m += 1
