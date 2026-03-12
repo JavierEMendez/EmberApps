@@ -1484,9 +1484,9 @@ async function loadInputs() {
       </select></td>
       <td><input type="number" step="0.01" id="ci-ls-yield-${i}" value="${sv2(ls.yield_per_ac)}" data-saved="${ds(ls.yield_per_ac)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td><input type="number" step="0.25" id="ci-ls-pace-${i}" value="${sv2(ls.pace)}" data-saved="${ds(ls.pace)}" class="mono" oninput="markDirty()" ${dis}></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.lots_18mo?ls.lots_18mo.toFixed(0):'—'}</span></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.total_lots?ls.total_lots.toFixed(0):'—'}</span></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.acres_18mo?ls.acres_18mo.toFixed(1):'—'}</span></td>
+      <td class="calc-col"><span class="calc-cell">${isOn&&ls.pace?(ls.pace*18).toFixed(0):'—'}</span></td>
+      <td class="calc-col"><span id="ci-ls-total-${i}" class="calc-cell">${isOn&&ls.total_lots?ls.total_lots.toFixed(0):'—'}</span></td>
+      <td class="calc-col"><span class="calc-cell">${isOn&&ls.pace&&ls.yield_per_ac?((ls.pace*18)/ls.yield_per_ac).toFixed(1):'—'}</span></td>
       <td><input type="number" id="ci-ls-hp-${i}" value="${sv2(ls.home_price)}" data-saved="${ds(ls.home_price)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.wsd_per_ff?fmtC(ls.wsd_per_ff):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.paving_per_ff?fmtC(ls.paving_per_ff):'—'}</span></td>
@@ -1497,6 +1497,13 @@ async function loadInputs() {
       <td><input type="number" id="ci-ls-lsl-${i}" value="${sv2(ls.lots_per_streetlight)}" data-saved="${ds(ls.lots_per_streetlight)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td><input type="number" id="ci-ls-fen-${i}" value="${sv2(ls.fence_cost_per_ff)}" data-saved="${ds(ls.fence_cost_per_ff)}" class="mono" oninput="markDirty()" ${dis}></td>
     </tr>`;}).join('');
+  // Update total_lots calc cells from server output
+  if (c.lot_rows) {
+    c.lot_rows.forEach((lr, i) => {
+      const el = document.getElementById(`ci-ls-total-${i}`);
+      if (el) el.textContent = (lr.on && lr.total_lots) ? Math.round(lr.total_lots).toLocaleString() : '—';
+    });
+  }
 
   // Marketing section
   setCalc('ci-mkt-total', c.marketing_total);

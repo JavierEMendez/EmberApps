@@ -487,10 +487,16 @@ def calculate(inp: dict) -> dict:
         for lr in lot_rows:
             if lr.get("total_lots", 0) > 0:
                 pace = safe(lr.get("pace", 0))
-                sm   = safe(lr.get("dev_start_month", default_start_month))
+                sm   = int(safe(lr.get("dev_start_month", default_start_month)))
                 lots = lr.get("total_lots", 0)
-                months_to_sell = math.ceil(lots / pace) + int(sm) + 18 if pace else 0
-                max_lot_months = max(max_lot_months, months_to_sell)
+                build_time = max(0, int(safe(lr.get("build_time", 12))))
+                if pace > 0:
+                    lots_per_sec = max(1, int(round(pace * 18)))
+                    sec_count = math.ceil(lots / lots_per_sec)
+                    last_t3 = sm + sec_count * 18 + 9
+                    # account for home sales continuing after last T3
+                    last_home_sale = sm + sec_count * 18 + build_time + max(1, int(round(lots_per_sec / pace)))
+                    max_lot_months = max(max_lot_months, last_t3, last_home_sale)
         all_deliveries.append(max_lot_months)
 
     proj_months = min(max(all_deliveries + [60]), MAX_MONTHS) if all_deliveries else 60
@@ -604,10 +610,10 @@ def calculate(inp: dict) -> dict:
             remaining     -= section_lots
             section_start += 18
 
-    # Lot revenue: $/FF × FF × lots, with BEM + T1/T2/T3 takedown splits (Excel-precise)
-    # Revenues are GROSS (no fee deduction). Brokerage, closing, taxes, mailboxes
-    # flow as separate cost lines matching Cashflow rows 26, 29, 31, 32.
-    revenue_start_offset = 18
+    # Lot revenue: section lump-sum delivery matching Excel Calc_Revenues
+    # Each section delivers ALL its lots as a lump sum at section_delivery (sm+(k+1)*18).
+    # T1 = section_delivery, T2 = T1+6, T3 = T1+9.
+    # This matches Excel Revenue Inputs cols AG/AH/AI and Calc_Revenues rows 723-739.
     lot_brokerage_by_month = [0.0] * (MAX_MONTHS + 1)
     lot_closing_by_month   = [0.0] * (MAX_MONTHS + 1)
     lot_tax_by_month       = [0.0] * (MAX_MONTHS + 1)
@@ -622,115 +628,118 @@ def calculate(inp: dict) -> dict:
         total        = int(lr["total_lots"])
         sm           = int(safe(lr.get("dev_start_month", default_start_month)))
         ff           = lr.get("ff", 0)
-        premium_pff  = safe(lr.get("premium_per_ff", 0))   # Revenue Inputs F27
-        escalation   = safe(lr.get("escalation", 0))       # Revenue Inputs G27 annual rate
-        fence_fee_pff= safe(lr.get("fence_per_ff", 0))     # Revenue Inputs H27
-        mktg_fee_lot = safe(lr.get("marketing_fee", 0))    # Revenue Inputs I27/P col
-        lot_av_pct_t = safe(lr.get("lot_av_pct", 0.5))     # Revenue Inputs K27
-        lot_tax_rate = safe(lr.get("lot_tax_rate", 0.022)) # Revenue Inputs M27
-        # N27 = implied_lot_price × lot_av_pct × lot_tax_rate (J27 = base_$/FF × FF)
+        premium_pff  = safe(lr.get("premium_per_ff", 0))
+        escalation   = safe(lr.get("escalation", 0))
+        fence_fee_pff= safe(lr.get("fence_per_ff", 0))
+        mktg_fee_lot = safe(lr.get("marketing_fee", 0))
+        lot_av_pct_t = safe(lr.get("lot_av_pct", 0.5))
+        lot_tax_rate = safe(lr.get("lot_tax_rate", 0.022))
         lot_tax_per_lot = ff_by_year[0] * ff * lot_av_pct_t * lot_tax_rate
 
-        delivered = 0
-        m = sm + revenue_start_offset
-        while delivered < total and m <= MAX_MONTHS:
-            batch = min(int(pace), total - delivered)
-            year_idx = min(int((m - 1) / 12), 10)
+        lots_per_section = max(1, int(round(pace * 18)))
+        remaining = total
+        k = 0
+        while remaining > 0:
+            batch = min(lots_per_section, remaining)
+            t1_m  = sm + (k + 1) * 18        # T1 = section delivery month
+            t2_m  = t1_m + 6
+            t3_m  = t1_m + 9
+
+            year_idx = min(max(int((t1_m - 1) / 12), 0), 10)
             ff_rate = ff_by_year[year_idx] if year_idx < len(ff_by_year) else ff_by_year[-1]
             gross_lot_rev = batch * ff * ff_rate
 
-            # BEM: GROSS × bem_pct received bem_period months before T1 (Excel L71 = H71 × B4)
+            # BEM: received bem_period months before T1
             bem_amount = gross_lot_rev * bem_pct
-            bem_m = max(1, m - bem_period)
+            bem_m = max(1, t1_m - bem_period)
             if bem_m <= MAX_MONTHS:
                 lot_rev_by_month[bem_m] += bem_amount
 
-            # T1/T2/T3 gross revenues: (Gross − BEM) × take_pct (Excel S/T/U)
+            # T1/T2/T3 revenues (gross minus BEM, split by take_pcts)
             gross_remainder = gross_lot_rev * (1 - bem_pct)
-            if m <= MAX_MONTHS:
-                lot_rev_by_month[m]     += gross_remainder * take1_pct
-            if m + 6 <= MAX_MONTHS:
-                lot_rev_by_month[m + 6] += gross_remainder * take2_pct
-            if m + 9 <= MAX_MONTHS:
-                lot_rev_by_month[m + 9] += gross_remainder * take3_pct
+            if t1_m <= MAX_MONTHS:
+                lot_rev_by_month[t1_m] += gross_remainder * take1_pct
+            if t2_m <= MAX_MONTHS:
+                lot_rev_by_month[t2_m] += gross_remainder * take2_pct
+            if t3_m <= MAX_MONTHS:
+                lot_rev_by_month[t3_m] += gross_remainder * take3_pct
 
-            # Brokerage fees cost (Excel Y/Z/AA: take_pct × gross × brokerage_pct)
+            # Brokerage fees (cost)
             if brokerage_fees:
-                if m <= MAX_MONTHS:
-                    lot_brokerage_by_month[m]     += gross_lot_rev * take1_pct * brokerage_fees
-                if m + 6 <= MAX_MONTHS:
-                    lot_brokerage_by_month[m + 6] += gross_lot_rev * take2_pct * brokerage_fees
-                if m + 9 <= MAX_MONTHS:
-                    lot_brokerage_by_month[m + 9] += gross_lot_rev * take3_pct * brokerage_fees
+                if t1_m <= MAX_MONTHS:
+                    lot_brokerage_by_month[t1_m] += gross_lot_rev * take1_pct * brokerage_fees
+                if t2_m <= MAX_MONTHS:
+                    lot_brokerage_by_month[t2_m] += gross_lot_rev * take2_pct * brokerage_fees
+                if t3_m <= MAX_MONTHS:
+                    lot_brokerage_by_month[t3_m] += gross_lot_rev * take3_pct * brokerage_fees
 
-            # Lot closing costs (Excel AC/AD/AE: take_pct × gross × closing_pct)
+            # Lot closing costs (cost)
             if lot_closing_costs:
-                if m <= MAX_MONTHS:
-                    lot_closing_by_month[m]     += gross_lot_rev * take1_pct * lot_closing_costs
-                if m + 6 <= MAX_MONTHS:
-                    lot_closing_by_month[m + 6] += gross_lot_rev * take2_pct * lot_closing_costs
-                if m + 9 <= MAX_MONTHS:
-                    lot_closing_by_month[m + 9] += gross_lot_rev * take3_pct * lot_closing_costs
+                if t1_m <= MAX_MONTHS:
+                    lot_closing_by_month[t1_m] += gross_lot_rev * take1_pct * lot_closing_costs
+                if t2_m <= MAX_MONTHS:
+                    lot_closing_by_month[t2_m] += gross_lot_rev * take2_pct * lot_closing_costs
+                if t3_m <= MAX_MONTHS:
+                    lot_closing_by_month[t3_m] += gross_lot_rev * take3_pct * lot_closing_costs
 
-            # Lot taxes cost (Excel V/W/X: lots_at_takedown × N27_tax_per_lot)
+            # Lot taxes (cost)
             if lot_tax_per_lot:
-                if m <= MAX_MONTHS:
-                    lot_tax_by_month[m]     += batch * take1_pct * lot_tax_per_lot
-                if m + 6 <= MAX_MONTHS:
-                    lot_tax_by_month[m + 6] += batch * take2_pct * lot_tax_per_lot
-                if m + 9 <= MAX_MONTHS:
-                    lot_tax_by_month[m + 9] += batch * take3_pct * lot_tax_per_lot
+                if t1_m <= MAX_MONTHS:
+                    lot_tax_by_month[t1_m] += batch * take1_pct * lot_tax_per_lot
+                if t2_m <= MAX_MONTHS:
+                    lot_tax_by_month[t2_m] += batch * take2_pct * lot_tax_per_lot
+                if t3_m <= MAX_MONTHS:
+                    lot_tax_by_month[t3_m] += batch * take3_pct * lot_tax_per_lot
 
-            # Mailbox cost (Cashflow row 29: cost_per_mailbox × lots at each takedown)
+            # Mailboxes (cost)
             if cost_per_mailbox:
-                if m <= MAX_MONTHS:
-                    lot_mailbox_by_month[m]     += batch * take1_pct * cost_per_mailbox
-                if m + 6 <= MAX_MONTHS:
-                    lot_mailbox_by_month[m + 6] += batch * take2_pct * cost_per_mailbox
-                if m + 9 <= MAX_MONTHS:
-                    lot_mailbox_by_month[m + 9] += batch * take3_pct * cost_per_mailbox
+                if t1_m <= MAX_MONTHS:
+                    lot_mailbox_by_month[t1_m] += batch * take1_pct * cost_per_mailbox
+                if t2_m <= MAX_MONTHS:
+                    lot_mailbox_by_month[t2_m] += batch * take2_pct * cost_per_mailbox
+                if t3_m <= MAX_MONTHS:
+                    lot_mailbox_by_month[t3_m] += batch * take3_pct * cost_per_mailbox
 
-            # Premiums (Revenue Inputs F27): premium_$/FF × lots × FF at T1/T2/T3
+            # Premiums (revenue)
             if premium_pff and ff:
                 prem_total = batch * ff * premium_pff
-                if m <= MAX_MONTHS:
-                    lot_rev_by_month[m]     += prem_total * take1_pct
-                if m + 6 <= MAX_MONTHS:
-                    lot_rev_by_month[m + 6] += prem_total * take2_pct
-                if m + 9 <= MAX_MONTHS:
-                    lot_rev_by_month[m + 9] += prem_total * take3_pct
+                if t1_m <= MAX_MONTHS:
+                    lot_rev_by_month[t1_m] += prem_total * take1_pct
+                if t2_m <= MAX_MONTHS:
+                    lot_rev_by_month[t2_m] += prem_total * take2_pct
+                if t3_m <= MAX_MONTHS:
+                    lot_rev_by_month[t3_m] += prem_total * take3_pct
 
-            # Escalation revenue (Revenue Inputs G27): extra at T2/T3 for price appreciation
-            # Excel Calc_Revenues rows 5-241: esc/12 × elapsed_months × gross_takedown_rev
+            # Escalation (revenue, at T2 and T3 relative to T1)
             if escalation:
                 escal_t2 = (escalation / 12) * 6 * (gross_remainder * take2_pct)
                 escal_t3 = (escalation / 12) * 9 * (gross_remainder * take3_pct)
-                if escal_t2 > 0 and m + 6 <= MAX_MONTHS:
-                    lot_rev_by_month[m + 6] += escal_t2
-                if escal_t3 > 0 and m + 9 <= MAX_MONTHS:
-                    lot_rev_by_month[m + 9] += escal_t3
+                if escal_t2 > 0 and t2_m <= MAX_MONTHS:
+                    lot_rev_by_month[t2_m] += escal_t2
+                if escal_t3 > 0 and t3_m <= MAX_MONTHS:
+                    lot_rev_by_month[t3_m] += escal_t3
 
-            # Fence fees revenue (Revenue Inputs H27): fence_$/FF × lots × FF at T1/T2/T3
+            # Fence fees (revenue)
             if fence_fee_pff and ff:
                 fence_rev = batch * ff * fence_fee_pff
-                if m <= MAX_MONTHS:
-                    lot_rev_by_month[m]     += fence_rev * take1_pct
-                if m + 6 <= MAX_MONTHS:
-                    lot_rev_by_month[m + 6] += fence_rev * take2_pct
-                if m + 9 <= MAX_MONTHS:
-                    lot_rev_by_month[m + 9] += fence_rev * take3_pct
+                if t1_m <= MAX_MONTHS:
+                    lot_rev_by_month[t1_m] += fence_rev * take1_pct
+                if t2_m <= MAX_MONTHS:
+                    lot_rev_by_month[t2_m] += fence_rev * take2_pct
+                if t3_m <= MAX_MONTHS:
+                    lot_rev_by_month[t3_m] += fence_rev * take3_pct
 
-            # Marketing fees revenue (Revenue Inputs I27/P col): per-lot fee at T1/T2/T3
+            # Marketing fees (revenue)
             if mktg_fee_lot:
-                if m <= MAX_MONTHS:
-                    lot_rev_by_month[m]     += batch * take1_pct * mktg_fee_lot
-                if m + 6 <= MAX_MONTHS:
-                    lot_rev_by_month[m + 6] += batch * take2_pct * mktg_fee_lot
-                if m + 9 <= MAX_MONTHS:
-                    lot_rev_by_month[m + 9] += batch * take3_pct * mktg_fee_lot
+                if t1_m <= MAX_MONTHS:
+                    lot_rev_by_month[t1_m] += batch * take1_pct * mktg_fee_lot
+                if t2_m <= MAX_MONTHS:
+                    lot_rev_by_month[t2_m] += batch * take2_pct * mktg_fee_lot
+                if t3_m <= MAX_MONTHS:
+                    lot_rev_by_month[t3_m] += batch * take3_pct * mktg_fee_lot
 
-            delivered += batch
-            m += 1
+            remaining -= batch
+            k += 1
 
     for m in range(1, MAX_MONTHS + 1):
         rev_monthly[m]  += lot_rev_by_month[m]
@@ -777,6 +786,7 @@ def calculate(inp: dict) -> dict:
     #   2. Homes complete build_time months after lot delivery (row 742)
     #   3. Homes sell from completed inventory at pace/month (rows 763-798)
     #   4. Cumulative AV = running sum of homes_sold * av_per_unit (rows 803+823)
+    _last_home_sale_m = 0
     av_by_month = [0.0] * (MAX_MONTHS + 2)
     for lr in lot_rows:
         if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
@@ -817,6 +827,8 @@ def calculate(inp: dict) -> dict:
             sold_this  = min(inventory, pace_lr)
             cum_sold  += sold_this
             av_by_month[m] += sold_this * av_per_lot
+            if sold_this > 0:
+                _last_home_sale_m = m
 
     lot_av = sum(av_by_month[1:MAX_MONTHS + 1])
 
@@ -879,38 +891,77 @@ def calculate(inp: dict) -> dict:
     for bp, amt in wcid_issuances:
         rev_monthly[bp] += amt
 
-    # Operating costs spread over project life
+    # Operating costs — Excel-precise end periods
+    # last_lot_period  = last month where any lot revenue falls (last T3 across all sections)
+    # last_home_period = last month where homes are sold (from AV inventory model)
     total_lot_revenue_gross = sum(lot_rev_by_month)
-    marketing_total = total_lot_revenue_gross * marketing_pct
-    prof_svc_total  = total_lot_revenue_gross * prof_svc_pct
+    last_lot_period  = max((m for m in range(1, MAX_MONTHS + 1) if lot_rev_by_month[m] > 0), default=proj_months)
+    last_home_period = _last_home_sale_m if _last_home_sale_m > 0 else last_lot_period
+
+    marketing_total  = total_lot_revenue_gross * marketing_pct
+    prof_svc_total   = total_lot_revenue_gross * prof_svc_pct
 
     total_det_landscaping = sum(r.get("total_landscaping", 0) for r in det_cost_rows)
 
-    # DMF: % of total hard costs (land + infrastructure + lot dev) — matches Excel A99
+    # DMF: % of total hard costs (Excel A99 = total_cost * 2.5%)
     hard_costs = (total_land + total_plant_cost + total_amenity_cost + total_det_cost +
                   total_det_landscaping + total_other_cost + total_road_cost +
                   total_road_landscaping + total_dev_cost + total_lot_landscaping)
     dmf_total = hard_costs * dmf_pct
 
-    # Site work cost: % of lot revenues (Excel A15 in Cashflow, B9 in Cost Inputs)
+    # Site work: % of lot revenues
     site_work_total = site_work_pct * total_lot_revenue_gross
 
-    spread_cost(cost_monthly, marketing_total,     1, proj_months)
-    spread_cost(cost_monthly, prof_svc_total,      1, proj_months)
-    spread_cost(cost_monthly, dmf_total,           1, proj_months)
-    spread_cost(cost_monthly, site_work_total,     1, proj_months)
+    # Marketing: C91 = total / last_home_period, months 1..last_home_period
+    mkt_dur   = max(1, last_home_period)
+    mkt_per_m = marketing_total / mkt_dur
+    spread_cost(cost_monthly, marketing_total, 1, mkt_dur)
 
-    for m in range(1, proj_months + 1):
+    # Prof Services: C95 = total / last_lot_period, months 1..last_lot_period
+    ps_dur    = max(1, last_lot_period)
+    ps_per_m  = prof_svc_total / ps_dur
+    spread_cost(cost_monthly, prof_svc_total, 1, ps_dur)
+
+    # DMF: spread over project length
+    spread_cost(cost_monthly, dmf_total, 1, proj_months)
+    spread_cost(cost_monthly, site_work_total, 1, proj_months)
+
+    # General Personnel: $X/month through last_lot_period (Excel D103 = D95 = last takedown)
+    gen_pers_end = max(1, last_lot_period)
+    for m in range(1, gen_pers_end + 1):
         if m <= MAX_MONTHS:
-            cost_monthly[m] += personnel_mo + legal_mo + insurance_mo + bookkeeping_mo
+            cost_monthly[m] += personnel_mo
 
-    # Marketing personnel runs through final home sale period
-    spread_cost(cost_monthly, marketing_personnel_mo * proj_months, 1, proj_months)
+    # Marketing Personnel: $X/month through last_home_period (Excel D104 = last home sale)
+    mkt_pers_end = max(1, last_home_period)
+    for m in range(1, mkt_pers_end + 1):
+        if m <= MAX_MONTHS:
+            cost_monthly[m] += marketing_personnel_mo
 
-    # MUD & HOA Advances: run for mud_pct_duration fraction of project length
-    # Excel E112 = MROUND(D108 * D112, 1) where D112 = mud_pct (what % of project)
-    mud_duration = max(1, int(mround(proj_months * mud_pct_duration, 1))) if mud_pct_duration > 0 else proj_months
-    spread_cost(cost_monthly, mud_mo * mud_duration, 1, mud_duration)
+    # Legal: $X/month through last_lot_period (Excel D108 = D103 = D95)
+    legal_end = max(1, last_lot_period)
+    for m in range(1, legal_end + 1):
+        if m <= MAX_MONTHS:
+            cost_monthly[m] += legal_mo
+
+    # Insurance: $X/month through last_home_period (Excel D116 = last home sale)
+    ins_end = max(1, last_home_period)
+    for m in range(1, ins_end + 1):
+        if m <= MAX_MONTHS:
+            cost_monthly[m] += insurance_mo
+
+    # Bookkeeping: $X/month through last_home_period (Excel D120 = D104 = last home sale)
+    bk_end = max(1, last_home_period)
+    for m in range(1, bk_end + 1):
+        if m <= MAX_MONTHS:
+            cost_monthly[m] += bookkeeping_mo
+
+    # MUD & HOA Advances: Excel E112 = MROUND(last_lot_period * mud_pct, 1)
+    mud_end = max(1, int(mround(last_lot_period * mud_pct_duration, 1))) if mud_pct_duration > 0 else 1
+    for m in range(1, mud_end + 1):
+        if m <= MAX_MONTHS:
+            cost_monthly[m] += mud_mo
+    mud_total = mud_mo * mud_end
 
     # Streetlight cost
     streetlight_total = total_streetlights * cost_per_streetlight
@@ -924,7 +975,8 @@ def calculate(inp: dict) -> dict:
     roc           = gross_profit / total_cost if total_cost else 0
 
     infra_cost = total_plant_cost + total_amenity_cost + total_det_cost + total_det_landscaping + total_other_cost + total_road_cost + total_road_landscaping + total_dev_cost + total_lot_landscaping
-    below_line = dmf_total + (personnel_mo + marketing_personnel_mo + legal_mo + insurance_mo + bookkeeping_mo) * proj_months + mud_mo * mud_duration
+    below_line = (dmf_total + personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end
+                  + legal_mo * legal_end + insurance_mo * ins_end + bookkeeping_mo * bk_end + mud_total)
 
     net_profit    = gross_profit
     net_margin    = net_profit / total_revenue if total_revenue else 0
@@ -989,11 +1041,34 @@ def calculate(inp: dict) -> dict:
     out["cost_prof_svc"]    = round(prof_svc_total)
     out["cost_dmf"]         = round(dmf_total)
     out["cost_site_work"]   = round(site_work_total)
-    out["cost_personnel"]   = round((personnel_mo + marketing_personnel_mo) * proj_months)
-    out["cost_legal"]       = round(legal_mo * proj_months)
-    out["cost_mud_hoa"]     = round(mud_mo * mud_duration)
-    out["cost_insurance"]   = round(insurance_mo * proj_months)
-    out["cost_bookkeeping"] = round(bookkeeping_mo * proj_months)
+    # Operating cost detail outputs for Cost Inputs tab display
+    out["marketing_total"]             = round(marketing_total)
+    out["marketing_final_period"]      = last_home_period
+    out["marketing_per_month"]         = round(mkt_per_m)
+    out["prof_services_total"]         = round(prof_svc_total)
+    out["prof_services_per_month"]     = round(ps_per_m)
+    out["prof_services_final_period"]  = last_lot_period
+    out["dmf_total"]                   = round(dmf_total)
+    out["personnel"] = {
+        "general_total":   round(personnel_mo * gen_pers_end),
+        "marketing_total": round(marketing_personnel_mo * mkt_pers_end),
+    }
+    out["general_final_period"]        = gen_pers_end
+    out["marketing_pers_final_period"] = mkt_pers_end
+    out["legal_total"]                 = round(legal_mo * legal_end)
+    out["legal_final_period"]          = legal_end
+    out["mud_hoa_total"]               = round(mud_total)
+    out["mud_hoa_final_period"]        = mud_end
+    out["mud_hoa_monthly"]             = round(mud_mo)
+    out["insurance_total"]             = round(insurance_mo * ins_end)
+    out["insurance_final_period"]      = ins_end
+    out["bookkeeping_total"]           = round(bookkeeping_mo * bk_end)
+    out["bookkeeping_final_period"]    = bk_end
+    out["cost_personnel"]   = round(personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end)
+    out["cost_legal"]       = round(legal_mo * legal_end)
+    out["cost_mud_hoa"]     = round(mud_total)
+    out["cost_insurance"]   = round(insurance_mo * ins_end)
+    out["cost_bookkeeping"] = round(bookkeeping_mo * bk_end)
     out["cost_streetlights"] = round(streetlight_total)
     out["cost_brokerage"]   = round(sum(lot_brokerage_by_month))
     out["cost_closing"]     = round(sum(lot_closing_by_month))
