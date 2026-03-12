@@ -523,11 +523,18 @@ def calculate(inp: dict) -> dict:
         spread_cost(cost_monthly, r["total_cost"], r["start_month"], r["duration"])
     for r in det_cost_rows:
         spread_cost(cost_monthly, r["total_cost"], r["start_month"], r["duration"])
+        # Detention landscaping: lump sum at delivery period (Excel Calc_Costs row 717)
+        dp = int(r["delivery_period"])
+        if 1 <= dp <= MAX_MONTHS and r.get("total_landscaping", 0) > 0:
+            cost_monthly[dp] += r["total_landscaping"]
     for r in other_cost_rows:
         spread_cost(cost_monthly, r["total_cost"], r["start_month"], max(r["duration"], 1))
     for r in road_cost_rows:
         spread_cost(cost_monthly, r["total_cost"], r["start_month"], r["duration"])
-        spread_cost(cost_monthly, r["total_landscaping"], r["start_month"], r["duration"])
+        # Road landscaping: lump sum at delivery period (Excel Calc_Costs row 718)
+        dp = int(r["delivery_period"])
+        if 1 <= dp <= MAX_MONTHS and r["total_landscaping"] > 0:
+            cost_monthly[dp] += r["total_landscaping"]
 
     # Lot development costs + revenues
     lot_rev_by_month = [0.0] * (MAX_MONTHS + 1)
@@ -542,18 +549,43 @@ def calculate(inp: dict) -> dict:
             continue
         total = int(lr["total_lots"])
         sm    = int(safe(lr.get("dev_start_month", default_start_month)))
-        dev_cost = lr.get("dev_cost_per_lot", 0)
-        ls_lot   = safe(lr.get("landscaping_per_lot", 0))
 
+        # Track lot delivery counts (for AV buildup / revenue timing)
         delivered = 0
         m = sm
         while delivered < total and m <= MAX_MONTHS:
             batch = min(int(pace), total - delivered)
             lot_count_by_month[m] += batch
-            lot_cost_by_month[m] += batch * dev_cost
-            lot_cost_by_month[m] += batch * ls_lot
             delivered += batch
             m += 1
+
+    # Lot dev costs: Excel Calc_Costs SUMPRODUCT 18-month schedule per section
+    # Phase 1 (months 0-11): total_dev_cost/12 per month  [Excel G col]
+    # dev_cost_per_lot already includes landscaping — no separate ls_lot addition
+    for lr in lot_rows:
+        if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
+            continue
+        pace = safe(lr.get("pace", 0))
+        if pace <= 0:
+            continue
+        total            = int(lr["total_lots"])
+        sm               = int(safe(lr.get("dev_start_month", default_start_month)))
+        dev_cost_per_lot = lr.get("dev_cost_per_lot", 0)
+        lots_per_section = max(1, int(pace * 18))  # Excel lots_18mo
+
+        remaining      = total
+        section_start  = sm
+        while remaining > 0:
+            section_lots  = min(lots_per_section, remaining)
+            section_cost  = section_lots * dev_cost_per_lot
+            # Spread evenly over 12-month Phase 1 window (Excel G col = section_cost/12)
+            per_month = section_cost / 12
+            for mo in range(12):
+                m = section_start + mo
+                if 1 <= m <= MAX_MONTHS:
+                    lot_cost_by_month[m] += per_month
+            remaining     -= section_lots
+            section_start += 18
 
     # Lot revenue: $/FF × FF × lots, with BEM + T1/T2/T3 takedown splits (Excel-precise)
     # Revenues are GROSS (no fee deduction). Brokerage, closing, taxes, mailboxes
@@ -811,9 +843,13 @@ def calculate(inp: dict) -> dict:
     marketing_total = total_lot_revenue_gross * marketing_pct
     prof_svc_total  = total_lot_revenue_gross * prof_svc_pct
 
+    total_det_landscaping = sum(r.get("total_landscaping", 0) for r in det_cost_rows)
+
     # DMF: % of total hard costs (land + infrastructure + lot dev) — matches Excel A99
+    # total_dev_cost already includes landscaping_per_lot (baked into dev_cost_per_lot)
     hard_costs = (total_land + total_plant_cost + total_amenity_cost + total_det_cost +
-                  total_other_cost + total_road_cost + total_road_landscaping + total_dev_cost + total_lot_landscaping)
+                  total_det_landscaping + total_other_cost + total_road_cost +
+                  total_road_landscaping + total_dev_cost)
     dmf_total = hard_costs * dmf_pct
 
     # Site work cost: % of lot revenues (Excel A15 in Cashflow, B9 in Cost Inputs)
@@ -847,7 +883,7 @@ def calculate(inp: dict) -> dict:
     gross_margin  = gross_profit / total_revenue if total_revenue else 0
     roc           = gross_profit / total_cost if total_cost else 0
 
-    infra_cost = total_plant_cost + total_amenity_cost + total_det_cost + total_other_cost + total_road_cost + total_road_landscaping + total_dev_cost
+    infra_cost = total_plant_cost + total_amenity_cost + total_det_cost + total_det_landscaping + total_other_cost + total_road_cost + total_road_landscaping + total_dev_cost
     below_line = dmf_total + (personnel_mo + marketing_personnel_mo + legal_mo + insurance_mo + bookkeeping_mo) * proj_months + mud_mo * mud_duration
 
     net_profit    = gross_profit
@@ -907,7 +943,7 @@ def calculate(inp: dict) -> dict:
     out["cost_detention"]   = round(total_det_cost)
     out["cost_other"]       = round(total_other_cost)
     out["cost_roads"]       = round(total_road_cost + total_road_landscaping)
-    out["cost_lot_dev"]     = round(total_dev_cost + total_lot_landscaping)
+    out["cost_lot_dev"]     = round(total_dev_cost)  # landscaping already included in dev_cost_per_lot
     out["cost_marketing"]   = round(marketing_total)
     out["cost_prof_svc"]    = round(prof_svc_total)
     out["cost_dmf"]         = round(dmf_total)
@@ -973,11 +1009,16 @@ def calculate(inp: dict) -> dict:
         _spread_cat(cc_amen, r["total_cost"], r["start_month"], r["duration"])
     for r in det_cost_rows:
         _spread_cat(cc_det, r["total_cost"], r["start_month"], r["duration"])
+        dp = int(r["delivery_period"])
+        if 1 <= dp <= MAX_MONTHS and r.get("total_landscaping", 0) > 0:
+            cc_det[dp] += r["total_landscaping"]
     for r in other_cost_rows:
         _spread_cat(cc_other, r["total_cost"], r["start_month"], max(r["duration"], 1))
     for r in road_cost_rows:
         _spread_cat(cc_roads, r["total_cost"], r["start_month"], r["duration"])
-        _spread_cat(cc_roads, r["total_landscaping"], r["start_month"], r["duration"])
+        dp = int(r["delivery_period"])
+        if 1 <= dp <= MAX_MONTHS and r["total_landscaping"] > 0:
+            cc_roads[dp] += r["total_landscaping"]
     for m in range(1, MAX_MONTHS + 1):
         cc_lotdev[m] = lot_cost_by_month[m]
         rc_lot[m]    = lot_rev_by_month[m]
