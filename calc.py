@@ -397,13 +397,13 @@ def calculate(inp: dict) -> dict:
         total_lots_this = int(lot_acres_this * yield_ac) if yield_ac else 0
         lots_18mo = pace * 18 if pace else 0
         acres_18mo = lots_18mo / yield_ac if yield_ac else 0
-        # Dev cost per lot — Excel K col = FF*(WSD+Paving) + landscaping + URD + fence
+        # Dev cost per lot — Excel K col = FF*(WSD+Paving) + URD + fence
+        # Landscaping is tracked separately and hits at section delivery
         wsd_ff    = safe(ls.get("wsd_per_ff", 0))
         pave_ff   = safe(ls.get("paving_per_ff", 0))
-        ls_lot    = safe(ls.get("landscaping_per_lot", 0))
         urd_lot   = safe(ls.get("urd_per_lot", 0))
         fence_ff  = safe(ls.get("fence_cost_per_ff", 0))
-        dev_cost  = (wsd_ff + pave_ff) * ff + ls_lot + urd_lot + fence_ff * ff * fenced_pct
+        dev_cost  = (wsd_ff + pave_ff) * ff + urd_lot + fence_ff * ff * fenced_pct
         lot_rows.append({
             **ls,
             "total_lots": total_lots_this,
@@ -559,9 +559,11 @@ def calculate(inp: dict) -> dict:
             delivered += batch
             m += 1
 
-    # Lot dev costs: Excel Calc_Costs SUMPRODUCT 18-month schedule per section
-    # Phase 1 (months 0-11): total_dev_cost/12 per month  [Excel G col]
-    # dev_cost_per_lot already includes landscaping — no separate ls_lot addition
+    # Lot dev costs: 18-month section schedule matching Excel
+    # Phase 1 (months 0–11): 10% of section dev cost spread evenly = section_cost*0.10/12 per month
+    # Phase 2 (months 12–17): 90% of section dev cost spread evenly = section_cost*0.90/6 per month
+    # Landscaping (lot_landscaping_by_month): lump sum at section delivery = section_start + 18
+    lot_landscaping_by_month = [0.0] * (MAX_MONTHS + 1)
     for lr in lot_rows:
         if not safe(lr.get("on", 0)) or lr.get("total_lots", 0) == 0:
             continue
@@ -570,7 +572,8 @@ def calculate(inp: dict) -> dict:
             continue
         total            = int(lr["total_lots"])
         sm               = int(safe(lr.get("dev_start_month", default_start_month)))
-        dev_cost_per_lot = lr.get("dev_cost_per_lot", 0)
+        dev_cost_per_lot = lr.get("dev_cost_per_lot", 0)   # excl landscaping
+        ls_per_lot       = safe(lr.get("landscaping_per_lot", 0))
         lots_per_section = max(1, int(pace * 18))  # Excel lots_18mo
 
         remaining      = total
@@ -578,12 +581,26 @@ def calculate(inp: dict) -> dict:
         while remaining > 0:
             section_lots  = min(lots_per_section, remaining)
             section_cost  = section_lots * dev_cost_per_lot
-            # Spread evenly over 12-month Phase 1 window (Excel G col = section_cost/12)
-            per_month = section_cost / 12
+
+            # Phase 1: 10% spread over months 0–11
+            ph1_per_month = section_cost * 0.10 / 12
             for mo in range(12):
                 m = section_start + mo
                 if 1 <= m <= MAX_MONTHS:
-                    lot_cost_by_month[m] += per_month
+                    lot_cost_by_month[m] += ph1_per_month
+
+            # Phase 2: 90% spread over months 12–17
+            ph2_per_month = section_cost * 0.90 / 6
+            for mo in range(12, 18):
+                m = section_start + mo
+                if 1 <= m <= MAX_MONTHS:
+                    lot_cost_by_month[m] += ph2_per_month
+
+            # Landscaping: lump sum at delivery (section_start + 18)
+            delivery_m = section_start + 18
+            if 1 <= delivery_m <= MAX_MONTHS and ls_per_lot:
+                lot_landscaping_by_month[delivery_m] += section_lots * ls_per_lot
+
             remaining     -= section_lots
             section_start += 18
 
@@ -718,6 +735,7 @@ def calculate(inp: dict) -> dict:
     for m in range(1, MAX_MONTHS + 1):
         rev_monthly[m]  += lot_rev_by_month[m]
         cost_monthly[m] += lot_cost_by_month[m]
+        cost_monthly[m] += lot_landscaping_by_month[m]
         cost_monthly[m] += lot_brokerage_by_month[m]
         cost_monthly[m] += lot_closing_by_month[m]
         cost_monthly[m] += lot_tax_by_month[m]
@@ -846,10 +864,9 @@ def calculate(inp: dict) -> dict:
     total_det_landscaping = sum(r.get("total_landscaping", 0) for r in det_cost_rows)
 
     # DMF: % of total hard costs (land + infrastructure + lot dev) — matches Excel A99
-    # total_dev_cost already includes landscaping_per_lot (baked into dev_cost_per_lot)
     hard_costs = (total_land + total_plant_cost + total_amenity_cost + total_det_cost +
                   total_det_landscaping + total_other_cost + total_road_cost +
-                  total_road_landscaping + total_dev_cost)
+                  total_road_landscaping + total_dev_cost + total_lot_landscaping)
     dmf_total = hard_costs * dmf_pct
 
     # Site work cost: % of lot revenues (Excel A15 in Cashflow, B9 in Cost Inputs)
@@ -883,7 +900,7 @@ def calculate(inp: dict) -> dict:
     gross_margin  = gross_profit / total_revenue if total_revenue else 0
     roc           = gross_profit / total_cost if total_cost else 0
 
-    infra_cost = total_plant_cost + total_amenity_cost + total_det_cost + total_det_landscaping + total_other_cost + total_road_cost + total_road_landscaping + total_dev_cost
+    infra_cost = total_plant_cost + total_amenity_cost + total_det_cost + total_det_landscaping + total_other_cost + total_road_cost + total_road_landscaping + total_dev_cost + total_lot_landscaping
     below_line = dmf_total + (personnel_mo + marketing_personnel_mo + legal_mo + insurance_mo + bookkeeping_mo) * proj_months + mud_mo * mud_duration
 
     net_profit    = gross_profit
@@ -943,7 +960,8 @@ def calculate(inp: dict) -> dict:
     out["cost_detention"]   = round(total_det_cost)
     out["cost_other"]       = round(total_other_cost)
     out["cost_roads"]       = round(total_road_cost + total_road_landscaping)
-    out["cost_lot_dev"]     = round(total_dev_cost)  # landscaping already included in dev_cost_per_lot
+    out["cost_lot_dev"]          = round(total_dev_cost)
+    out["cost_lot_landscaping"]  = round(total_lot_landscaping)
     out["cost_marketing"]   = round(marketing_total)
     out["cost_prof_svc"]    = round(prof_svc_total)
     out["cost_dmf"]         = round(dmf_total)
@@ -997,7 +1015,7 @@ def calculate(inp: dict) -> dict:
     Z = lambda: [0.0] * (MAX_MONTHS + 1)
     rc_lot = Z(); rc_res = Z(); rc_comm = Z(); rc_mud = Z()
     cc_land = Z(); cc_plants = Z(); cc_amen = Z(); cc_det = Z()
-    cc_other = Z(); cc_roads = Z(); cc_lotdev = Z()
+    cc_other = Z(); cc_roads = Z(); cc_lotdev = Z(); cc_lot_landscape = Z()
 
     for td in td_rows:
         mm = max(1, int(td["period"]))
@@ -1020,8 +1038,9 @@ def calculate(inp: dict) -> dict:
         if 1 <= dp <= MAX_MONTHS and r["total_landscaping"] > 0:
             cc_roads[dp] += r["total_landscaping"]
     for m in range(1, MAX_MONTHS + 1):
-        cc_lotdev[m] = lot_cost_by_month[m]
-        rc_lot[m]    = lot_rev_by_month[m]
+        cc_lotdev[m]        = lot_cost_by_month[m]
+        cc_lot_landscape[m] = lot_landscaping_by_month[m]
+        rc_lot[m]           = lot_rev_by_month[m]
     for i, rp in enumerate(res_pods):
         if i >= res_pod_count: break
         ppa_p = safe(rp.get("price_per_acre"))
@@ -1061,9 +1080,11 @@ def calculate(inp: dict) -> dict:
             "cost_detention":round(cc_det[m]),
             "cost_other":    round(cc_other[m]),
             "cost_roads":    round(cc_roads[m]),
-            "cost_lot_dev":  round(cc_lotdev[m]),
+            "cost_lot_dev":          round(cc_lotdev[m]),
+            "cost_lot_landscaping":  round(cc_lot_landscape[m]),
             "cost_operating":round(max(0, cost_monthly[m] - cc_land[m] - cc_plants[m] - cc_amen[m]
-                                       - cc_det[m] - cc_other[m] - cc_roads[m] - cc_lotdev[m])),
+                                       - cc_det[m] - cc_other[m] - cc_roads[m] - cc_lotdev[m]
+                                       - cc_lot_landscape[m])),
         }
         for m in range(1, proj_months + 1)
     ]
