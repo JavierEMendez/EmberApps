@@ -2246,14 +2246,18 @@ function renderOutputsFromFlat(o) {
     </div>
   </div>`;
 
+  // Destroy any existing Chart.js instances before re-rendering
+  Object.values(charts).forEach(c => { try { c.destroy(); } catch(e) {} });
+  charts = {};
+
   // Render charts
   requestAnimationFrame(() => {
-    const plug = (id) => { const c = document.getElementById(id); return c ? c.getContext('2d') : null; };
+    const plug = (id) => { const el = document.getElementById(id); return el || null; };
     const GOLD = 'rgba(200,169,110,0.85)', TEAL = 'rgba(94,158,140,0.7)', BLUE='rgba(123,143,212,0.7)', DIM='rgba(255,255,255,0.07)';
 
     // Rev vs Cost chart
-    const rc = plug('chart-rev-cost');
-    if (rc) new Chart(rc, {
+    const rcEl = plug('chart-rev-cost');
+    if (rcEl) charts.revCost = new Chart(rcEl, {
       type:'bar',
       data:{
         labels: years.map(y=>'Yr '+y),
@@ -2267,11 +2271,11 @@ function renderOutputsFromFlat(o) {
     });
 
     // Cumulative CF chart
-    const cf = plug('chart-cf');
-    if (cf) {
+    const cfEl = plug('chart-cf');
+    if (cfEl) {
       let cum = 0;
       const cumData = years.map(y=>{ cum += (yrCfData[y]||0)/1e6; return +cum.toFixed(2); });
-      new Chart(cf, {
+      charts.cf = new Chart(cfEl, {
         type:'line',
         data:{labels:years.map(y=>'Yr '+y),datasets:[{
           label:'Cumulative CF',data:cumData,
@@ -2284,12 +2288,12 @@ function renderOutputsFromFlat(o) {
       });
     }
 
-    // Lot Takedowns chart
-    const lotCtx = plug('chart-flat-lots');
-    if (lotCtx) {
+    // Annual Lot Takedowns chart
+    const lotEl = plug('chart-flat-lots');
+    if (lotEl) {
       const lotArr = Array.isArray(o.yearly_lots) ? o.yearly_lots
         : Object.entries(o.yearly_lots||{}).map(([yr,lots])=>({year:+yr,lots})).sort((a,b)=>a.year-b.year);
-      new Chart(lotCtx, {
+      charts.lots = new Chart(lotEl, {
         type:'bar',
         data:{labels:lotArr.map(y=>'Yr '+y.year),datasets:[{label:'Lots',data:lotArr.map(y=>y.lots),backgroundColor:GOLD,borderRadius:3}]},
         options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' lots'}}},
@@ -2297,12 +2301,12 @@ function renderOutputsFromFlat(o) {
       });
     }
 
-    // Home Sales chart
-    const homCtx = plug('chart-flat-homes');
-    if (homCtx) {
+    // Annual Home Sales chart
+    const homEl = plug('chart-flat-homes');
+    if (homEl) {
       const homArr = Array.isArray(o.yearly_homes) ? o.yearly_homes
         : Object.entries(o.yearly_homes||{}).map(([yr,homes])=>({year:+yr,homes})).sort((a,b)=>a.year-b.year);
-      new Chart(homCtx, {
+      charts.homes = new Chart(homEl, {
         type:'bar',
         data:{labels:homArr.map(y=>'Yr '+y.year),datasets:[{label:'Homes',data:homArr.map(y=>y.homes),backgroundColor:TEAL,borderRadius:3}]},
         options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' homes'}}},
