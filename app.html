@@ -2170,19 +2170,11 @@ function renderOutputsFromFlat(o) {
         <canvas id="chart-cf" height="200"></canvas>
       </div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px">
-      <div class="fin-card">
-        <div class="fin-card-title">Annual Lot Takedowns</div>
-        <canvas id="chart-flat-lots" height="200"></canvas>
-      </div>
-      <div class="fin-card">
-        <div class="fin-card-title">Annual Home Sales</div>
-        <canvas id="chart-flat-homes" height="200"></canvas>
-      </div>
-    </div>
+    <!-- TWO-COLUMN: Financial Summary (left) | Charts (right) -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;align-items:start">
 
-    <!-- FINANCIAL SUMMARY — matches Excel Project Performance layout -->
-    <div class="fin-card" style="margin-bottom:28px">
+    <!-- LEFT: Financial Summary -->
+    <div class="fin-card">
       <div class="fin-card-title">Project Performance</div>
       <table class="info-table" style="width:100%">
         <thead>
@@ -2262,6 +2254,20 @@ function renderOutputsFromFlat(o) {
       </table>
     </div>
 
+    <!-- RIGHT: Stacked charts -->
+    <div style="display:flex;flex-direction:column;gap:20px">
+      <div class="fin-card">
+        <div class="fin-card-title">Annual Lot Takedowns</div>
+        <canvas id="chart-flat-lots" height="180"></canvas>
+      </div>
+      <div class="fin-card">
+        <div class="fin-card-title">Annual Home Sales</div>
+        <canvas id="chart-flat-homes" height="180"></canvas>
+      </div>
+    </div>
+
+    </div><!-- end two-column grid -->
+
     <!-- PER-ACRE METRICS -->
     <div class="fin-card" style="margin-bottom:28px">
       <div class="fin-card-title">Per-Acre & Per-Lot Metrics</div>
@@ -2326,11 +2332,15 @@ function renderOutputsFromFlat(o) {
       });
     }
 
+    // Limit charts to years 1 through project length
+    const maxYr = Math.ceil(o.project_length_years || 10);
+
     // Annual Lot Takedowns chart
     const lotEl = plug('chart-flat-lots');
     if (lotEl) {
-      const lotArr = Array.isArray(o.yearly_lots) ? o.yearly_lots
-        : Object.entries(o.yearly_lots||{}).map(([yr,lots])=>({year:+yr,lots})).sort((a,b)=>a.year-b.year);
+      const lotArr = (Array.isArray(o.yearly_lots) ? o.yearly_lots
+        : Object.entries(o.yearly_lots||{}).map(([yr,lots])=>({year:+yr,lots})).sort((a,b)=>a.year-b.year))
+        .filter(y => y.year >= 1 && y.year <= maxYr);
       charts.lots = new Chart(lotEl, {
         type:'bar',
         data:{labels:lotArr.map(y=>'Yr '+y.year),datasets:[{label:'Lots',data:lotArr.map(y=>y.lots),backgroundColor:GOLD,borderRadius:3}]},
@@ -2342,8 +2352,9 @@ function renderOutputsFromFlat(o) {
     // Annual Home Sales chart
     const homEl = plug('chart-flat-homes');
     if (homEl) {
-      const homArr = Array.isArray(o.yearly_homes) ? o.yearly_homes
-        : Object.entries(o.yearly_homes||{}).map(([yr,homes])=>({year:+yr,homes})).sort((a,b)=>a.year-b.year);
+      const homArr = (Array.isArray(o.yearly_homes) ? o.yearly_homes
+        : Object.entries(o.yearly_homes||{}).map(([yr,homes])=>({year:+yr,homes})).sort((a,b)=>a.year-b.year))
+        .filter(y => y.year >= 1 && y.year <= maxYr);
       charts.homes = new Chart(homEl, {
         type:'bar',
         data:{labels:homArr.map(y=>'Yr '+y.year),datasets:[{label:'Homes',data:homArr.map(y=>y.homes),backgroundColor:TEAL,borderRadius:3}]},
