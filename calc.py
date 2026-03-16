@@ -1000,8 +1000,11 @@ def calculate(inp: dict) -> dict:
     last_delivery_period = max((m for m in range(1, MAX_MONTHS + 1) if lot_count_by_month[m] > 0), default=proj_months)
     last_home_period     = _last_home_sale_m if _last_home_sale_m > 0 else last_delivery_period
 
-    marketing_total  = total_lot_revenue_gross * marketing_pct
-    prof_svc_total   = total_lot_revenue_gross * prof_svc_pct
+    # Marketing cost = sum of per-lot marketing fees (Excel matches rev_mktg_fees)
+    marketing_total  = total_mktg_fee_rev
+    # Prof services = prof_svc_pct * total_revenue (includes pods+bonds, not just lot rev)
+    total_revenue_pre = sum(rev_monthly[1:proj_months+1])
+    prof_svc_total   = total_revenue_pre * prof_svc_pct
 
     total_det_landscaping = sum(r.get("total_landscaping", 0) for r in det_cost_rows)
 
@@ -1195,15 +1198,18 @@ def calculate(inp: dict) -> dict:
         dmf_total += dmf_this
         cost_monthly[m] += dmf_this
 
+    # Escalated land total (used for summaries)
+    land_escalated = total_td_purchase + total_td_closing
+
     # Hard costs (for summary display, includes fencing/URD/streetlights)
-    hard_costs = (total_land + total_plant_cost + total_amenity_cost + total_det_cost +
+    hard_costs = (land_escalated + total_plant_cost + total_amenity_cost + total_det_cost +
                   total_det_landscaping + total_other_cost + total_road_cost +
                   total_road_landscaping + total_dev_cost + total_lot_landscaping +
                   total_fencing_cost + total_urd_cost + total_lot_streetlight_cost +
                   road_streetlight_total + site_work_total)
 
     # Project Contingency: Excel F37 = SUM(infrastructure+some_operating) * 5%
-    contingency_base = (total_land + total_plant_cost + total_amenity_cost + total_det_cost +
+    contingency_base = (total_plant_cost + total_amenity_cost + total_det_cost +
                         total_other_cost + total_road_cost + total_dev_cost +
                         total_fencing_cost + total_urd_cost + streetlight_total +
                         site_work_total + total_lot_landscaping + total_det_landscaping +
@@ -1292,14 +1298,14 @@ def calculate(inp: dict) -> dict:
     out["rev_comm_pods"]    = round(comm_pod_revenue)
 
     # Cost breakdown
-    out["cost_land"]        = round(total_land)
+    out["cost_land"]        = round(total_td_purchase + total_td_closing)
     out["cost_plants"]      = round(total_plant_cost)
     out["cost_amenities"]   = round(total_amenity_cost)
     out["cost_detention"]   = round(total_det_cost)
     out["cost_other"]       = round(total_other_cost)
-    out["cost_roads"]       = round(total_road_cost + total_road_landscaping)
+    out["cost_roads"]       = round(total_road_cost)
     out["cost_lot_dev"]          = round(total_dev_cost)
-    out["cost_lot_landscaping"]  = round(total_lot_landscaping)
+    out["cost_lot_landscaping"]  = round(total_lot_landscaping + total_det_landscaping + total_road_landscaping)
     out["cost_marketing"]   = round(marketing_total)
     out["cost_prof_svc"]    = round(prof_svc_total)
     out["cost_dmf"]         = round(dmf_total)
