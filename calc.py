@@ -897,22 +897,33 @@ def calculate(inp: dict) -> dict:
 
         for k, lots_this in av_sections:
             section_delivery = sm_lr + k * 18
-            comp_m = section_delivery + build_time
-            if 1 <= comp_m <= MAX_MONTHS:
-                completions[comp_m] += lots_this
+            # Excel splits lot deliveries into takes (T1/T2/T3), homes complete
+            # build_time after each take — matching Calc_Revenues rows 742+
+            takes = [(section_delivery, take1_pct),
+                     (section_delivery + 6, take2_pct),
+                     (section_delivery + 9, take3_pct)]
+            for take_m, take_frac in takes:
+                if take_frac > 0:
+                    comp_m = take_m + build_time
+                    if 1 <= comp_m <= MAX_MONTHS:
+                        completions[comp_m] += lots_this * take_frac
 
-        # Inventory-based home sales: pace-limited, inventory-capped (row 783)
+        # Inventory-based home sales: pace-limited, uses PRIOR period inventory (Excel row 783)
+        # Excel formula: sales[P] = MIN(inventory[P-1], pace), where inventory = cum_comp - cum_sales
         cum_comp = 0.0
         cum_sold = 0.0
+        prev_inventory = 0.0
         for m in range(1, MAX_MONTHS + 1):
-            cum_comp  += completions[m]
-            inventory  = cum_comp - cum_sold
-            sold_this  = min(inventory, pace_lr)
+            # Sales based on previous period's ending inventory (Excel: EL770 for period EM)
+            sold_this  = min(prev_inventory, pace_lr)
             cum_sold  += sold_this
             av_by_month[m] += sold_this * av_per_lot
             home_sales_by_month[m] += sold_this
             if sold_this > 0:
                 _last_home_sale_m = m
+            # Update inventory after this period's completions
+            cum_comp  += completions[m]
+            prev_inventory = cum_comp - cum_sold
 
     lot_av = sum(av_by_month[1:MAX_MONTHS + 1])
 
@@ -989,19 +1000,16 @@ def calculate(inp: dict) -> dict:
         cost_monthly[bp] += fee
 
     # Operating costs — Excel-precise end periods
-    # last_delivery_period = last month where lots are DELIVERED (T1 = section delivery month)
-    #   → drives: General Personnel, Legal, Prof Services, MUD end periods (Excel D95/D103/D108)
-    # last_home_period = last month where homes are SOLD (from AV inventory model)
-    #   → drives: Marketing Personnel, Insurance, Bookkeeping, Marketing spend (Excel B91/D104/D116/D120)
-    # In Excel, periods are 0-indexed; each cost runs (period+1) months.
-    # In Python (1-indexed), last_delivery_period == D95_excel + 1, so running months
-    # 1..last_delivery_period gives the same (D95+1) total months. ✓
+    # Excel costs run from period 0 to period N inclusive = N+1 total months.
+    # Our month 1 = Excel period 0, so to run N+1 months we need end = N+1.
+    # D95 = last lot delivery period (0-indexed). Costs run D95+1 months → our end = D95+1.
+    # B91 = last home sale period (0-indexed). Costs run B91+1 months → our end = B91+1.
+    # Since our month numbers align with Excel period numbers (month 1 = period 1, month 136 = period 136),
+    # and Excel includes period 0, we add +1 to account for that extra month.
     total_lot_revenue_gross = sum(lot_rev_by_month)
-    # last_lot_rev_period = last month where lot revenue is received (T3 of last section)
-    # This drives operating cost end periods — project isn't done until last payment comes in
     last_lot_rev_period  = max((m for m in range(1, MAX_MONTHS + 1) if lot_rev_by_month[m] > 0), default=proj_months)
-    last_delivery_period = last_lot_rev_period
-    last_home_period     = _last_home_sale_m if _last_home_sale_m > 0 else last_delivery_period
+    last_delivery_period = last_lot_rev_period + 1   # +1 for period 0 (Excel D95+1 total months)
+    last_home_period     = (_last_home_sale_m + 1) if _last_home_sale_m > 0 else last_delivery_period
 
     # Marketing cost = sum of per-lot marketing fees (Excel matches rev_mktg_fees)
     marketing_total  = total_mktg_fee_rev
@@ -1155,9 +1163,6 @@ def calculate(inp: dict) -> dict:
             per = r["total_cost"] / r["duration"]
             for mm in range(int(r["start_month"]), int(r["start_month"]) + int(r["duration"])):
                 if 1 <= mm <= MAX_MONTHS: _cc_det[mm] += per
-        dp = int(r["delivery_period"])
-        if 1 <= dp <= MAX_MONTHS and r.get("total_landscaping", 0) > 0:
-            _cc_det[dp] += r["total_landscaping"]
     for r in other_cost_rows:
         dur_r = max(r["duration"], 1)
         if r["total_cost"] > 0:
@@ -1169,9 +1174,6 @@ def calculate(inp: dict) -> dict:
             per = r["total_cost"] / r["duration"]
             for mm in range(int(r["start_month"]), int(r["start_month"]) + int(r["duration"])):
                 if 1 <= mm <= MAX_MONTHS: _cc_roads[mm] += per
-        dp = int(r["delivery_period"])
-        if 1 <= dp <= MAX_MONTHS and r["total_landscaping"] > 0:
-            _cc_roads[dp] += r["total_landscaping"]
 
     # All landscaping monthly = det landscaping + road landscaping + sectional landscaping
     _cc_landscape_m = _Z()
@@ -1211,15 +1213,37 @@ def calculate(inp: dict) -> dict:
                   total_fencing_cost + total_urd_cost + total_lot_streetlight_cost +
                   road_streetlight_total + site_work_total)
 
-    # Project Contingency: Excel F37 = SUM(infrastructure+some_operating) * 5%
+    # Project Contingency — matches Excel (PP!F37, updated to exclude land)
+    # Total base = plants + amenities + detention + sections + other + roads
+    #            + fencing + dry_utilities + site_work + landscaping + prof_services
+    # Excludes: land, taxes, marketing, mailboxes, brokerage, closing, all operating costs
+    # Monthly spread: proportional to monthly costs (CF rows 9-17,26-30), 6-month offset
     contingency_base = (total_plant_cost + total_amenity_cost + total_det_cost +
-                        total_other_cost + total_road_cost + total_dev_cost +
-                        total_fencing_cost + total_urd_cost + streetlight_total +
-                        site_work_total + total_lot_landscaping + total_det_landscaping +
-                        total_road_landscaping + prof_svc_total)
+                        total_dev_cost + total_other_cost + total_road_cost +
+                        total_fencing_cost + (total_urd_cost + total_lot_streetlight_cost + road_streetlight_total) +
+                        site_work_total + (total_lot_landscaping + total_det_landscaping + total_road_landscaping) +
+                        prof_svc_total)
     contingency_total = contingency_base * contingency
-    # Spread contingency into cost_monthly so cashflow matches summary
-    spread_cost(cost_monthly, contingency_total, 1, proj_months)
+
+    # Monthly costs used for proportional distribution (Excel CF rows 9-17 + 26-30)
+    # Excludes land; includes taxes, prof svc, marketing, mailboxes, section dev
+    monthly_cont_costs = [0.0] * (MAX_MONTHS + 1)
+    for m in range(1, MAX_MONTHS + 1):
+        monthly_cont_costs[m] = (_cc_plants[m] + _cc_amen[m] + _cc_det[m] + _cc_other[m] + _cc_roads[m]
+                                 + fencing_by_month[m] + site_work_by_month[m]
+                                 + _cc_landscape_m[m] + (urd_by_month[m] + lot_streetlight_by_month[m] + road_streetlight_by_month[m])
+                                 + lot_tax_by_month[m] + op_prof_svc_m[m] + op_mkt_exp_m[m]
+                                 + lot_mailbox_by_month[m] + lot_cost_by_month[m])
+    total_monthly_cont_costs = sum(monthly_cont_costs)
+
+    contingency_by_month = [0.0] * (MAX_MONTHS + 1)
+    for m in range(1, MAX_MONTHS + 1):
+        if total_monthly_cont_costs > 0 and monthly_cont_costs[m] > 0:
+            share = monthly_cont_costs[m] / total_monthly_cont_costs * contingency_total
+            target_m = m + 6
+            if 1 <= target_m <= MAX_MONTHS:
+                contingency_by_month[target_m] += share
+                cost_monthly[target_m] += share
 
     # ── 5. SUMMARY OUTPUTS ────────────────────────────────────────────────────
     # total_revenue = sum of displayed sub-items (ensures table adds up)
@@ -1487,14 +1511,14 @@ def calculate(inp: dict) -> dict:
             "cost_other":    round(_cc_other[m]),
             "cost_roads":    round(_cc_roads[m]),
             "cost_lot_dev":          round(cc_lotdev[m]),
-            "cost_lot_landscaping":  round(cc_lot_landscape[m]),
+            "cost_lot_landscaping":  round(_cc_landscape_m[m]),
             "cost_fencing":          round(fencing_by_month[m]),
             "cost_dry_utilities":    round(urd_by_month[m] + lot_streetlight_by_month[m] + road_streetlight_by_month[m]),
             "cost_site_work":        round(site_work_by_month[m]),
             "cost_dmf":              round(dmf_by_month[m]),
             "cost_operating":round(max(0, cost_monthly[m] - cc_land[m] - _cc_plants[m] - _cc_amen[m]
                                        - _cc_det[m] - _cc_other[m] - _cc_roads[m] - cc_lotdev[m]
-                                       - cc_lot_landscape[m] - fencing_by_month[m]
+                                       - _cc_landscape_m[m] - fencing_by_month[m]
                                        - urd_by_month[m] - lot_streetlight_by_month[m]
                                        - road_streetlight_by_month[m] - site_work_by_month[m]
                                        - dmf_by_month[m])),

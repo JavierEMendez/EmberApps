@@ -265,24 +265,24 @@ expected = {
     "cost_dry_utilities":1101166,
     "cost_site_work":    1788750,
     "cost_lot_landscaping": 9442917,  # "Landscaping" in Excel row 27
-    "cost_legal":        1180000,
+    "cost_legal":        1190000,
     "cost_lot_taxes":    1967625,
-    "cost_mud_hoa":      840000,
-    "cost_insurance":    1260000,
+    "cost_mud_hoa":      875000,
+    "cost_insurance":    1290000,
     "cost_marketing":    8580950,
     "cost_brokerage":    5366250,
     "cost_closing":      2683125,
     "cost_mailboxes":    420900,
     "cost_prof_svc":     4767690,
     "cost_contingency":  7895301,
-    "gross_costs":       228557418,
+    "gross_costs":       228632418,
 
     # Margins
-    "gross_margin_amt":  90114796,
-    "below_line_dmf":    4169533,
-    "below_line_personnel": 7790000,
-    "below_line_bookkeeping": 1260000,
-    "net_margin_amt":    74260091,
+    "gross_margin_amt":  90039796,
+    "below_line_dmf":    4053187,
+    "below_line_personnel": 7885000,
+    "below_line_bookkeeping": 1290000,
+    "net_margin_amt":    74174562,
 }
 
 # ── Compare ──
