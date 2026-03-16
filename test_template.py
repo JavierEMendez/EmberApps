@@ -251,7 +251,7 @@ expected = {
     "rev_mktg_fees":     8580950,
     "rev_res_pods":      8976000,
     "rev_comm_pods":     9983952,
-    "total_revenue":     318672244,
+    "total_revenue":     318672214,
 
     # Costs
     "cost_land":         40457250,
@@ -265,9 +265,9 @@ expected = {
     "cost_dry_utilities":1101166,
     "cost_site_work":    1788750,
     "cost_lot_landscaping": 9442917,  # "Landscaping" in Excel row 27
-    "cost_legal":        1090000,
+    "cost_legal":        1180000,
     "cost_lot_taxes":    1967625,
-    "cost_mud_hoa":      805000,
+    "cost_mud_hoa":      840000,
     "cost_insurance":    1260000,
     "cost_marketing":    8580950,
     "cost_brokerage":    5366250,
@@ -275,14 +275,14 @@ expected = {
     "cost_mailboxes":    420900,
     "cost_prof_svc":     4767690,
     "cost_contingency":  7895301,
-    "gross_costs":       223151635,
+    "gross_costs":       220641463,
 
     # Margins
-    "gross_margin_amt":  94694379,
-    "below_line_dmf":    4166408,
-    "below_line_personnel": 7340000,
+    "gross_margin_amt":  98030751,
+    "below_line_dmf":    4169533,
+    "below_line_personnel": 7790000,
     "below_line_bookkeeping": 1260000,
-    "net_margin_amt":    81927971,
+    "net_margin_amt":    82176046,
 }
 
 # ── Compare ──

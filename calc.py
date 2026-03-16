@@ -997,7 +997,10 @@ def calculate(inp: dict) -> dict:
     # In Python (1-indexed), last_delivery_period == D95_excel + 1, so running months
     # 1..last_delivery_period gives the same (D95+1) total months. ✓
     total_lot_revenue_gross = sum(lot_rev_by_month)
-    last_delivery_period = max((m for m in range(1, MAX_MONTHS + 1) if lot_count_by_month[m] > 0), default=proj_months)
+    # last_lot_rev_period = last month where lot revenue is received (T3 of last section)
+    # This drives operating cost end periods — project isn't done until last payment comes in
+    last_lot_rev_period  = max((m for m in range(1, MAX_MONTHS + 1) if lot_rev_by_month[m] > 0), default=proj_months)
+    last_delivery_period = last_lot_rev_period
     last_home_period     = _last_home_sale_m if _last_home_sale_m > 0 else last_delivery_period
 
     # Marketing cost = sum of per-lot marketing fees (Excel matches rev_mktg_fees)
@@ -1217,7 +1220,11 @@ def calculate(inp: dict) -> dict:
     contingency_total = contingency_base * contingency
 
     # ── 5. SUMMARY OUTPUTS ────────────────────────────────────────────────────
-    total_revenue = sum(rev_monthly[1:proj_months+1])
+    # total_revenue = sum of displayed sub-items (not truncated by proj_months)
+    total_revenue = (total_lot_base_rev + total_premium_rev + total_escalation_rev +
+                     total_fence_fee_rev + total_mktg_fee_rev +
+                     sum(a for _, a in mud_issuances) + sum(a for _, a in wcid_issuances) +
+                     res_pod_revenue + comm_pod_revenue)
     total_cost    = sum(cost_monthly[1:proj_months+1])
     gross_profit  = total_revenue - total_cost
     gross_margin  = gross_profit / total_revenue if total_revenue else 0
@@ -1227,14 +1234,15 @@ def calculate(inp: dict) -> dict:
                   total_other_cost + total_road_cost + total_road_landscaping +
                   total_dev_cost + total_lot_landscaping +
                   total_fencing_cost + total_urd_cost + streetlight_total + site_work_total)
-    # Below-the-line items (Excel Project Performance rows 42-44): DMF, Personnel, Bookkeeping
+    # Below-the-line items: DMF, Personnel, Bookkeeping, MUD/WCID Recv Fees
     below_line_dmf       = dmf_total
     below_line_personnel = personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end
     below_line_bk        = bookkeeping_mo * bk_end
-    below_line = below_line_dmf + below_line_personnel + below_line_bk
+    total_recv_fees = sum(mud_recv_fee_by_month) + sum(wcid_recv_fee_by_month)
+    below_line_recv_fees = total_recv_fees
+    below_line = below_line_dmf + below_line_personnel + below_line_bk + below_line_recv_fees
     # Gross costs = total_cost - below_line items
     gross_costs = total_cost - below_line
-    total_recv_fees = sum(mud_recv_fee_by_month) + sum(wcid_recv_fee_by_month)
     # 0-indexed final period values for display (match Excel Cost Inputs tab)
     gen_final_period_disp  = gen_pers_end - 1   # Excel D103
     mkt_final_period_disp  = mkt_pers_end - 1   # Excel D104 = B91
@@ -1382,6 +1390,7 @@ def calculate(inp: dict) -> dict:
     out["below_line_dmf"]        = round(below_line_dmf)
     out["below_line_personnel"]  = round(below_line_personnel)
     out["below_line_bookkeeping"]= round(below_line_bk)
+    out["below_line_recv_fees"]  = round(below_line_recv_fees)
     out["net_margin_amt"]        = round(net_profit)
     out["net_margin_of_costs"]   = net_profit / total_cost if total_cost else 0
     out["net_margin_of_rev"]     = net_margin
