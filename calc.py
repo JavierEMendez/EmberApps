@@ -1218,22 +1218,31 @@ def calculate(inp: dict) -> dict:
                         site_work_total + total_lot_landscaping + total_det_landscaping +
                         total_road_landscaping + prof_svc_total)
     contingency_total = contingency_base * contingency
+    # Spread contingency into cost_monthly so cashflow matches summary
+    spread_cost(cost_monthly, contingency_total, 1, proj_months)
 
     # ── 5. SUMMARY OUTPUTS ────────────────────────────────────────────────────
-    # total_revenue = sum of displayed sub-items (not truncated by proj_months)
+    # total_revenue = sum of displayed sub-items (ensures table adds up)
     total_revenue = (total_lot_base_rev + total_premium_rev + total_escalation_rev +
                      total_fence_fee_rev + total_mktg_fee_rev +
                      sum(a for _, a in mud_issuances) + sum(a for _, a in wcid_issuances) +
                      res_pod_revenue + comm_pod_revenue)
-    total_cost    = sum(cost_monthly[1:proj_months+1])
-    gross_profit  = total_revenue - total_cost
-    gross_margin  = gross_profit / total_revenue if total_revenue else 0
-    roc           = gross_profit / total_cost if total_cost else 0
 
     infra_cost = (total_plant_cost + total_amenity_cost + total_det_cost + total_det_landscaping +
                   total_other_cost + total_road_cost + total_road_landscaping +
                   total_dev_cost + total_lot_landscaping +
                   total_fencing_cost + total_urd_cost + streetlight_total + site_work_total)
+
+    # Gross costs = sum of all above-the-line displayed cost items (ensures table adds up)
+    gross_costs = (land_escalated + total_plant_cost + total_amenity_cost + total_det_cost +
+                   total_dev_cost + total_other_cost + total_road_cost +
+                   total_fencing_cost + (total_urd_cost + total_lot_streetlight_cost + road_streetlight_total) +
+                   site_work_total + (total_lot_landscaping + total_det_landscaping + total_road_landscaping) +
+                   legal_mo * legal_end + sum(lot_tax_by_month) + mud_total +
+                   insurance_mo * ins_end + marketing_total +
+                   sum(lot_brokerage_by_month) + sum(lot_closing_by_month) +
+                   sum(lot_mailbox_by_month) + prof_svc_total + contingency_total)
+
     # Below-the-line items: DMF, Personnel, Bookkeeping, MUD/WCID Recv Fees
     below_line_dmf       = dmf_total
     below_line_personnel = personnel_mo * gen_pers_end + marketing_personnel_mo * mkt_pers_end
@@ -1241,8 +1250,12 @@ def calculate(inp: dict) -> dict:
     total_recv_fees = sum(mud_recv_fee_by_month) + sum(wcid_recv_fee_by_month)
     below_line_recv_fees = total_recv_fees
     below_line = below_line_dmf + below_line_personnel + below_line_bk + below_line_recv_fees
-    # Gross costs = total_cost - below_line items
-    gross_costs = total_cost - below_line
+
+    total_cost    = gross_costs + below_line
+    gross_profit  = total_revenue - total_cost
+    gross_margin  = gross_profit / total_revenue if total_revenue else 0
+    roc           = gross_profit / total_cost if total_cost else 0
+
     # 0-indexed final period values for display (match Excel Cost Inputs tab)
     gen_final_period_disp  = gen_pers_end - 1   # Excel D103
     mkt_final_period_disp  = mkt_pers_end - 1   # Excel D104 = B91
@@ -1266,8 +1279,14 @@ def calculate(inp: dict) -> dict:
     home_sales_per_year = sum(r.get("pace", 0) for r in lot_rows if safe(r.get("on", 0))) * 12
     lots_18mo = sum(r.get("lots_18mo", 0) for r in lot_rows if safe(r.get("on", 0)))
 
-    # IRR (unlevered monthly cashflows)
-    cf = [-(cost_monthly[m]) + rev_monthly[m] for m in range(1, proj_months + 1)]
+    # Cashflow range: extend past proj_months if bonds/revenue occur later
+    last_cf_month = proj_months
+    for m in range(proj_months + 1, MAX_MONTHS + 1):
+        if rev_monthly[m] > 0 or cost_monthly[m] > 0:
+            last_cf_month = m
+
+    # IRR (unlevered monthly cashflows — includes late bond proceeds)
+    cf = [-(cost_monthly[m]) + rev_monthly[m] for m in range(1, last_cf_month + 1)]
     irr = npv_irr(cf)
 
     # Yearly lots/homes for chart — dynamic range based on project length
@@ -1361,10 +1380,6 @@ def calculate(inp: dict) -> dict:
     out["gross_profit"]          = round(gross_profit)
     out["gross_margin_pct"]      = gross_margin
     out["return_on_cost"]        = roc
-    out["net_profit"]            = round(net_profit)
-    out["net_margin_pct"]        = net_margin
-    out["total_revenue"]         = round(total_revenue)
-    out["total_cost"]            = round(total_cost)
     out["total_lots"]            = total_lots
     out["lot_av"]                = round(lot_av)
     out["comm_av"]               = round(comm_av)
@@ -1382,18 +1397,40 @@ def calculate(inp: dict) -> dict:
     out["cost_per_dev_acre"]     = round(cost_per_dev_ac)
     out["infra_per_dev_acre"]    = round(infra_per_dev_ac)
     out["gm_per_acre"]           = round(gm_per_ac)
-    out["below_line_total"]      = round(below_line)
-    out["gross_costs"]           = round(gross_costs)
-    out["gross_margin_amt"]      = round(gross_margin_amt)
-    out["gross_margin_of_costs"] = gross_margin_amt / gross_costs if gross_costs else 0
-    out["gross_margin_of_rev"]   = gross_margin_amt / total_revenue if total_revenue else 0
-    out["below_line_dmf"]        = round(below_line_dmf)
-    out["below_line_personnel"]  = round(below_line_personnel)
-    out["below_line_bookkeeping"]= round(below_line_bk)
-    out["below_line_recv_fees"]  = round(below_line_recv_fees)
-    out["net_margin_amt"]        = round(net_profit)
-    out["net_margin_of_costs"]   = net_profit / total_cost if total_cost else 0
-    out["net_margin_of_rev"]     = net_margin
+    # Compute displayed values so table math is exact (sum of rounded items = totals)
+    _gc = (out["cost_land"] + out["cost_plants"] + out["cost_amenities"] + out["cost_detention"] +
+           out["cost_lot_dev"] + out["cost_other"] + out["cost_roads"] + out["cost_fencing"] +
+           out["cost_dry_utilities"] + out["cost_site_work"] + out["cost_lot_landscaping"] +
+           out["cost_legal"] + out["cost_lot_taxes"] + out["cost_mud_hoa"] + out["cost_insurance"] +
+           out["cost_marketing"] + out["cost_brokerage"] + out["cost_closing"] +
+           out["cost_mailboxes"] + out["cost_prof_svc"] + out["cost_contingency"])
+    _tr = (out["rev_lot_sales"] + out["rev_mud"] + out["rev_wcid"] + out["rev_premiums"] +
+           out["rev_fence_fees"] + out["rev_escalations"] + out["rev_mktg_fees"] +
+           out["rev_res_pods"] + out["rev_comm_pods"])
+    _gm = _tr - _gc
+    _btl_d = round(below_line_dmf)
+    _btl_p = round(below_line_personnel)
+    _btl_b = round(below_line_bk)
+    _btl_r = round(below_line_recv_fees)
+    _btl   = _btl_d + _btl_p + _btl_b + _btl_r
+    _nm    = _gm - _btl
+    out["total_revenue"]         = _tr
+    out["gross_costs"]           = _gc
+    out["gross_margin_amt"]      = _gm
+    out["gross_margin_of_costs"] = _gm / _gc if _gc else 0
+    out["gross_margin_of_rev"]   = _gm / _tr if _tr else 0
+    out["below_line_dmf"]        = _btl_d
+    out["below_line_personnel"]  = _btl_p
+    out["below_line_bookkeeping"]= _btl_b
+    out["below_line_recv_fees"]  = _btl_r
+    out["below_line_total"]      = _btl
+    _tc = _gc + _btl
+    out["total_cost"]            = _tc
+    out["net_profit"]            = _nm
+    out["net_margin_amt"]        = _nm
+    out["net_margin_of_costs"]   = _nm / _tc if _tc else 0
+    out["net_margin_of_rev"]     = _nm / _tr if _tr else 0
+    out["net_margin_pct"]        = _nm / _tr if _tr else 0
 
     # ── 6. CASHFLOW DETAIL (for Cashflows tab) ───────────────────────────────
     # Reuse pre-computed category arrays (_cc_plants, _cc_amen, etc.) from DMF section
@@ -1431,7 +1468,7 @@ def calculate(inp: dict) -> dict:
     for bp, amt in wcid_issuances:
         rc_mud[bp] += amt
 
-    # Monthly detail limited to project length
+    # Monthly detail covers full activity range (last_cf_month computed above for IRR)
     out["cf_monthly"] = [
         {
             "month": m,
@@ -1462,11 +1499,11 @@ def calculate(inp: dict) -> dict:
                                        - road_streetlight_by_month[m] - site_work_by_month[m]
                                        - dmf_by_month[m])),
         }
-        for m in range(1, proj_months + 1)
+        for m in range(1, last_cf_month + 1)
     ]
     # Quarterly aggregation for chart
     q_data = {}
-    for m in range(1, proj_months + 1):
+    for m in range(1, last_cf_month + 1):
         q = (m - 1) // 3 + 1
         if q not in q_data:
             q_data[q] = {"q": q, "yr": (q - 1) // 4 + 1, "qtr": (q - 1) % 4 + 1, "revenue": 0, "cost": 0}

@@ -275,14 +275,14 @@ expected = {
     "cost_mailboxes":    420900,
     "cost_prof_svc":     4767690,
     "cost_contingency":  7895301,
-    "gross_costs":       220641463,
+    "gross_costs":       228557418,
 
     # Margins
-    "gross_margin_amt":  98030751,
+    "gross_margin_amt":  90114796,
     "below_line_dmf":    4169533,
     "below_line_personnel": 7790000,
     "below_line_bookkeeping": 1260000,
-    "net_margin_amt":    82176046,
+    "net_margin_amt":    74260091,
 }
 
 # ── Compare ──
