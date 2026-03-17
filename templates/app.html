@@ -2473,6 +2473,10 @@ function renderOutputsFromFlat(o) {
     return n.toLocaleString();
   };
   const fmtAc = v => (v != null && v !== 0) ? parseFloat(v).toFixed(1) + ' ac' : '0.0 ac';
+  const _gc = parseFloat(o.gross_costs) || 0;
+  const _tr = parseFloat(o.total_revenue) || 0;
+  const pctC = v => { const n = parseFloat(v); return (n && _gc) ? (n/_gc*100).toFixed(1)+'%' : ''; };
+  const pctR = v => { const n = parseFloat(v); return (n && _tr) ? (n/_tr*100).toFixed(1)+'%' : ''; };
   const irr = o.unlevered_irr ? (o.unlevered_irr*100).toFixed(1)+'%' : '—';
   const gm  = fmt(o.gross_margin_pct, '%');
   const roc = fmt(o.return_on_cost, '%');
@@ -2525,9 +2529,9 @@ function renderOutputsFromFlat(o) {
         <div class="kpi-sub">${fmt(o.project_length_months,'n')} months</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">18-Mo Supply</div>
-        <div class="kpi-value">${fmt(o.lot_supply_18mo,'n')}</div>
-        <div class="kpi-sub">${fmt(o.home_sales_per_year,'n')} homes/yr</div>
+        <div class="kpi-label">Home Sales / Year</div>
+        <div class="kpi-value">${fmt(o.home_sales_per_year,'n')}</div>
+        <div class="kpi-sub">${fmt(o.lot_supply_18mo,'n')} lots (18-mo supply)</div>
       </div>
     </div>
 
@@ -2560,42 +2564,42 @@ function renderOutputsFromFlat(o) {
           </thead>
           <tbody>
             <tr style="background:rgba(94,158,140,0.06)"><td colspan="4" style="font-weight:600;font-size:11px;letter-spacing:.05em;padding:8px 8px 4px">REVENUES</td></tr>
-            <tr><td>Lot Sale Revenues</td><td style="text-align:right">${fmt(o.rev_lot_sales)}</td><td></td><td></td></tr>
-            <tr><td>MUD Proceeds</td><td style="text-align:right">${fmt(o.rev_mud)}</td><td></td><td></td></tr>
-            <tr><td>WCID Proceeds</td><td style="text-align:right">${fmt(o.rev_wcid)}</td><td></td><td></td></tr>
-            <tr><td>Lot Premiums</td><td style="text-align:right">${fmt(o.rev_premiums)}</td><td></td><td></td></tr>
-            <tr><td>Fence Fees</td><td style="text-align:right">${fmt(o.rev_fence_fees)}</td><td></td><td></td></tr>
-            <tr><td>Escalations</td><td style="text-align:right">${fmt(o.rev_escalations)}</td><td></td><td></td></tr>
-            <tr><td>Marketing Fees</td><td style="text-align:right">${fmt(o.rev_mktg_fees)}</td><td></td><td></td></tr>
-            <tr><td>Residential Pod Sales</td><td style="text-align:right">${fmt(o.rev_res_pods)}</td><td></td><td></td></tr>
-            <tr><td>Commercial Pod Sales</td><td style="text-align:right">${fmt(o.rev_comm_pods)}</td><td></td><td></td></tr>
+            <tr><td>Lot Sale Revenues</td><td style="text-align:right">${fmt(o.rev_lot_sales)}</td><td></td><td style="text-align:right">${pctR(o.rev_lot_sales)}</td></tr>
+            <tr><td>MUD Proceeds</td><td style="text-align:right">${fmt(o.rev_mud)}</td><td></td><td style="text-align:right">${pctR(o.rev_mud)}</td></tr>
+            <tr><td>WCID Proceeds</td><td style="text-align:right">${fmt(o.rev_wcid)}</td><td></td><td style="text-align:right">${pctR(o.rev_wcid)}</td></tr>
+            <tr><td>Lot Premiums</td><td style="text-align:right">${fmt(o.rev_premiums)}</td><td></td><td style="text-align:right">${pctR(o.rev_premiums)}</td></tr>
+            <tr><td>Fence Fees</td><td style="text-align:right">${fmt(o.rev_fence_fees)}</td><td></td><td style="text-align:right">${pctR(o.rev_fence_fees)}</td></tr>
+            <tr><td>Escalations</td><td style="text-align:right">${fmt(o.rev_escalations)}</td><td></td><td style="text-align:right">${pctR(o.rev_escalations)}</td></tr>
+            <tr><td>Marketing Fees</td><td style="text-align:right">${fmt(o.rev_mktg_fees)}</td><td></td><td style="text-align:right">${pctR(o.rev_mktg_fees)}</td></tr>
+            <tr><td>Residential Pod Sales</td><td style="text-align:right">${fmt(o.rev_res_pods)}</td><td></td><td style="text-align:right">${pctR(o.rev_res_pods)}</td></tr>
+            <tr><td>Commercial Pod Sales</td><td style="text-align:right">${fmt(o.rev_comm_pods)}</td><td></td><td style="text-align:right">${pctR(o.rev_comm_pods)}</td></tr>
             <tr style="border-top:2px solid var(--accent2);font-weight:700;color:var(--accent2)">
-              <td>Total Revenue</td><td style="text-align:right">${fmt(o.total_revenue)}</td><td></td><td></td>
+              <td>Total Revenue</td><td style="text-align:right">${fmt(o.total_revenue)}</td><td></td><td style="text-align:right">100.0%</td>
             </tr>
             <tr style="background:rgba(224,85,85,0.06)"><td colspan="4" style="font-weight:600;font-size:11px;letter-spacing:.05em;padding:12px 8px 4px">COSTS</td></tr>
-            <tr><td>Land</td><td style="text-align:right">${fmt(o.cost_land)}</td><td></td><td></td></tr>
-            <tr><td>Plant Projects</td><td style="text-align:right">${fmt(o.cost_plants)}</td><td></td><td></td></tr>
-            <tr><td>Amenities</td><td style="text-align:right">${fmt(o.cost_amenities)}</td><td></td><td></td></tr>
-            <tr><td>Detention</td><td style="text-align:right">${fmt(o.cost_detention)}</td><td></td><td></td></tr>
-            <tr><td>Sections (Lot Dev)</td><td style="text-align:right">${fmt(o.cost_lot_dev)}</td><td></td><td></td></tr>
-            <tr><td>Other Net-outs</td><td style="text-align:right">${fmt(o.cost_other)}</td><td></td><td></td></tr>
-            <tr><td>Roads & Landscaping</td><td style="text-align:right">${fmt(o.cost_roads)}</td><td></td><td></td></tr>
-            <tr><td>Fencing</td><td style="text-align:right">${fmt(o.cost_fencing)}</td><td></td><td></td></tr>
-            <tr><td>Dry Utilities</td><td style="text-align:right">${fmt(o.cost_dry_utilities)}</td><td></td><td></td></tr>
-            <tr><td>Site Work</td><td style="text-align:right">${fmt(o.cost_site_work)}</td><td></td><td></td></tr>
-            <tr><td>Landscaping</td><td style="text-align:right">${fmt(o.cost_lot_landscaping)}</td><td></td><td></td></tr>
-            <tr><td>Legal</td><td style="text-align:right">${fmt(o.cost_legal)}</td><td></td><td></td></tr>
-            <tr><td>Lot Taxes</td><td style="text-align:right">${fmt(o.cost_lot_taxes)}</td><td></td><td></td></tr>
-            <tr><td>MUD/HOA</td><td style="text-align:right">${fmt(o.cost_mud_hoa)}</td><td></td><td></td></tr>
-            <tr><td>Insurance</td><td style="text-align:right">${fmt(o.cost_insurance)}</td><td></td><td></td></tr>
-            <tr><td>Marketing</td><td style="text-align:right">${fmt(o.cost_marketing)}</td><td></td><td></td></tr>
-            <tr><td>Brokerage Fees</td><td style="text-align:right">${fmt(o.cost_brokerage)}</td><td></td><td></td></tr>
-            <tr><td>Lot Closing Costs</td><td style="text-align:right">${fmt(o.cost_closing)}</td><td></td><td></td></tr>
-            <tr><td>Mailboxes</td><td style="text-align:right">${fmt(o.cost_mailboxes)}</td><td></td><td></td></tr>
-            <tr><td>Prof. Services</td><td style="text-align:right">${fmt(o.cost_prof_svc)}</td><td></td><td></td></tr>
-            <tr><td>Contingency</td><td style="text-align:right">${fmt(o.cost_contingency)}</td><td></td><td></td></tr>
+            <tr><td>Land</td><td style="text-align:right">${fmt(o.cost_land)}</td><td style="text-align:right">${pctC(o.cost_land)}</td><td style="text-align:right">${pctR(o.cost_land)}</td></tr>
+            <tr><td>Plant Projects</td><td style="text-align:right">${fmt(o.cost_plants)}</td><td style="text-align:right">${pctC(o.cost_plants)}</td><td style="text-align:right">${pctR(o.cost_plants)}</td></tr>
+            <tr><td>Amenities</td><td style="text-align:right">${fmt(o.cost_amenities)}</td><td style="text-align:right">${pctC(o.cost_amenities)}</td><td style="text-align:right">${pctR(o.cost_amenities)}</td></tr>
+            <tr><td>Detention</td><td style="text-align:right">${fmt(o.cost_detention)}</td><td style="text-align:right">${pctC(o.cost_detention)}</td><td style="text-align:right">${pctR(o.cost_detention)}</td></tr>
+            <tr><td>Sections (Lot Dev)</td><td style="text-align:right">${fmt(o.cost_lot_dev)}</td><td style="text-align:right">${pctC(o.cost_lot_dev)}</td><td style="text-align:right">${pctR(o.cost_lot_dev)}</td></tr>
+            <tr><td>Other Net-outs</td><td style="text-align:right">${fmt(o.cost_other)}</td><td style="text-align:right">${pctC(o.cost_other)}</td><td style="text-align:right">${pctR(o.cost_other)}</td></tr>
+            <tr><td>Roads & Landscaping</td><td style="text-align:right">${fmt(o.cost_roads)}</td><td style="text-align:right">${pctC(o.cost_roads)}</td><td style="text-align:right">${pctR(o.cost_roads)}</td></tr>
+            <tr><td>Fencing</td><td style="text-align:right">${fmt(o.cost_fencing)}</td><td style="text-align:right">${pctC(o.cost_fencing)}</td><td style="text-align:right">${pctR(o.cost_fencing)}</td></tr>
+            <tr><td>Dry Utilities</td><td style="text-align:right">${fmt(o.cost_dry_utilities)}</td><td style="text-align:right">${pctC(o.cost_dry_utilities)}</td><td style="text-align:right">${pctR(o.cost_dry_utilities)}</td></tr>
+            <tr><td>Site Work</td><td style="text-align:right">${fmt(o.cost_site_work)}</td><td style="text-align:right">${pctC(o.cost_site_work)}</td><td style="text-align:right">${pctR(o.cost_site_work)}</td></tr>
+            <tr><td>Landscaping</td><td style="text-align:right">${fmt(o.cost_lot_landscaping)}</td><td style="text-align:right">${pctC(o.cost_lot_landscaping)}</td><td style="text-align:right">${pctR(o.cost_lot_landscaping)}</td></tr>
+            <tr><td>Legal</td><td style="text-align:right">${fmt(o.cost_legal)}</td><td style="text-align:right">${pctC(o.cost_legal)}</td><td style="text-align:right">${pctR(o.cost_legal)}</td></tr>
+            <tr><td>Lot Taxes</td><td style="text-align:right">${fmt(o.cost_lot_taxes)}</td><td style="text-align:right">${pctC(o.cost_lot_taxes)}</td><td style="text-align:right">${pctR(o.cost_lot_taxes)}</td></tr>
+            <tr><td>MUD/HOA</td><td style="text-align:right">${fmt(o.cost_mud_hoa)}</td><td style="text-align:right">${pctC(o.cost_mud_hoa)}</td><td style="text-align:right">${pctR(o.cost_mud_hoa)}</td></tr>
+            <tr><td>Insurance</td><td style="text-align:right">${fmt(o.cost_insurance)}</td><td style="text-align:right">${pctC(o.cost_insurance)}</td><td style="text-align:right">${pctR(o.cost_insurance)}</td></tr>
+            <tr><td>Marketing</td><td style="text-align:right">${fmt(o.cost_marketing)}</td><td style="text-align:right">${pctC(o.cost_marketing)}</td><td style="text-align:right">${pctR(o.cost_marketing)}</td></tr>
+            <tr><td>Brokerage Fees</td><td style="text-align:right">${fmt(o.cost_brokerage)}</td><td style="text-align:right">${pctC(o.cost_brokerage)}</td><td style="text-align:right">${pctR(o.cost_brokerage)}</td></tr>
+            <tr><td>Lot Closing Costs</td><td style="text-align:right">${fmt(o.cost_closing)}</td><td style="text-align:right">${pctC(o.cost_closing)}</td><td style="text-align:right">${pctR(o.cost_closing)}</td></tr>
+            <tr><td>Mailboxes</td><td style="text-align:right">${fmt(o.cost_mailboxes)}</td><td style="text-align:right">${pctC(o.cost_mailboxes)}</td><td style="text-align:right">${pctR(o.cost_mailboxes)}</td></tr>
+            <tr><td>Prof. Services</td><td style="text-align:right">${fmt(o.cost_prof_svc)}</td><td style="text-align:right">${pctC(o.cost_prof_svc)}</td><td style="text-align:right">${pctR(o.cost_prof_svc)}</td></tr>
+            <tr><td>Contingency</td><td style="text-align:right">${fmt(o.cost_contingency)}</td><td style="text-align:right">${pctC(o.cost_contingency)}</td><td style="text-align:right">${pctR(o.cost_contingency)}</td></tr>
             <tr style="border-top:2px solid rgba(224,85,85,0.5);font-weight:700">
-              <td>Gross Costs</td><td style="text-align:right">${fmt(o.gross_costs)}</td><td></td><td></td>
+              <td>Gross Costs</td><td style="text-align:right">${fmt(o.gross_costs)}</td><td style="text-align:right">100.0%</td><td style="text-align:right">${pctR(o.gross_costs)}</td>
             </tr>
             <tr style="background:rgba(200,169,110,0.1);font-weight:700;font-size:14px;color:var(--accent)">
               <td style="padding:10px 8px">Gross Margin</td>
@@ -2604,10 +2608,10 @@ function renderOutputsFromFlat(o) {
               <td style="text-align:right;padding:10px 8px">${fmt(o.gross_margin_of_rev,'%')}</td>
             </tr>
             <tr style="background:rgba(123,143,212,0.06)"><td colspan="4" style="font-weight:600;font-size:11px;letter-spacing:.05em;padding:12px 8px 4px">BELOW THE LINE</td></tr>
-            <tr><td>Development Mgmt Fee (DMF)</td><td style="text-align:right">${fmt(o.below_line_dmf)}</td><td></td><td></td></tr>
-            <tr><td>Project Personnel</td><td style="text-align:right">${fmt(o.below_line_personnel)}</td><td></td><td></td></tr>
-            <tr><td>Bookkeeping</td><td style="text-align:right">${fmt(o.below_line_bookkeeping)}</td><td></td><td></td></tr>
-            <tr><td>MUD/WCID Recv. Fees</td><td style="text-align:right">${fmt(o.below_line_recv_fees)}</td><td></td><td></td></tr>
+            <tr><td>Development Mgmt Fee (DMF)</td><td style="text-align:right">${fmt(o.below_line_dmf)}</td><td style="text-align:right">${pctC(o.below_line_dmf)}</td><td style="text-align:right">${pctR(o.below_line_dmf)}</td></tr>
+            <tr><td>Project Personnel</td><td style="text-align:right">${fmt(o.below_line_personnel)}</td><td style="text-align:right">${pctC(o.below_line_personnel)}</td><td style="text-align:right">${pctR(o.below_line_personnel)}</td></tr>
+            <tr><td>Bookkeeping</td><td style="text-align:right">${fmt(o.below_line_bookkeeping)}</td><td style="text-align:right">${pctC(o.below_line_bookkeeping)}</td><td style="text-align:right">${pctR(o.below_line_bookkeeping)}</td></tr>
+            <tr><td>MUD/WCID Recv. Fees</td><td style="text-align:right">${fmt(o.below_line_recv_fees)}</td><td style="text-align:right">${pctC(o.below_line_recv_fees)}</td><td style="text-align:right">${pctR(o.below_line_recv_fees)}</td></tr>
             <tr style="background:rgba(94,158,140,0.12);font-weight:700;font-size:14px;color:var(--accent2);border-top:2px solid var(--accent2)">
               <td style="padding:10px 8px">Net Margin</td>
               <td style="text-align:right;padding:10px 8px">${fmt(o.net_margin_amt)}</td>
@@ -2650,6 +2654,11 @@ function renderOutputsFromFlat(o) {
         <div class="fin-card">
           <div class="fin-card-title">Annual Home Sales</div>
           <canvas id="chart-home-sales" height="180"></canvas>
+        </div>
+        <!-- Gross Margin Breakdown -->
+        <div class="fin-card">
+          <div class="fin-card-title">Gross Margin Breakdown (% of Revenue)</div>
+          <canvas id="chart-gm-overview" height="280"></canvas>
         </div>
       </div>
 
@@ -2759,6 +2768,37 @@ function renderOutputsFromFlat(o) {
         },
         options:{responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.y.toLocaleString()+' homes'}}},
           scales:{x:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM}},y:{ticks:{color:'#8b95a8',font:{size:10}},grid:{color:DIM},beginAtZero:true}}}
+      });
+    }
+
+    // Gross Margin Breakdown chart (overview)
+    const gmOvCtx = plug('chart-gm-overview');
+    if (gmOvCtx && _tr) {
+      const gmItems = [
+        ['Land', o.cost_land], ['Plants', o.cost_plants], ['Amenities', o.cost_amenities],
+        ['Detention', o.cost_detention], ['Sections', o.cost_lot_dev], ['Other', o.cost_other],
+        ['Roads', o.cost_roads], ['Fencing', o.cost_fencing], ['Dry Utilities', o.cost_dry_utilities],
+        ['Site Work', o.cost_site_work], ['Landscaping', o.cost_lot_landscaping],
+        ['Legal', o.cost_legal], ['Lot Taxes', o.cost_lot_taxes], ['MUD/HOA', o.cost_mud_hoa],
+        ['Insurance', o.cost_insurance], ['Marketing', o.cost_marketing],
+        ['Brokerage', o.cost_brokerage], ['Closing', o.cost_closing],
+        ['Mailboxes', o.cost_mailboxes], ['Prof Svc', o.cost_prof_svc],
+        ['Contingency', o.cost_contingency], ['DMF', o.below_line_dmf],
+        ['Personnel', o.below_line_personnel], ['Bookkeeping', o.below_line_bookkeeping],
+        ['Recv Fees', o.below_line_recv_fees],
+      ].filter(([,v]) => parseFloat(v) > 0).sort((a,b) => parseFloat(b[1]) - parseFloat(a[1]));
+      new Chart(gmOvCtx, {
+        type:'bar',
+        data:{
+          labels: gmItems.map(([l])=>l),
+          datasets:[{
+            data: gmItems.map(([,v])=> parseFloat(v)/_tr*100),
+            backgroundColor: gmItems.map((_,i) => `hsl(${200+i*14},50%,55%)`),
+            borderRadius:3
+          }]
+        },
+        options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.x.toFixed(1)+'% of revenue'}}},
+          scales:{x:{ticks:{color:'#8b95a8',font:{size:10},callback:v=>v+'%'},grid:{color:DIM}},y:{ticks:{color:'#8b95a8',font:{size:9}},grid:{display:false}}}}
       });
     }
 
