@@ -378,6 +378,25 @@ def default_inputs(name="New Project"):
         "bookkeeping_monthly": 10000,       # Excel C120 = 10,000
     }
 
+@app.route("/api/portfolio", methods=["GET"])
+@login_required
+def portfolio():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.id, p.name, p.address, p.outputs
+        FROM projects p
+        WHERE p.archived = FALSE
+        ORDER BY p.name
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    result = []
+    for r in rows:
+        o = r["outputs"] or {}
+        result.append({"id": r["id"], "name": r["name"], "address": r["address"], "outputs": o})
+    return jsonify(result)
+
 @app.route("/api/projects/<int:pid>/export_excel", methods=["GET"])
 @login_required
 def export_excel(pid):

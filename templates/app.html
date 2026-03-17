@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
 :root {
   --bg: #0d0f13;
@@ -414,6 +415,27 @@ tr.pod-inactive input { pointer-events: none; }
         <div class="panel-title">Project Portfolio</div>
         <div class="panel-sub">Overview of all saved underwriting models</div>
         <div id="dashboard-cards" class="kpi-grid"></div>
+
+        <!-- Portfolio Database -->
+        <div style="margin-top:32px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+            <div>
+              <div class="panel-title" style="margin-bottom:2px">Portfolio Database</div>
+              <div class="panel-sub" style="margin-bottom:0">All projects with KPIs, revenue, and cost line items. Summary weighted by acreage.</div>
+            </div>
+            <button class="header-btn primary" onclick="exportPortfolioExcel()" style="flex-shrink:0">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Export to Excel
+            </button>
+          </div>
+          <div class="overflow-x" style="border:1px solid var(--border);border-radius:8px">
+            <table class="data-table" id="portfolio-table" style="font-size:12px;min-width:2400px">
+              <thead id="portfolio-thead"></thead>
+              <tbody id="portfolio-tbody"></tbody>
+              <tfoot id="portfolio-tfoot" style="border-top:2px solid var(--accent)"></tfoot>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- PROJECT VIEW -->
@@ -953,6 +975,7 @@ const isAdmin = {{ 'true' if is_admin else 'false' }};
 // ── INIT ──────────────────────────────────────────────────────────
 window.onload = async () => {
   await loadProjectList();
+  loadPortfolio();
 };
 
 // ── PROJECTS ──────────────────────────────────────────────────────
@@ -968,7 +991,7 @@ async function loadProjectList() {
     const el = document.createElement('div');
     el.className = 'proj-item' + (currentProject === p.id ? ' selected' : '');
     el.id = 'proj-' + p.id;
-    const irrDisp = p.unlevered_irr ? (p.unlevered_irr*100).toFixed(1)+'% IRR' : '';
+    const irrDisp = p.unlevered_irr ? (p.unlevered_irr*100).toFixed(1)+'% Project IRR' : '';
     el.innerHTML = `
       <div style="flex:1;min-width:0">
         <div class="proj-item-name">${p.name || 'Unnamed'}</div>
@@ -996,7 +1019,7 @@ async function loadProjectList() {
           <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">${p.address ? p.address.substring(0,35) : 'No address'}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-top:1px solid var(--border);padding-top:10px">
             <div>
-              <div style="font-size:9px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px">IRR</div>
+              <div style="font-size:9px;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px">Project IRR</div>
               <div style="${statStyle};color:var(--success)">${irr}</div>
             </div>
             <div>
@@ -1046,7 +1069,182 @@ function navTo(view) {
     document.getElementById('btn-backup').style.display = 'none';
     document.getElementById('btn-refresh-outputs').style.display = 'none';
     document.getElementById('save-indicator').style.display = 'none';
+    loadPortfolio();
   }
+}
+
+// ── PORTFOLIO DATABASE ──────────────────────────────────────────────────────
+const PORTFOLIO_COLS = [
+  {key:'name',               label:'Project',            fmt:'text'},
+  {key:'gross_acreage',      label:'Gross Acres',        fmt:'num1'},
+  {key:'dev_acres',          label:'Dev Acres',          fmt:'num1'},
+  {key:'total_lots',         label:'Total Lots',         fmt:'int'},
+  {key:'unlevered_irr',      label:'Project IRR',        fmt:'pct1'},
+  {key:'gross_margin_pct',   label:'Gross Margin %',     fmt:'pct1'},
+  {key:'net_margin_pct',     label:'Net Margin %',       fmt:'pct1'},
+  {key:'return_on_cost',     label:'Return on Cost',     fmt:'pct1'},
+  {key:'project_length_years',label:'Project Length (yrs)',fmt:'num1'},
+  {key:'lot_supply_18mo',    label:'18-Mo Supply',       fmt:'int'},
+  {key:'home_sales_per_year',label:'Home Sales/Yr',      fmt:'int'},
+  {key:'rev_per_dev_acre',   label:'Rev/Dev Acre',       fmt:'dollar'},
+  {key:'cost_per_dev_acre',  label:'Cost/Dev Acre',      fmt:'dollar'},
+  {key:'gm_per_acre',        label:'GM/Acre',            fmt:'dollar'},
+  // Revenue
+  {key:'total_revenue',      label:'Total Revenue',      fmt:'dollar'},
+  {key:'rev_lot_sales',      label:'Lot Sales',          fmt:'dollar'},
+  {key:'rev_mud',            label:'MUD Bonds',          fmt:'dollar'},
+  {key:'rev_wcid',           label:'WCID Bonds',         fmt:'dollar'},
+  {key:'rev_premiums',       label:'Premiums',           fmt:'dollar'},
+  {key:'rev_fence_fees',     label:'Fence Fees',         fmt:'dollar'},
+  {key:'rev_escalations',    label:'Escalations',        fmt:'dollar'},
+  {key:'rev_mktg_fees',      label:'Marketing Fees',     fmt:'dollar'},
+  {key:'rev_res_pods',       label:'Res Pod Sales',      fmt:'dollar'},
+  {key:'rev_comm_pods',      label:'Comm Pod Sales',     fmt:'dollar'},
+  // Costs
+  {key:'gross_costs',        label:'Gross Costs',        fmt:'dollar'},
+  {key:'cost_land',          label:'Land',               fmt:'dollar'},
+  {key:'cost_plants',        label:'Plants',             fmt:'dollar'},
+  {key:'cost_amenities',     label:'Amenities',          fmt:'dollar'},
+  {key:'cost_detention',     label:'Detention',           fmt:'dollar'},
+  {key:'cost_lot_dev',       label:'Lot Development',    fmt:'dollar'},
+  {key:'cost_other',         label:'Other',              fmt:'dollar'},
+  {key:'cost_roads',         label:'Roads',              fmt:'dollar'},
+  {key:'cost_fencing',       label:'Fencing',            fmt:'dollar'},
+  {key:'cost_dry_utilities', label:'Dry Utilities',      fmt:'dollar'},
+  {key:'cost_site_work',     label:'Site Work',          fmt:'dollar'},
+  {key:'cost_lot_landscaping',label:'Landscaping',       fmt:'dollar'},
+  {key:'cost_legal',         label:'Legal',              fmt:'dollar'},
+  {key:'cost_lot_taxes',     label:'Lot Taxes',          fmt:'dollar'},
+  {key:'cost_mud_hoa',       label:'MUD/HOA',            fmt:'dollar'},
+  {key:'cost_insurance',     label:'Insurance',          fmt:'dollar'},
+  {key:'cost_marketing',     label:'Marketing',          fmt:'dollar'},
+  {key:'cost_brokerage',     label:'Brokerage',          fmt:'dollar'},
+  {key:'cost_closing',       label:'Closing Costs',      fmt:'dollar'},
+  {key:'cost_mailboxes',     label:'Mailboxes',          fmt:'dollar'},
+  {key:'cost_prof_svc',      label:'Prof Services',      fmt:'dollar'},
+  {key:'cost_contingency',   label:'Contingency',        fmt:'dollar'},
+  // Margins
+  {key:'gross_margin_amt',   label:'Gross Margin $',     fmt:'dollar'},
+  {key:'below_line_dmf',     label:'DMF',                fmt:'dollar'},
+  {key:'below_line_personnel',label:'Personnel',         fmt:'dollar'},
+  {key:'below_line_bookkeeping',label:'Bookkeeping',     fmt:'dollar'},
+  {key:'below_line_recv_fees',label:'Receivables Fees',  fmt:'dollar'},
+  {key:'net_margin_amt',     label:'Net Margin $',       fmt:'dollar'},
+];
+
+// Which columns should be weighted-averaged vs summed
+const SUM_KEYS = new Set([
+  'gross_acreage','dev_acres','total_lots','total_revenue',
+  'rev_lot_sales','rev_mud','rev_wcid','rev_premiums','rev_fence_fees','rev_escalations','rev_mktg_fees','rev_res_pods','rev_comm_pods',
+  'gross_costs','cost_land','cost_plants','cost_amenities','cost_detention','cost_lot_dev','cost_other','cost_roads','cost_fencing',
+  'cost_dry_utilities','cost_site_work','cost_lot_landscaping','cost_legal','cost_lot_taxes','cost_mud_hoa','cost_insurance',
+  'cost_marketing','cost_brokerage','cost_closing','cost_mailboxes','cost_prof_svc','cost_contingency',
+  'gross_margin_amt','below_line_dmf','below_line_personnel','below_line_bookkeeping','below_line_recv_fees','net_margin_amt'
+]);
+
+function fmtCell(val, fmt) {
+  if (val == null || val === '' || isNaN(val)) return '—';
+  const v = parseFloat(val);
+  if (fmt === 'dollar') return '$' + v.toLocaleString('en-US', {maximumFractionDigits:0});
+  if (fmt === 'int') return Math.round(v).toLocaleString('en-US');
+  if (fmt === 'num1') return v.toLocaleString('en-US', {minimumFractionDigits:1, maximumFractionDigits:1});
+  if (fmt === 'pct1') return (v * 100).toFixed(1) + '%';
+  return String(v);
+}
+
+let _portfolioData = [];
+
+async function loadPortfolio() {
+  try {
+    const res = await fetch('/api/portfolio');
+    const data = await res.json();
+    _portfolioData = data;
+    renderPortfolioTable(data);
+  } catch(e) { console.error('Portfolio load error', e); }
+}
+
+function renderPortfolioTable(data) {
+  const thead = document.getElementById('portfolio-thead');
+  const tbody = document.getElementById('portfolio-tbody');
+  const tfoot = document.getElementById('portfolio-tfoot');
+  if (!thead) return;
+
+  // Header
+  thead.innerHTML = '<tr>' + PORTFOLIO_COLS.map(c =>
+    `<th style="white-space:nowrap;font-size:11px;padding:8px 10px;position:sticky;top:0;background:var(--card);z-index:1">${c.label}</th>`
+  ).join('') + '</tr>';
+
+  // Body rows
+  if (data.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${PORTFOLIO_COLS.length}" style="text-align:center;padding:20px;color:var(--text-dim)">No projects yet</td></tr>`;
+    tfoot.innerHTML = '';
+    return;
+  }
+  tbody.innerHTML = data.map(p => {
+    const o = p.outputs || {};
+    return '<tr>' + PORTFOLIO_COLS.map(c => {
+      const val = c.key === 'name' ? p.name : o[c.key];
+      const align = c.fmt === 'text' ? 'left' : 'right';
+      return `<td style="padding:6px 10px;white-space:nowrap;text-align:${align};font-variant-numeric:tabular-nums">${c.fmt === 'text' ? (val||'—') : fmtCell(val, c.fmt)}</td>`;
+    }).join('') + '</tr>';
+  }).join('');
+
+  // Weighted summary
+  const totalAcres = data.reduce((s, p) => s + (parseFloat((p.outputs||{}).gross_acreage)||0), 0);
+  let summaryRow = '<tr style="background:rgba(200,169,110,.08);font-weight:600">';
+  PORTFOLIO_COLS.forEach(c => {
+    if (c.key === 'name') {
+      summaryRow += `<td style="padding:6px 10px;white-space:nowrap;color:var(--accent)">Summary (${data.length} projects)</td>`;
+      return;
+    }
+    const vals = data.map(p => ({v: parseFloat((p.outputs||{})[c.key])||0, ac: parseFloat((p.outputs||{}).gross_acreage)||0}));
+    let result;
+    if (SUM_KEYS.has(c.key)) {
+      result = vals.reduce((s, x) => s + x.v, 0);
+    } else {
+      // Weighted average by acreage
+      if (totalAcres > 0) {
+        result = vals.reduce((s, x) => s + x.v * x.ac, 0) / totalAcres;
+      } else {
+        result = vals.reduce((s, x) => s + x.v, 0) / (vals.length || 1);
+      }
+    }
+    summaryRow += `<td style="padding:6px 10px;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;color:var(--accent)">${fmtCell(result, c.fmt)}</td>`;
+  });
+  summaryRow += '</tr>';
+  tfoot.innerHTML = summaryRow;
+}
+
+function exportPortfolioExcel() {
+  if (!_portfolioData.length) { alert('No projects to export.'); return; }
+  const headers = PORTFOLIO_COLS.map(c => c.label);
+  const rows = _portfolioData.map(p => {
+    const o = p.outputs || {};
+    return PORTFOLIO_COLS.map(c => {
+      if (c.key === 'name') return p.name || '';
+      const v = parseFloat(o[c.key]);
+      if (isNaN(v)) return '';
+      if (c.fmt === 'pct1') return v; // keep as decimal for Excel formatting
+      return v;
+    });
+  });
+  // Add summary row
+  const totalAcres = _portfolioData.reduce((s, p) => s + (parseFloat((p.outputs||{}).gross_acreage)||0), 0);
+  const summary = PORTFOLIO_COLS.map(c => {
+    if (c.key === 'name') return 'SUMMARY';
+    const vals = _portfolioData.map(p => ({v: parseFloat((p.outputs||{})[c.key])||0, ac: parseFloat((p.outputs||{}).gross_acreage)||0}));
+    if (SUM_KEYS.has(c.key)) return vals.reduce((s, x) => s + x.v, 0);
+    if (totalAcres > 0) return vals.reduce((s, x) => s + x.v * x.ac, 0) / totalAcres;
+    return vals.reduce((s, x) => s + x.v, 0) / (vals.length || 1);
+  });
+  rows.push(summary);
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  // Column widths
+  ws['!cols'] = PORTFOLIO_COLS.map(c => ({wch: c.fmt === 'text' ? 24 : c.label.length + 4}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Portfolio');
+  XLSX.writeFile(wb, 'Ember_Portfolio.xlsx');
 }
 
 function openNewProject() {
