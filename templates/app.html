@@ -1021,8 +1021,7 @@ async function loadProjectList() {
         const statStyle = 'font-family:"DM Sans",sans-serif;font-size:15px;font-weight:600';
         return `
         <div class="kpi-card" style="cursor:pointer;border-left:3px solid var(--accent)" onclick="selectProject(${p.id})">
-          <div class="kpi-label" style="color:var(--accent);font-size:9px;letter-spacing:.12em">#${p.id}</div>
-          <div style="font-family:'Instrument Serif',serif;font-size:16px;color:var(--text);margin:4px 0 10px">${p.name || 'Unnamed'}</div>
+          <div style="font-family:'Instrument Serif',serif;font-size:16px;color:var(--text);margin:0 0 10px">${p.name || 'Unnamed'}</div>
           <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">${p.address ? p.address.substring(0,35) : 'No address'}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-top:1px solid var(--border);padding-top:10px">
             <div>
