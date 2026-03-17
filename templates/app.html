@@ -1444,7 +1444,6 @@ function toggleLotRow(i) {
   const sel = document.getElementById(`ci-ls-on-${i}`);
   const row = document.getElementById(`ci-lot-row-${i}`);
   const isOn = sel.value === '1';
-  // All editable fields that should be saved/restored on toggle
   const lotFields = ['mix','yield','pace','hp','dsm','lpl','urd','lsl','fen'];
   if (isOn) {
     row.classList.remove('lot-off');
@@ -1467,6 +1466,99 @@ function toggleLotRow(i) {
     });
     row.classList.add('lot-off');
   }
+  recalcLotRow(i);
+}
+
+// ── LIVE RECALC FOR LOT ROWS ─────────────────────────────────────
+function recalcLotRow(i) {
+  const row = document.getElementById(`ci-lot-row-${i}`);
+  if (!row) return;
+  const isOn = (document.getElementById(`ci-ls-on-${i}`)?.value === '1');
+  const yieldAc = parseFloat(document.getElementById(`ci-ls-yield-${i}`)?.value) || 0;
+  const pace = parseFloat(document.getElementById(`ci-ls-pace-${i}`)?.value) || 0;
+  const lots18 = isOn ? pace * 18 : 0;
+  const acres18 = isOn && yieldAc > 0 ? lots18 / yieldAc : 0;
+  // total_lots needs full recalc (depends on all rows) — approximate with simple formula
+  // For now show lots_18mo and acres_18mo live; total_lots requires residential_dev_acres allocation
+  const span18 = document.getElementById(`ci-ls-18mo-${i}`);
+  const spanAc = document.getElementById(`ci-ls-ac18-${i}`);
+  if (span18) span18.textContent = isOn && lots18 ? Math.round(lots18) : '—';
+  if (spanAc) spanAc.textContent = isOn && acres18 ? acres18.toFixed(1) : '—';
+  // Recalc total_lots across all rows
+  recalcAllLotTotals();
+}
+
+function recalcAllLotTotals() {
+  // Gather all active lot rows to compute residential_dev_acres allocation
+  const rows = [];
+  for (let i = 0; i < 16; i++) {
+    const row = document.getElementById(`ci-lot-row-${i}`);
+    if (!row) break;
+    const isOn = (document.getElementById(`ci-ls-on-${i}`)?.value === '1');
+    const yieldAc = parseFloat(document.getElementById(`ci-ls-yield-${i}`)?.value) || 0;
+    const pace = parseFloat(document.getElementById(`ci-ls-pace-${i}`)?.value) || 0;
+    const lots18 = isOn ? pace * 18 : 0;
+    const acres18 = isOn && yieldAc > 0 ? lots18 / yieldAc : 0;
+    rows.push({i, isOn, yieldAc, pace, lots18, acres18});
+  }
+  const sum18 = rows.reduce((s, r) => s + r.acres18, 0);
+  // We need residential_dev_acres — try to read from last outputs
+  const resDevAcres = window._lastOutputs?.residential_dev_acres || window._lastOutputs?.dev_acres || 0;
+  rows.forEach(r => {
+    let totalLots = 0;
+    if (r.isOn && sum18 > 0 && r.acres18 > 0 && resDevAcres > 0) {
+      const allocAcres = resDevAcres * (r.acres18 / sum18);
+      const fullSecs = Math.floor(allocAcres / r.acres18);
+      const lastAcres = allocAcres - fullSecs * r.acres18;
+      totalLots = Math.floor(fullSecs * r.lots18 + lastAcres * r.yieldAc);
+    }
+    const spanTot = document.getElementById(`ci-ls-tot-${r.i}`);
+    if (spanTot) spanTot.textContent = r.isOn && totalLots ? totalLots : '—';
+  });
+}
+
+// ── LIVE RECALC FOR OTHER ITEMS TOTAL COST ───────────────────────
+function recalcOtherCost(i) {
+  const base = parseFloat(document.getElementById(`ci-ot-cost-${i}`)?.value) || 0;
+  const otherPct = window._lastInputs?.default_other_pct ?? 0.17;
+  const total = base * (1 + otherPct);
+  const span = document.getElementById(`ci-ot-total-${i}`);
+  if (span) span.textContent = total ? '$' + Math.round(total).toLocaleString('en-US') : '—';
+}
+
+// ── LIVE RECALC FOR RES POD NET PROCEEDS ─────────────────────────
+function recalcResPod(i) {
+  const price = parseFloat(document.getElementById(`ri-rp-price-${i}`)?.value) || 0;
+  const ccPct = (parseFloat(document.getElementById(`ri-rp-cc-${i}`)?.value) || 0) / 100;
+  const lpa = parseFloat(document.getElementById(`ri-rp-lpa-${i}`)?.value) || 0;
+  const impact = parseFloat(document.getElementById(`ri-rp-impact-${i}`)?.value) || 0;
+  const resCnt = parseInt(document.getElementById('ri-res_pod_count')?.value) || 1;
+  const resAcres = parseFloat(document.getElementById('ri-res_pod_acreage')?.textContent) || 0;
+  const acresPerPod = resCnt > 0 ? resAcres / resCnt : 0;
+  const net = acresPerPod * price * (1 - ccPct) + impact * lpa * acresPerPod;
+  const span = document.getElementById(`ri-rp-net-${i}`);
+  if (span) span.textContent = net ? '$' + Math.round(net).toLocaleString('en-US') : '—';
+}
+
+// ── LIVE RECALC FOR COMM POD NET PROCEEDS / AV ──────────────────
+function recalcCommPod(i) {
+  const psf = parseFloat(document.getElementById(`ri-cp-price-${i}`)?.value) || 0;
+  const ccPct = (parseFloat(document.getElementById(`ri-cp-cc-${i}`)?.value) || 0) / 100;
+  const commCnt = parseInt(document.getElementById('ri-comm_pod_count')?.value) || 1;
+  const commAcres = parseFloat(document.getElementById('ri-comm_pod_acreage')?.textContent) || 0;
+  const acresPerPod = commCnt > 0 ? commAcres / commCnt : 0;
+  const net = acresPerPod * 43560 * psf * (1 - ccPct);
+  const salePeriod = parseInt(document.getElementById(`ri-cp-sp-${i}`)?.value) || 0;
+  const avPerAcre = parseFloat(document.getElementById(`ri-cp-av-${i}`)?.value) || 0;
+  const avDelay = parseInt(document.getElementById(`ri-cp-avd-${i}`)?.value) || 0;
+  const avPeriod = salePeriod + avDelay;
+  const totalAv = acresPerPod * avPerAcre;
+  const spanNet = document.getElementById(`ri-cp-net-${i}`);
+  const spanAvP = document.getElementById(`ri-cp-avp-${i}`);
+  const spanTAv = document.getElementById(`ri-cp-tav-${i}`);
+  if (spanNet) spanNet.textContent = net ? '$' + Math.round(net).toLocaleString('en-US') : '—';
+  if (spanAvP) spanAvP.textContent = avPeriod ? 'Mo. ' + avPeriod : '—';
+  if (spanTAv) spanTAv.textContent = totalAv ? '$' + Math.round(totalAv).toLocaleString('en-US') : '—';
 }
 
 // ── POD COUNT APPLY ───────────────────────────────────────────────
@@ -1564,6 +1656,8 @@ async function loadInputs() {
   const proj = await res.json();
   inputs = proj.inputs || {};  // flat inputs dict
   const c = proj.outputs || {};  // calc outputs (for derived/computed fields in cost tab)
+  window._lastOutputs = c;
+  window._lastInputs = inputs;
   // Backfill arrays missing from older projects
   const _df = (key, val) => {
     const v = inputs[key];
@@ -1968,9 +2062,9 @@ async function loadInputs() {
       <td class="row-num">${o.num||i+1}</td>
       <td class="calc-col"><span class="calc-cell" style="text-align:left">${desc}</span></td>
       <td class="calc-col"><span class="calc-cell">${acres||'—'}</span></td>
-      <td><input type="number" id="ci-ot-cost-${i}" value="${o.base_cost||''}" class="mono" oninput="markDirty()"></td>
+      <td><input type="number" id="ci-ot-cost-${i}" value="${o.base_cost||''}" class="mono" oninput="markDirty();recalcOtherCost(${i})"></td>
       <td class="calc-col"><span class="calc-cell">${((t.default_other_pct??0.17)*100).toFixed(0)}%</span></td>
-      <td class="calc-col"><span class="calc-cell">${fmtC(o.total_cost)}</span></td>
+      <td class="calc-col"><span class="calc-cell" id="ci-ot-total-${i}">${fmtC(o.total_cost)}</span></td>
       <td><input type="number" id="ci-ot-sm-${i}" value="${o.start_month||''}" class="mono" oninput="markDirty()"></td>
       <td><input type="number" id="ci-ot-dur-${i}" value="${o.duration||''}" class="mono" oninput="markDirty()"></td>
       <td><input type="text" id="ci-ot-notes-${i}" value="${o.notes||''}" class="mono" oninput="markDirty()"></td>
@@ -2024,11 +2118,11 @@ async function loadInputs() {
         <option value="0" ${isOn?'':'selected'}>Off</option>
       </select></td>
       <td><div class="pct-wrap"><input type="number" step="1" id="ci-ls-mix-${i}" value="${isOn ? pctMix : ''}" data-saved="${pctMix}" class="mono" oninput="markDirty()" placeholder="equal" ${dis}></div></td>
-      <td><input type="number" step="0.01" id="ci-ls-yield-${i}" value="${sv2(ls.yield_per_ac)}" data-saved="${ds(ls.yield_per_ac)}" class="mono" oninput="markDirty()" ${dis}></td>
-      <td><input type="number" step="0.25" id="ci-ls-pace-${i}" value="${sv2(ls.pace)}" data-saved="${ds(ls.pace)}" class="mono" oninput="markDirty()" ${dis}></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.lots_18mo?ls.lots_18mo.toFixed(0):'—'}</span></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.total_lots?ls.total_lots.toFixed(0):'—'}</span></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.acres_18mo?ls.acres_18mo.toFixed(1):'—'}</span></td>
+      <td><input type="number" step="0.01" id="ci-ls-yield-${i}" value="${sv2(ls.yield_per_ac)}" data-saved="${ds(ls.yield_per_ac)}" class="mono" oninput="markDirty();recalcLotRow(${i})" ${dis}></td>
+      <td><input type="number" step="0.25" id="ci-ls-pace-${i}" value="${sv2(ls.pace)}" data-saved="${ds(ls.pace)}" class="mono" oninput="markDirty();recalcLotRow(${i})" ${dis}></td>
+      <td class="calc-col"><span class="calc-cell" id="ci-ls-18mo-${i}">${isOn&&ls.lots_18mo?ls.lots_18mo.toFixed(0):'—'}</span></td>
+      <td class="calc-col"><span class="calc-cell" id="ci-ls-tot-${i}">${isOn&&ls.total_lots?ls.total_lots.toFixed(0):'—'}</span></td>
+      <td class="calc-col"><span class="calc-cell" id="ci-ls-ac18-${i}">${isOn&&ls.acres_18mo?ls.acres_18mo.toFixed(1):'—'}</span></td>
       <td><input type="number" id="ci-ls-hp-${i}" value="${sv2(ls.home_price)}" data-saved="${ds(ls.home_price)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.wsd_per_ff?fmtC(ls.wsd_per_ff):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.paving_per_ff?fmtC(ls.paving_per_ff):'—'}</span></td>
@@ -2140,11 +2234,11 @@ async function loadInputs() {
     const active = i < resCnt;
     return `<tr id="ri-rp-row-${i}" class="${active ? '' : 'pod-inactive'}">
       <td class="row-num" style="color:${active?'var(--accent2)':'var(--text-dim)'}">Pod ${rp.pod||i+1}</td>
-      <td><input type="number" id="ri-rp-price-${i}" value="${active ? (rp.price_per_acre||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-rp-cc-${i}" value="${active ? +((rp.closing_costs_pct??rp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></div></td>
-      <td><input type="number" step="0.1" id="ri-rp-lpa-${i}" value="${active ? (rp.implied_lots_per_acre||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td><input type="number" id="ri-rp-impact-${i}" value="${active ? (rp.impact_fee_per_lot||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${active && rp.net_proceeds ? '$'+Math.round(rp.net_proceeds).toLocaleString('en-US') : '—'}</span></td>
+      <td><input type="number" id="ri-rp-price-${i}" value="${active ? (rp.price_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-rp-cc-${i}" value="${active ? +((rp.closing_costs_pct??rp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></div></td>
+      <td><input type="number" step="0.1" id="ri-rp-lpa-${i}" value="${active ? (rp.implied_lots_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><input type="number" id="ri-rp-impact-${i}" value="${active ? (rp.impact_fee_per_lot||'') : 0}" class="mono" oninput="markDirty();recalcResPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-rp-net-${i}">${active && rp.net_proceeds ? '$'+Math.round(rp.net_proceeds).toLocaleString('en-US') : '—'}</span></td>
       <td><input type="number" id="ri-rp-sp-${i}" value="${active ? (rp.sale_period||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
     </tr>`;}).join('');
 
@@ -2158,14 +2252,14 @@ async function loadInputs() {
     const active = i < commCnt;
     return `<tr id="ri-cp-row-${i}" class="${active ? '' : 'pod-inactive'}">
       <td class="row-num" style="color:${active?'var(--accent2)':'var(--text-dim)'}">Pod ${cp.pod||i+1}</td>
-      <td><input type="number" step="0.01" id="ri-cp-price-${i}" value="${active ? (cp.price_per_sf||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-cp-cc-${i}" value="${active ? +((cp.closing_costs_pct??cp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></div></td>
-      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${active && cp.net_proceeds ? '$'+Math.round(cp.net_proceeds).toLocaleString('en-US') : '—'}</span></td>
-      <td><input type="number" id="ri-cp-sp-${i}" value="${active ? (cp.sale_period||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td><input type="number" id="ri-cp-av-${i}" value="${active ? (cp.av_per_acre||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td><input type="number" id="ri-cp-avd-${i}" value="${active ? (cp.av_delay_months||'') : 0}" class="mono" oninput="markDirty()" ${active?'':'tabindex="-1"'}></td>
-      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${active && cp.av_period != null ? 'Mo. '+cp.av_period : '—'}</span></td>
-      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell">${active && cp.total_av ? '$'+Math.round(cp.total_av).toLocaleString('en-US') : '—'}</span></td>
+      <td><input type="number" step="0.01" id="ri-cp-price-${i}" value="${active ? (cp.price_per_sf||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><div class="pct-wrap"><input type="number" step="0.1" id="ri-cp-cc-${i}" value="${active ? +((cp.closing_costs_pct??cp.closing_costs??0.045)*100).toPrecision(4) : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></div></td>
+      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-cp-net-${i}">${active && cp.net_proceeds ? '$'+Math.round(cp.net_proceeds).toLocaleString('en-US') : '—'}</span></td>
+      <td><input type="number" id="ri-cp-sp-${i}" value="${active ? (cp.sale_period||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><input type="number" id="ri-cp-av-${i}" value="${active ? (cp.av_per_acre||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td><input type="number" id="ri-cp-avd-${i}" value="${active ? (cp.av_delay_months||'') : 0}" class="mono" oninput="markDirty();recalcCommPod(${i})" ${active?'':'tabindex="-1"'}></td>
+      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-cp-avp-${i}">${active && cp.av_period != null ? 'Mo. '+cp.av_period : '—'}</span></td>
+      <td style="background:rgba(123,143,212,.04)"><span class="calc-cell" id="ri-cp-tav-${i}">${active && cp.total_av ? '$'+Math.round(cp.total_av).toLocaleString('en-US') : '—'}</span></td>
     </tr>`;}).join('');
 
   // MUD & WCID table
@@ -2617,6 +2711,7 @@ async function recalcAndRefresh() {
     const rr = await fetch(`/api/projects/${currentProject}/calculate`, {method:'POST'});
     const rd = await rr.json();
     if (rd.ok) {
+      window._lastOutputs = rd.outputs;
       renderOutputsFromFlat(rd.outputs);
       await loadInputs();
       toast('Model recalculated', 'success');
@@ -2642,6 +2737,7 @@ async function loadOutputs() {
       return;
     }
     const outs = proj.outputs || {};
+    window._lastOutputs = outs;
     if (Object.keys(outs).length === 0) {
       // No outputs yet — trigger calculation
       await recalcAndRefresh();
