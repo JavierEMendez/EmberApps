@@ -273,16 +273,16 @@ expected = {
     "cost_brokerage":    5366250,
     "cost_closing":      2683125,
     "cost_mailboxes":    420900,
-    "cost_prof_svc":     4767690,
-    "cost_contingency":  7895301,
-    "gross_costs":       228632418,
+    "cost_prof_svc":     4780083,
+    "cost_contingency":  7895921,
+    "gross_costs":       228645432,
 
     # Margins
-    "gross_margin_amt":  90039796,
+    "gross_margin_amt":  90026782,
     "below_line_dmf":    4053187,
     "below_line_personnel": 7885000,
     "below_line_bookkeeping": 1290000,
-    "net_margin_amt":    74174562,
+    "net_margin_amt":    74163114,
 }
 
 # ── Compare ──

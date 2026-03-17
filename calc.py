@@ -1053,8 +1053,9 @@ def calculate(inp: dict) -> dict:
     # Marketing cost = sum of per-lot marketing fees (Excel matches rev_mktg_fees)
     marketing_total  = total_mktg_fee_rev
     # Prof services = prof_svc_pct * total_revenue (includes pods+bonds, not just lot rev)
-    total_revenue_pre = sum(rev_monthly[1:proj_months+1])
-    prof_svc_total   = total_revenue_pre * prof_svc_pct
+    # Excel: ='Project Performance'!$F$13 * B95 — F13 is total revenue across ALL months
+    total_revenue_all = sum(rev_monthly[1:])
+    prof_svc_total    = total_revenue_all * prof_svc_pct
 
     total_det_landscaping = sum(r.get("total_landscaping", 0) for r in det_cost_rows)
 
