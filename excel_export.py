@@ -188,6 +188,7 @@ def export_excel(inputs: dict) -> bytes:
     write_cell(ci, "B95",  _n(inputs.get("prof_svc_pct")))
     write_cell(ci, "B99",  _n(inputs.get("dmf_pct")))
     write_cell(ci, "C103", _n(inputs.get("personnel_monthly")))
+    write_cell(ci, "C104", _n(inputs.get("marketing_personnel_monthly")))
     write_cell(ci, "C108", _n(inputs.get("legal_monthly")))
     write_cell(ci, "C112", _n(inputs.get("mud_monthly")))
     write_cell(ci, "D112", _n(inputs.get("mud_pct")))
@@ -234,7 +235,7 @@ def export_excel(inputs: dict) -> bytes:
     for i, row in enumerate(res_pod_rows):
         rp = res_pods[i] if i < len(res_pods) else {}
         write_cell(ri, f"F{row}", _n(rp.get("price_per_acre")))
-        write_cell(ri, f"G{row}", _n(rp.get("closing_costs")))
+        write_cell(ri, f"G{row}", _n(rp.get("closing_costs_pct") or rp.get("closing_costs")))
         write_cell(ri, f"H{row}", _n(rp.get("implied_lots_per_acre")))
         write_cell(ri, f"I{row}", _n(rp.get("impact_fee_per_lot")))
         write_cell(ri, f"K{row}", _n(rp.get("sale_period")))
@@ -247,7 +248,7 @@ def export_excel(inputs: dict) -> bytes:
     for i, row in enumerate(comm_pod_rows):
         cp = comm_pods[i] if i < len(comm_pods) else {}
         write_cell(ri, f"F{row}", _n(cp.get("price_per_sf")))
-        write_cell(ri, f"G{row}", _n(cp.get("closing_costs")))
+        write_cell(ri, f"G{row}", _n(cp.get("closing_costs_pct") or cp.get("closing_costs")))
         write_cell(ri, f"I{row}", _n(cp.get("sale_period")))
         write_cell(ri, f"J{row}", _n(cp.get("av_per_acre")))
         write_cell(ri, f"K{row}", _n(cp.get("av_delay_months")))
