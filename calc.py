@@ -4,6 +4,8 @@ Faithfully ports all Excel formulas from the 10-sheet model.
 No Excel or openpyxl required at runtime.
 """
 import math
+import datetime
+import calendar
 from typing import Any
 
 # ─── LOOKUP TABLES (from Calc_Lookups sheet) ─────────────────────────────────
@@ -76,6 +78,44 @@ def npv_irr(cashflows, guess=0.1, max_iter=1000):
         r = r_new
     annual = (1 + r) ** 12 - 1
     return annual if -0.5 < annual < 10 else None
+
+
+def xirr(cashflows, dates, guess=0.1, max_iter=1000):
+    """Newton-Raphson XIRR matching Excel's 365-day convention.
+    cashflows: list of floats, dates: list of date objects.
+    Tries multiple initial guesses if Newton-Raphson fails to converge."""
+    if not any(c < 0 for c in cashflows) or not any(c > 0 for c in cashflows):
+        return None
+    d0 = dates[0]
+    # Year fractions from first date (Excel: actual/365)
+    yf = [(d - d0).days / 365.0 for d in dates]
+    # Filter to non-zero cashflows for efficiency
+    pairs = [(c, t) for c, t in zip(cashflows, yf) if c != 0]
+
+    def _try_solve(r):
+        for _ in range(max_iter):
+            npv = sum(c / (1 + r) ** t for c, t in pairs)
+            dnpv = sum(-t * c / (1 + r) ** (t + 1) for c, t in pairs)
+            if abs(dnpv) < 1e-14:
+                return None
+            r_new = r - npv / dnpv
+            if r_new <= -1:
+                return None  # prevent divergence
+            if abs(r_new - r) < 1e-9:
+                return r_new
+            r = r_new
+        return r if abs(sum(c / (1 + r) ** t for c, t in pairs)) < 1.0 else None
+
+    for g in [guess, 0.05, 0.15, 0.25, 0.01, -0.05]:
+        result = _try_solve(g)
+        if result is not None and -0.5 < result < 10:
+            return result
+    return None
+
+
+def _end_of_month(year, month):
+    """Return the last day of the given month."""
+    return datetime.date(year, month, calendar.monthrange(year, month)[1])
 
 
 def calculate(inp: dict) -> dict:
@@ -505,7 +545,7 @@ def calculate(inp: dict) -> dict:
         for lr in lot_rows:
             if lr.get("total_lots", 0) > 0:
                 pace       = safe(lr.get("pace", 0))
-                sm         = int(safe(lr.get("dev_start_month", default_start_month)))
+                sm         = int(safe(lr.get("dev_start_month", default_start_month))) + 1
                 build_time = max(0, int(safe(lr.get("build_time", 12))))
                 full_secs  = lr.get("full_sections", 0)
                 last_lots  = lr.get("last_lots", 0)
@@ -525,10 +565,10 @@ def calculate(inp: dict) -> dict:
     rev_monthly = [0.0] * (MAX_MONTHS + 1)
     cost_monthly = [0.0] * (MAX_MONTHS + 1)
 
-    # Land cost: takedowns
+    # Land cost: takedowns (input period is 0-indexed; app month = period + 1)
     for td in td_rows:
-        m = max(1, int(td["period"]))
-        if m <= MAX_MONTHS:
+        m = int(td["period"]) + 1
+        if 1 <= m <= MAX_MONTHS:
             cost_monthly[m] += td["total"]
 
     # Infrastructure costs: spread evenly over duration
@@ -589,7 +629,7 @@ def calculate(inp: dict) -> dict:
         pace = safe(lr.get("pace", 0))
         if pace <= 0:
             continue
-        sm              = int(safe(lr.get("dev_start_month", default_start_month)))
+        sm              = int(safe(lr.get("dev_start_month", default_start_month))) + 1
         lots_18mo       = pace * 18                   # float (e.g. 13.5 for 80FF)
         full_secs       = lr.get("full_sections", 0)
         last_lots       = lr.get("last_lots", 0)
@@ -687,7 +727,7 @@ def calculate(inp: dict) -> dict:
         if pace <= 0:
             continue
         total        = int(lr["total_lots"])
-        sm           = int(safe(lr.get("dev_start_month", default_start_month)))
+        sm           = int(safe(lr.get("dev_start_month", default_start_month))) + 1
         ff           = lr.get("ff", 0)
         premium_pff  = safe(lr.get("premium_per_ff", 0))
         escalation   = safe(lr.get("escalation", 0))
@@ -878,7 +918,7 @@ def calculate(inp: dict) -> dict:
         if pace_lr <= 0:
             continue
         total_lr   = int(lr["total_lots"])
-        sm_lr      = int(safe(lr.get("dev_start_month", default_start_month)))
+        sm_lr      = int(safe(lr.get("dev_start_month", default_start_month))) + 1
         build_time = max(0, int(safe(lr.get("build_time", 12))))
         av_pct_lr  = safe(lr.get("av_pct", 0.85))
         hp         = safe(lr.get("home_price", 0))
@@ -1003,13 +1043,12 @@ def calculate(inp: dict) -> dict:
     # Excel costs run from period 0 to period N inclusive = N+1 total months.
     # Our month 1 = Excel period 0, so to run N+1 months we need end = N+1.
     # D95 = last lot delivery period (0-indexed). Costs run D95+1 months → our end = D95+1.
-    # B91 = last home sale period (0-indexed). Costs run B91+1 months → our end = B91+1.
-    # Since our month numbers align with Excel period numbers (month 1 = period 1, month 136 = period 136),
-    # and Excel includes period 0, we add +1 to account for that extra month.
+    # App month M = Excel period M-1.  After dev_start_month +1 fix,
+    # last_lot_rev_period already maps to Excel D95+1 total months.
     total_lot_revenue_gross = sum(lot_rev_by_month)
     last_lot_rev_period  = max((m for m in range(1, MAX_MONTHS + 1) if lot_rev_by_month[m] > 0), default=proj_months)
-    last_delivery_period = last_lot_rev_period + 1   # +1 for period 0 (Excel D95+1 total months)
-    last_home_period     = (_last_home_sale_m + 1) if _last_home_sale_m > 0 else last_delivery_period
+    last_delivery_period = last_lot_rev_period
+    last_home_period     = _last_home_sale_m if _last_home_sale_m > 0 else last_delivery_period
 
     # Marketing cost = sum of per-lot marketing fees (Excel matches rev_mktg_fees)
     marketing_total  = total_mktg_fee_rev
@@ -1030,7 +1069,7 @@ def calculate(inp: dict) -> dict:
         pace_sw = safe(lr.get("pace", 0))
         if pace_sw <= 0:
             continue
-        sm_sw = int(safe(lr.get("dev_start_month", default_start_month)))
+        sm_sw = int(safe(lr.get("dev_start_month", default_start_month))) + 1
         ff_sw = lr.get("ff", 0)
         lots_18mo_sw = pace_sw * 18
         full_secs_sw = lr.get("full_sections", 0)
@@ -1309,9 +1348,26 @@ def calculate(inp: dict) -> dict:
         if rev_monthly[m] > 0 or cost_monthly[m] > 0:
             last_cf_month = m
 
-    # IRR (unlevered monthly cashflows — includes late bond proceeds)
+    # XIRR (date-based, matching Excel's XIRR with 365-day convention)
+    # App month 1 = closing date (Excel period 0), subsequent months = end-of-month dates
+    closing_str = inp.get("closing_date", "")
+    try:
+        closing_dt = datetime.date.fromisoformat(closing_str) if closing_str else None
+    except (ValueError, TypeError):
+        closing_dt = None
+
     cf = [-(cost_monthly[m]) + rev_monthly[m] for m in range(1, last_cf_month + 1)]
-    irr = npv_irr(cf)
+    if closing_dt:
+        # Generate end-of-month dates: month 1 = closing date, month N = N-1 months later
+        cf_dates = [closing_dt]
+        for m in range(2, last_cf_month + 1):
+            months_offset = m - 1
+            y = closing_dt.year + (closing_dt.month - 1 + months_offset) // 12
+            mo = (closing_dt.month - 1 + months_offset) % 12 + 1
+            cf_dates.append(_end_of_month(y, mo))
+        irr = xirr(cf, cf_dates)
+    else:
+        irr = npv_irr(cf)
 
     # Yearly lots/homes for chart — dynamic range based on project length
     final_year = max(math.ceil(proj_months / 12), 1)
@@ -1465,8 +1521,8 @@ def calculate(inp: dict) -> dict:
     cc_lotdev = Z(); cc_lot_landscape = Z()
 
     for td in td_rows:
-        mm = max(1, int(td["period"]))
-        if mm <= MAX_MONTHS: cc_land[mm] += td["total"]
+        mm = int(td["period"]) + 1
+        if 1 <= mm <= MAX_MONTHS: cc_land[mm] += td["total"]
     for m in range(1, MAX_MONTHS + 1):
         cc_lotdev[m]        = lot_cost_by_month[m]
         cc_lot_landscape[m] = lot_landscaping_by_month[m]
