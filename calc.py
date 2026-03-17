@@ -1315,9 +1315,9 @@ def calculate(inp: dict) -> dict:
     below_line = below_line_dmf + below_line_personnel + below_line_bk + below_line_recv_fees
 
     total_cost    = gross_costs + below_line
-    gross_profit  = total_revenue - total_cost
-    gross_margin  = gross_profit / total_revenue if total_revenue else 0
-    roc           = gross_profit / total_cost if total_cost else 0
+    gross_profit  = total_revenue - gross_costs       # Gross margin amount (revenue - gross costs)
+    gross_margin  = gross_profit / total_revenue if total_revenue else 0  # Gross margin %
+    roc           = gross_profit / gross_costs if gross_costs else 0      # Return on gross cost
 
     # 0-indexed final period values for display (match Excel Cost Inputs tab)
     gen_final_period_disp  = gen_pers_end - 1   # Excel D103
@@ -1336,7 +1336,8 @@ def calculate(inp: dict) -> dict:
     cost_per_dev_ac     = total_cost / dev_ac
     infra_per_dev_ac    = infra_cost / dev_ac
     gm_per_ac           = gross_profit / dev_ac
-    amenities_per_lot   = total_amenity_cost / total_lots if total_lots else 0
+    amenities_per_lot   = (total_amenity_cost + total_lot_landscaping + total_det_landscaping
+                           + total_road_landscaping + total_fencing_cost) / total_lots if total_lots else 0
     infra_per_lot       = infra_cost / total_lots if total_lots else 0
 
     home_sales_per_year = sum(r.get("pace", 0) for r in lot_rows if safe(r.get("on", 0))) * 12
@@ -1460,6 +1461,7 @@ def calculate(inp: dict) -> dict:
     out["gross_profit"]          = round(gross_profit)
     out["gross_margin_pct"]      = gross_margin
     out["return_on_cost"]        = roc
+    out["return_on_cost_pct"]    = roc
     out["total_lots"]            = total_lots
     out["lot_av"]                = round(lot_av)
     out["comm_av"]               = round(comm_av)

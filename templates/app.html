@@ -967,11 +967,11 @@ async function loadProjectList() {
     const el = document.createElement('div');
     el.className = 'proj-item' + (currentProject === p.id ? ' selected' : '');
     el.id = 'proj-' + p.id;
-    const gm = p.gross_margin_pct ? (p.gross_margin_pct*100).toFixed(0)+'%' : '';
+    const irrDisp = p.unlevered_irr ? (p.unlevered_irr*100).toFixed(1)+'% IRR' : '';
     el.innerHTML = `
       <div style="flex:1;min-width:0">
         <div class="proj-item-name">${p.name || 'Unnamed'}</div>
-        <div class="proj-item-sub">${p.address ? p.address.substring(0,28)+' · ' : ''}${gm}</div>
+        <div class="proj-item-sub">${p.address ? p.address.substring(0,28)+' · ' : ''}${irrDisp}</div>
       </div>
       <div class="proj-del" title="Delete" onclick="deleteProject(${p.id},event)">✕</div>`;
     el.onclick = (e) => { if (!e.target.classList.contains('proj-del')) selectProject(p.id); };
@@ -2812,14 +2812,9 @@ function renderOutputs(d, container) {
           <div class="kpi-sub">Revenue − Gross Costs</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">Total Lots Delivered</div>
-          <div class="kpi-value" style="font-size:20px">${k.total_lots_delivered?.toLocaleString() || '—'}</div>
-          <div class="kpi-sub">${k.timing_method || ''}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">Project Length</div>
-          <div class="kpi-value" style="font-size:20px">${k.project_length ? k.project_length + ' yrs' : '—'}</div>
-          <div class="kpi-sub">${k.home_sales_per_year ? Math.round(k.home_sales_per_year) + ' home sales/yr' : ''}</div>
+          <div class="kpi-label">Home Sales / Year</div>
+          <div class="kpi-value" style="font-size:20px">${k.home_sales_per_year ? Math.round(k.home_sales_per_year).toLocaleString() : '—'}</div>
+          <div class="kpi-sub">${k.project_length ? k.project_length + ' yr project' : ''}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Revenue / Dev Acre</div>
@@ -2854,7 +2849,7 @@ function renderOutputs(d, container) {
         <div class="kpi-card">
           <div class="kpi-label">Amenities / Lot</div>
           <div class="kpi-value" style="font-size:18px">${fmt(k.amenities_per_lot,'$')}</div>
-          <div class="kpi-sub">Total amenity cost per lot</div>
+          <div class="kpi-sub">Amenities + landscaping + fencing</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Major Infra / Lot</div>
@@ -2865,6 +2860,11 @@ function renderOutputs(d, container) {
           <div class="kpi-label">18-Mo Lot Supply</div>
           <div class="kpi-value" style="font-size:20px">${k.lot_supply_18mo ? Math.round(k.lot_supply_18mo).toLocaleString() : '—'}</div>
           <div class="kpi-sub">Lots in pipeline</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Project Length</div>
+          <div class="kpi-value" style="font-size:20px">${k.project_length ? k.project_length + ' yrs' : '—'}</div>
+          <div class="kpi-sub">${k.total_lots_delivered?.toLocaleString() || '—'} lots</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Final Dev Acres</div>
