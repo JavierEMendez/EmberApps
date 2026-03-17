@@ -1057,6 +1057,7 @@ async function selectProject(id) {
   document.getElementById('btn-refresh-outputs').style.display = 'flex';
   document.getElementById('save-indicator').style.display = 'flex';
   await loadInputs();
+  recalcAllLiveFields();
   showTab('tab-outputs');
   loadOutputs();
 }
@@ -1559,6 +1560,27 @@ function recalcCommPod(i) {
   if (spanNet) spanNet.textContent = net ? '$' + Math.round(net).toLocaleString('en-US') : '—';
   if (spanAvP) spanAvP.textContent = avPeriod ? 'Mo. ' + avPeriod : '—';
   if (spanTAv) spanTAv.textContent = totalAv ? '$' + Math.round(totalAv).toLocaleString('en-US') : '—';
+}
+
+// ── RECALC ALL LIVE FIELDS (after save/recalculate re-renders inputs) ──
+function recalcAllLiveFields() {
+  // Lot rows
+  for (let i = 0; i < 16; i++) {
+    if (!document.getElementById(`ci-lot-row-${i}`)) break;
+    recalcLotRow(i);
+  }
+  // Other items
+  for (let i = 0; i < 6; i++) {
+    if (document.getElementById(`ci-ot-cost-${i}`)) recalcOtherCost(i);
+  }
+  // Res pods
+  for (let i = 0; i < 6; i++) {
+    if (document.getElementById(`ri-rp-price-${i}`)) recalcResPod(i);
+  }
+  // Comm pods
+  for (let i = 0; i < 6; i++) {
+    if (document.getElementById(`ri-cp-price-${i}`)) recalcCommPod(i);
+  }
 }
 
 // ── POD COUNT APPLY ───────────────────────────────────────────────
@@ -2684,10 +2706,12 @@ async function saveAll() {
     const result = await res.json();
     if (res.ok && result.ok) {
       markClean();
+      window._lastOutputs = result.outputs;
       document.getElementById('header-title').innerHTML = `<em>${data.project_name || 'Untitled'}</em><span>${data.address || ''}</span>`;
       await loadProjectList();
       renderOutputsFromFlat(result.outputs);
       await loadInputs();
+      recalcAllLiveFields();
       saveText.textContent = 'Saved';
       toast('Saved & recalculated', 'success');
     } else {
@@ -2714,6 +2738,7 @@ async function recalcAndRefresh() {
       window._lastOutputs = rd.outputs;
       renderOutputsFromFlat(rd.outputs);
       await loadInputs();
+      recalcAllLiveFields();
       toast('Model recalculated', 'success');
     } else {
       toast('Calculation error: ' + (rd.error || 'Unknown'), 'error');
