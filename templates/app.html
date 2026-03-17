@@ -2655,10 +2655,10 @@ function renderOutputsFromFlat(o) {
           <div class="fin-card-title">Annual Home Sales</div>
           <canvas id="chart-home-sales" height="180"></canvas>
         </div>
-        <!-- Gross Margin Breakdown -->
+        <!-- Gross Margin Waterfall -->
         <div class="fin-card">
-          <div class="fin-card-title">Gross Margin Breakdown (% of Revenue)</div>
-          <canvas id="chart-gm-overview" height="280"></canvas>
+          <div class="fin-card-title">Gross Margin Visualization</div>
+          <canvas id="chart-gm-waterfall" height="280"></canvas>
         </div>
       </div>
 
@@ -2771,34 +2771,55 @@ function renderOutputsFromFlat(o) {
       });
     }
 
-    // Gross Margin Breakdown chart (overview)
-    const gmOvCtx = plug('chart-gm-overview');
-    if (gmOvCtx && _tr) {
-      const gmItems = [
-        ['Land', o.cost_land], ['Plants', o.cost_plants], ['Amenities', o.cost_amenities],
-        ['Detention', o.cost_detention], ['Sections', o.cost_lot_dev], ['Other', o.cost_other],
-        ['Roads', o.cost_roads], ['Fencing', o.cost_fencing], ['Dry Utilities', o.cost_dry_utilities],
-        ['Site Work', o.cost_site_work], ['Landscaping', o.cost_lot_landscaping],
-        ['Legal', o.cost_legal], ['Lot Taxes', o.cost_lot_taxes], ['MUD/HOA', o.cost_mud_hoa],
-        ['Insurance', o.cost_insurance], ['Marketing', o.cost_marketing],
-        ['Brokerage', o.cost_brokerage], ['Closing', o.cost_closing],
-        ['Mailboxes', o.cost_mailboxes], ['Prof Svc', o.cost_prof_svc],
-        ['Contingency', o.cost_contingency], ['DMF', o.below_line_dmf],
-        ['Personnel', o.below_line_personnel], ['Bookkeeping', o.below_line_bookkeeping],
-        ['Recv Fees', o.below_line_recv_fees],
-      ].filter(([,v]) => parseFloat(v) > 0).sort((a,b) => parseFloat(b[1]) - parseFloat(a[1]));
-      new Chart(gmOvCtx, {
+    // Gross Margin Waterfall (matches Excel PP chart)
+    const wfCtx = plug('chart-gm-waterfall');
+    if (wfCtx) {
+      const gv = o.gm_viz || {};
+      const wfLabels = ['Revenues','Land','Sections','Infrastructure','Amenities','Other','Gross Margin'];
+      let running = parseFloat(gv['Revenues']) || 0;
+      const bases = [0];
+      const bars  = [running];
+      const wfColors = ['#1a3a5c'];
+      ['Land','Sections','Infrastructure','Amenities','Other'].forEach(key => {
+        const val = Math.abs(parseFloat(gv[key]) || 0);
+        running -= val;
+        bases.push(running);
+        bars.push(val);
+        wfColors.push('#e07a3e');
+      });
+      bases.push(0);
+      bars.push(parseFloat(gv['Gross Margin']) || 0);
+      wfColors.push('#2d6a4f');
+      new Chart(wfCtx, {
         type:'bar',
         data:{
-          labels: gmItems.map(([l])=>l),
-          datasets:[{
-            data: gmItems.map(([,v])=> parseFloat(v)/_tr*100),
-            backgroundColor: gmItems.map((_,i) => `hsl(${200+i*14},50%,55%)`),
-            borderRadius:3
-          }]
+          labels: wfLabels,
+          datasets:[
+            {label:'base', data:bases, backgroundColor:'transparent', borderWidth:0, stack:'wf'},
+            {label:'value', data:bars, backgroundColor:wfColors, borderWidth:0, borderRadius:2, stack:'wf'}
+          ]
         },
-        options:{indexAxis:'y',responsive:true,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>ctx.parsed.x.toFixed(1)+'% of revenue'}}},
-          scales:{x:{ticks:{color:'#8b95a8',font:{size:10},callback:v=>v+'%'},grid:{color:DIM}},y:{ticks:{color:'#8b95a8',font:{size:9}},grid:{display:false}}}}
+        options:{
+          responsive:true, maintainAspectRatio:false,
+          plugins:{
+            legend:{display:false},
+            tooltip:{
+              callbacks:{
+                label: ctx => {
+                  if (ctx.datasetIndex===0) return null;
+                  const raw = bars[ctx.dataIndex];
+                  const isDecrease = wfColors[ctx.dataIndex]==='#e07a3e';
+                  return ` ${isDecrease?'-':''}$${(raw/1e6).toFixed(1)}M`;
+                }
+              },
+              filter: item => item.datasetIndex===1
+            }
+          },
+          scales:{
+            x:{stacked:true, ticks:{color:'#8b95a8',font:{size:10}}, grid:{color:DIM}},
+            y:{stacked:true, ticks:{color:'#8b95a8',font:{size:10},callback:v=>'$'+(v/1e6).toFixed(0)+'M'}, grid:{color:DIM}, beginAtZero:true}
+          }
+        }
       });
     }
 
@@ -2934,12 +2955,8 @@ function renderOutputs(d, container) {
             <div class="chart-wrap-sm"><canvas id="chart-homes"></canvas></div>
           </div>
           <div class="chart-card-sm">
-            <div class="chart-title">Gross Margin Waterfall</div>
-            <div class="chart-wrap-sm"><canvas id="chart-waterfall"></canvas></div>
-          </div>
-          <div class="chart-card-sm">
-            <div class="chart-title">Gross Margin Breakdown (% of Revenue)</div>
-            <div class="chart-wrap-sm" style="height:320px"><canvas id="chart-gm-breakdown"></canvas></div>
+            <div class="chart-title">Gross Margin Visualization</div>
+            <div class="chart-wrap-sm" style="height:300px"><canvas id="chart-waterfall"></canvas></div>
           </div>
           <div class="chart-card-sm">
             <div class="chart-title" style="margin-bottom:10px">Net Outs Breakdown</div>
@@ -3142,7 +3159,7 @@ function renderOutputs(d, container) {
               const raw = bars[ctx.dataIndex];
               const isDecrease = colors[ctx.dataIndex] === '#e07a3e';
               const sign = isDecrease ? '-' : '';
-              return ` ${sign}$${Math.round(raw/1000).toLocaleString()}k`;
+              return ` ${sign}$${(raw/1e6).toFixed(1)}M`;
             }
           },
           filter: item => item.datasetIndex === 1
@@ -3150,50 +3167,13 @@ function renderOutputs(d, container) {
       },
       scales: {
         x: { stacked:true, ticks:{color:'#7a8299',font:{size:10}}, grid:{color:'rgba(37,44,61,0.5)'} },
-        y: { stacked:true, ticks:{color:'#7a8299',font:{size:10},callback: v=>'$'+Math.round(v/1000).toLocaleString()+'k'}, grid:{color:'rgba(37,44,61,0.5)'}, beginAtZero:true }
+        y: { stacked:true, ticks:{color:'#7a8299',font:{size:10},callback: v=>'$'+(v/1e6).toFixed(0)+'M'}, grid:{color:'rgba(37,44,61,0.5)'}, beginAtZero:true }
       }
     }
   });
 
-  // Chart 4: Gross Margin Breakdown — horizontal bar showing each cost category as % of revenue
-  if (totalRev > 0) {
-    const gmCats = [
-      ...costOrder.map(k => [k, d.costs[k]||0]),
-      ...belowOrder.map(k => [k, d.below_line[k]||0]),
-      ['Gross Margin', grossMargin]
-    ].filter(([,v]) => v > 0);
-    const gmLabels = gmCats.map(([k]) => k);
-    const gmData   = gmCats.map(([,v]) => (v / totalRev * 100));
-    const gmColors = gmCats.map(([k]) => k === 'Gross Margin' ? '#2d6a4f' : '#c8a96e');
-    const gmCtx = document.getElementById('chart-gm-breakdown');
-    if (gmCtx) {
-      charts.gmBreakdown = new Chart(gmCtx, {
-        type: 'bar',
-        data: {
-          labels: gmLabels,
-          datasets: [{
-            data: gmData,
-            backgroundColor: gmColors,
-            borderWidth: 0,
-            borderRadius: 2
-          }]
-        },
-        options: {
-          indexAxis: 'y',
-          responsive: true, maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { label: ctx => ctx.parsed.x.toFixed(1) + '% of revenue' } }
-          },
-          scales: {
-            x: { ticks:{color:'#7a8299',font:{size:10},callback:v=>v+'%'}, grid:{color:'rgba(37,44,61,0.5)'}, beginAtZero:true },
-            y: { ticks:{color:'#7a8299',font:{size:10}}, grid:{display:false} }
-          }
-        }
-      });
-    }
-  }
 }
+
 
 // ── CASHFLOW TAB ──────────────────────────────────────────────────
 async function loadCashflow() {

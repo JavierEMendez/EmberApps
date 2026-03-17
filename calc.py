@@ -1515,6 +1515,22 @@ def calculate(inp: dict) -> dict:
     out["net_margin_of_rev"]     = _nm / _tr if _tr else 0
     out["net_margin_pct"]        = _nm / _tr if _tr else 0
 
+    # Gross margin waterfall visualization — matches Excel PP rows 71-77
+    _wf_land  = out["cost_land"]
+    _wf_sect  = out["cost_lot_dev"] + out["cost_site_work"] + out["cost_mailboxes"]
+    _wf_infra = out["cost_plants"] + out["cost_detention"] + out["cost_roads"] + out["cost_other"]
+    _wf_amen  = out["cost_amenities"] + out["cost_fencing"] + out["cost_lot_landscaping"]
+    _wf_other = _gc - _wf_land - _wf_sect - _wf_infra - _wf_amen
+    out["gm_viz"] = {
+        "Revenues":       round(_tr),
+        "Land":           round(-_wf_land),
+        "Sections":       round(-_wf_sect),
+        "Infrastructure": round(-_wf_infra),
+        "Amenities":      round(-_wf_amen),
+        "Other":          round(-_wf_other),
+        "Gross Margin":   round(_gm),
+    }
+
     # ── 6. CASHFLOW DETAIL (for Cashflows tab) ───────────────────────────────
     # Reuse pre-computed category arrays (_cc_plants, _cc_amen, etc.) from DMF section
     # Only need to build land and revenue category arrays here.
