@@ -948,6 +948,7 @@ let currentProject = null;
 let inputs = {};
 let dirty = false;
 let charts = {};
+const isAdmin = {{ 'true' if is_admin else 'false' }};
 
 // ── INIT ──────────────────────────────────────────────────────────
 window.onload = async () => {
@@ -973,7 +974,7 @@ async function loadProjectList() {
         <div class="proj-item-name">${p.name || 'Unnamed'}</div>
         <div class="proj-item-sub">${p.address ? p.address.substring(0,28)+' · ' : ''}${irrDisp}</div>
       </div>
-      <div class="proj-del" title="Delete" onclick="deleteProject(${p.id},event)">✕</div>`;
+      ${isAdmin ? `<div class="proj-del" title="Delete" onclick="deleteProject(${p.id},event)">✕</div>` : ''}`;
     el.onclick = (e) => { if (!e.target.classList.contains('proj-del')) selectProject(p.id); };
     list.appendChild(el);
   });
@@ -2623,17 +2624,21 @@ function renderOutputsFromFlat(o) {
         <div class="fin-card">
           <div class="fin-card-title">Acreage Summary</div>
           <table class="info-table" style="width:100%">
-            <tr style="font-weight:600"><td>Gross Acreage</td><td style="text-align:right">${fmtAc(o.gross_acreage)}</td></tr>
-            <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Plant / Infrastructure</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.plant_net_out_acres)})</td></tr>
-            <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Detention</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.det_net_out_acres)})</td></tr>
-            <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Amenities</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.amenity_net_out_acres)})</td></tr>
-            <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Parks</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.parks_net_out_acres)})</td></tr>
-            <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Other Net-outs</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.other_net_out_acres)})</td></tr>
-            <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Roads / ROW</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.road_net_out_acres)})</td></tr>
-            <tr style="border-top:1px solid var(--border);font-weight:600"><td>Developable Acres</td><td style="text-align:right">${fmtAc(o.dev_acres)}</td></tr>
-            <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Commercial Pods</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.comm_pod_acres_net)})</td></tr>
-            <tr><td style="padding-left:16px;color:var(--text-dim)">Less: Residential Pods</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(o.res_pod_acres_net)})</td></tr>
-            <tr style="border-top:1px solid var(--border);font-weight:600;color:var(--accent2)"><td>Residential Dev Acres</td><td style="text-align:right">${fmtAc(o.residential_dev_acres)}</td></tr>
+            <tr style="font-weight:600"><td>Gross Acreage</td><td style="text-align:right">${fmtAc(o.gross_acreage)}</td><td style="text-align:right;width:60px">100.0%</td></tr>
+            ${[
+              ['Plant / Infrastructure', o.plant_net_out_acres],
+              ['Detention', o.det_net_out_acres],
+              ['Amenities', o.amenity_net_out_acres],
+              ['Parks', o.parks_net_out_acres],
+              ['Other Net-outs', o.other_net_out_acres],
+              ['Roads / ROW', o.road_net_out_acres],
+            ].map(([lbl,v]) => `<tr><td style="padding-left:16px;color:var(--text-dim)">Less: ${lbl}</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(v)})</td><td style="text-align:right;color:var(--text-dim);width:60px">${o.gross_acreage ? (v/o.gross_acreage*100).toFixed(1)+'%' : '—'}</td></tr>`).join('')}
+            <tr style="border-top:1px solid var(--border);font-weight:600"><td>Developable Acres</td><td style="text-align:right">${fmtAc(o.dev_acres)}</td><td style="text-align:right;width:60px">${o.gross_acreage ? (o.dev_acres/o.gross_acreage*100).toFixed(1)+'%' : '—'}</td></tr>
+            ${[
+              ['Commercial Pods', o.comm_pod_acres_net],
+              ['Residential Pods', o.res_pod_acres_net],
+            ].map(([lbl,v]) => `<tr><td style="padding-left:16px;color:var(--text-dim)">Less: ${lbl}</td><td style="text-align:right;color:var(--text-dim)">(${fmtAc(v)})</td><td style="text-align:right;color:var(--text-dim);width:60px">${o.gross_acreage ? (v/o.gross_acreage*100).toFixed(1)+'%' : '—'}</td></tr>`).join('')}
+            <tr style="border-top:1px solid var(--border);font-weight:600;color:var(--accent2)"><td>Residential Dev Acres</td><td style="text-align:right">${fmtAc(o.residential_dev_acres)}</td><td style="text-align:right;width:60px">${o.gross_acreage ? (o.residential_dev_acres/o.gross_acreage*100).toFixed(1)+'%' : '—'}</td></tr>
           </table>
         </div>
         <!-- Annual Lot Takedowns -->
@@ -2777,7 +2782,9 @@ function renderOutputs(d, container) {
   const edr  = k.effective_debt_ratio ? (k.effective_debt_ratio * 100).toFixed(1) + '%' : '—';
 
   const totalRev  = d.revenues.Total || 0;
-  const totalCost = d.costs.Total   || 0;
+  const grossCost = d.costs.Total   || 0;
+  const blTotal   = Object.values(d.below_line || {}).reduce((s,v) => s+v, 0);
+  const totalCost = grossCost + blTotal;  // Net total costs (for % of costs column)
   const grossMargin = d.gross_margin || 0;
   const netMargin   = d.net_margin   || 0;
 
@@ -2814,7 +2821,7 @@ function renderOutputs(d, container) {
         <div class="kpi-card">
           <div class="kpi-label">Home Sales / Year</div>
           <div class="kpi-value" style="font-size:20px">${k.home_sales_per_year ? Math.round(k.home_sales_per_year).toLocaleString() : '—'}</div>
-          <div class="kpi-sub">${k.project_length ? k.project_length + ' yr project' : ''}</div>
+          <div class="kpi-sub">${k.lot_supply_18mo ? Math.round(k.lot_supply_18mo).toLocaleString() + ' lots (18-mo supply)' : ''}</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Revenue / Dev Acre</div>
@@ -2857,11 +2864,6 @@ function renderOutputs(d, container) {
           <div class="kpi-sub">Infra cost per lot</div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">18-Mo Lot Supply</div>
-          <div class="kpi-value" style="font-size:20px">${k.lot_supply_18mo ? Math.round(k.lot_supply_18mo).toLocaleString() : '—'}</div>
-          <div class="kpi-sub">Lots in pipeline</div>
-        </div>
-        <div class="kpi-card">
           <div class="kpi-label">Project Length</div>
           <div class="kpi-value" style="font-size:20px">${k.project_length ? k.project_length + ' yrs' : '—'}</div>
           <div class="kpi-sub">${k.total_lots_delivered?.toLocaleString() || '—'} lots</div>
@@ -2894,6 +2896,10 @@ function renderOutputs(d, container) {
           <div class="chart-card-sm">
             <div class="chart-title">Gross Margin Waterfall</div>
             <div class="chart-wrap-sm"><canvas id="chart-waterfall"></canvas></div>
+          </div>
+          <div class="chart-card-sm">
+            <div class="chart-title">Gross Margin Breakdown (% of Revenue)</div>
+            <div class="chart-wrap-sm" style="height:320px"><canvas id="chart-gm-breakdown"></canvas></div>
           </div>
           <div class="chart-card-sm">
             <div class="chart-title" style="margin-bottom:10px">Net Outs Breakdown</div>
@@ -2987,11 +2993,12 @@ function renderOutputs(d, container) {
         ${sp()}
         ${sH('COST SUMMARY')}
         ${costOrder.map(k => dR(k, d.costs[k]||0)).join('')}
-        ${tR('Gross Costs', totalCost, 'fin-cost-total', totalCost, totalRev)}
+        ${tR('Gross Costs', grossCost, 'fin-cost-total', totalCost, totalRev)}
         ${sp()}
         ${mR('Gross Margin', grossMargin, 'fin-gross-margin')}
         ${sp()}
         ${belowOrder.map(k => dR(k, d.below_line[k]||0)).join('')}
+        ${tR('Total Costs', totalCost, 'fin-cost-total', totalCost, totalRev)}
         ${sp()}
         ${mR('Net Margin (No Financing)', netMargin, 'fin-net-margin')}
       </tbody>
@@ -3107,6 +3114,45 @@ function renderOutputs(d, container) {
       }
     }
   });
+
+  // Chart 4: Gross Margin Breakdown — horizontal bar showing each cost category as % of revenue
+  if (totalRev > 0) {
+    const gmCats = [
+      ...costOrder.map(k => [k, d.costs[k]||0]),
+      ...belowOrder.map(k => [k, d.below_line[k]||0]),
+      ['Gross Margin', grossMargin]
+    ].filter(([,v]) => v > 0);
+    const gmLabels = gmCats.map(([k]) => k);
+    const gmData   = gmCats.map(([,v]) => (v / totalRev * 100));
+    const gmColors = gmCats.map(([k]) => k === 'Gross Margin' ? '#2d6a4f' : '#c8a96e');
+    const gmCtx = document.getElementById('chart-gm-breakdown');
+    if (gmCtx) {
+      charts.gmBreakdown = new Chart(gmCtx, {
+        type: 'bar',
+        data: {
+          labels: gmLabels,
+          datasets: [{
+            data: gmData,
+            backgroundColor: gmColors,
+            borderWidth: 0,
+            borderRadius: 2
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: ctx => ctx.parsed.x.toFixed(1) + '% of revenue' } }
+          },
+          scales: {
+            x: { ticks:{color:'#7a8299',font:{size:10},callback:v=>v+'%'}, grid:{color:'rgba(37,44,61,0.5)'}, beginAtZero:true },
+            y: { ticks:{color:'#7a8299',font:{size:10}}, grid:{display:false} }
+          }
+        }
+      });
+    }
+  }
 }
 
 // ── CASHFLOW TAB ──────────────────────────────────────────────────
