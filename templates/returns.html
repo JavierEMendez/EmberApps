@@ -6,6 +6,7 @@
 <title>Active Project Returns — Ember</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -16,12 +17,23 @@
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;padding:24px 32px;}
   a{color:var(--accent);text-decoration:none;}
   a:hover{text-decoration:underline;}
-  .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;}
+  .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;}
   .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
-  .top-bar .meta{font-size:12px;color:var(--text-muted);}
+  .top-right{text-align:right;}
+  .top-right .meta{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
   .subtitle{font-size:12px;color:var(--text-muted);margin-bottom:24px;}
   .back-link{font-size:13px;color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;}
   .back-link:hover{color:var(--accent);}
+
+  /* Download PDF button */
+  .pdf-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:rgba(200,169,110,0.1);border:1px solid rgba(200,169,110,0.3);
+    color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;
+    font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;
+  }
+  .pdf-btn:hover{background:rgba(200,169,110,0.2);border-color:var(--accent);}
+  .pdf-btn:disabled{opacity:.5;cursor:wait;}
 
   /* ── Dashboard Grid ── */
   .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:28px;}
@@ -56,13 +68,11 @@
   .card-body.collapsed{display:none;}
 
   /* ── Tables ── */
-  table{border-collapse:collapse;width:100%;min-width:600px;font-size:12px;}
+  table{border-collapse:collapse;width:100%;min-width:500px;font-size:12px;}
   th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
   th{background:#191e28;color:var(--text-muted);font-weight:600;text-align:center;}
   td{text-align:right;}
   td.label{text-align:left;color:var(--text);font-weight:500;min-width:180px;}
-  td.status{text-align:center;font-weight:600;}
-  td.status-ok{color:var(--green);}
 
   /* Sticky first column */
   td.label, th.sticky-col{
@@ -90,11 +100,30 @@
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
   .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
 
+  /* ── PDF Export Overrides ── */
+  .pdf-mode .back-link,
+  .pdf-mode .dashboard-grid,
+  .pdf-mode .pdf-btn,
+  .pdf-mode .card-chevron{display:none!important;}
+  .pdf-mode{background:#0d0f13;padding:20px 24px;}
+  .pdf-mode .card-body.collapsed{display:block!important;}
+  .pdf-mode .card-header{cursor:default;padding:8px 12px;}
+  .pdf-mode .card-header:hover{background:#191e28;}
+  .pdf-mode table{font-size:9px;min-width:unset;}
+  .pdf-mode th,
+  .pdf-mode td{padding:3px 5px;}
+  .pdf-mode td.label,
+  .pdf-mode th.sticky-col{position:static;}
+  .pdf-mode .project-card{margin-bottom:10px;break-inside:avoid;}
+  .pdf-mode .summary-card{margin-top:14px;break-inside:avoid;}
+  .pdf-mode .top-bar h1{font-size:18px;}
+  .pdf-mode .subtitle{margin-bottom:14px;}
+
   /* ── Print ── */
   @media print{
     body{background:#fff;color:#000;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     @page{size:landscape letter;margin:0.4in;}
-    .back-link,.dashboard-grid{display:none;}
+    .back-link,.dashboard-grid,.pdf-btn{display:none;}
     .project-card,.summary-card{break-inside:avoid;border:1px solid #ccc;margin-bottom:8px;}
     .card-body.collapsed{display:block!important;}
     table{font-size:9px;min-width:unset;}
@@ -117,15 +146,69 @@
   <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 12H5m7-7l-7 7 7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
   Back to Home
 </a>
+<div id="report-content">
 <div class="top-bar">
   <h1>Consolidated Ember Project Returns</h1>
-  <div class="meta">
-    {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+  <div class="top-right">
+    <div class="meta">
+      {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+    </div>
+    {% if data %}
+    <button class="pdf-btn" onclick="downloadPDF()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download PDF
+    </button>
+    {% endif %}
   </div>
 </div>
 <div class="subtitle">($ in 000s)</div>
 
 {% if data %}
+
+{# ── Jinja2 macro for accounting-style number formatting ── #}
+{# Negative: (1,000)  Zero: blank  Positive: 1,000 #}
+{% macro fmt(v, force_show_zero=false) %}
+  {%- if v == 0 and not force_show_zero -%}
+  {%- elif v < 0 -%}({{ "{:,.0f}".format(v|abs) }})
+  {%- else -%}{{ "{:,.0f}".format(v) }}
+  {%- endif -%}
+{% endmacro %}
+
+{% macro fmt_irr(v) %}
+  {%- if v == 0 -%}
+  {%- elif v < 0 -%}({{ "%.1f"|format((v * 100)|abs) }}%)
+  {%- else -%}{{ "%.1f"|format(v * 100) }}%
+  {%- endif -%}
+{% endmacro %}
+
+{% macro fmt_em(v) %}
+  {%- if v == 0 -%}
+  {%- elif v < 0 -%}({{ "%.2f"|format(v|abs) }}x)
+  {%- else -%}{{ "%.2f"|format(v) }}x
+  {%- endif -%}
+{% endmacro %}
+
+{# Format a cell value based on metric label #}
+{% macro fmt_cell(v, label) %}
+  {%- if 'IRR' in label -%}{{ fmt_irr(v) }}
+  {%- elif 'Multiple' in label -%}{{ fmt_em(v) }}
+  {%- else -%}{{ fmt(v) }}
+  {%- endif -%}
+{% endmacro %}
+
+{# Format total (always show even if zero) #}
+{% macro fmt_total(v, label) %}
+  {%- if 'IRR' in label -%}
+    {%- if v < 0 -%}({{ "%.1f"|format((v * 100)|abs) }}%)
+    {%- else -%}{{ "%.1f"|format(v * 100) }}%{%- endif -%}
+  {%- elif 'Multiple' in label -%}
+    {%- if v < 0 -%}({{ "%.2f"|format(v|abs) }}x)
+    {%- else -%}{{ "%.2f"|format(v) }}x{%- endif -%}
+  {%- else -%}
+    {%- if v < 0 -%}({{ "{:,.0f}".format(v|abs) }})
+    {%- else -%}{{ "{:,.0f}".format(v) }}{%- endif -%}
+  {%- endif -%}
+{% endmacro %}
 
 {# ── Compute active year columns (skip all-zero years) ── #}
 {% set ns = namespace(active_cols=[]) %}
@@ -151,11 +234,11 @@
     <div class="dash-name">{{ project.name }}</div>
     {% for m in project.metrics %}
       {% if m.label == 'LP IRR' %}
-      <div class="dash-metric"><span class="dash-label">IRR</span><span class="dash-value">{{ "%.1f"|format(m.total * 100) }}%</span></div>
+      <div class="dash-metric"><span class="dash-label">IRR</span><span class="dash-value">{{ fmt_total(m.total, m.label) }}</span></div>
       {% elif m.label == 'LP Equity Multiple' %}
-      <div class="dash-metric"><span class="dash-label">Equity Multiple</span><span class="dash-value">{{ "%.2f"|format(m.total) }}x</span></div>
+      <div class="dash-metric"><span class="dash-label">Equity Multiple</span><span class="dash-value">{{ fmt_total(m.total, m.label) }}</span></div>
       {% elif m.label == 'Total LP Profit' %}
-      <div class="dash-metric"><span class="dash-label">Total Profit</span><span class="dash-value">{{ "{:,.0f}".format(m.total) }}</span></div>
+      <div class="dash-metric"><span class="dash-label">Total Profit</span><span class="dash-value">{{ fmt_total(m.total, m.label) }}</span></div>
       {% endif %}
     {% endfor %}
   </div>
@@ -167,8 +250,8 @@
 {% set ns_irr = namespace(val='') %}
 {% set ns_em = namespace(val='') %}
 {% for m in project.metrics %}
-  {% if m.label == 'LP IRR' %}{% set ns_irr.val = "%.1f"|format(m.total * 100) ~ '%' %}{% endif %}
-  {% if m.label == 'LP Equity Multiple' %}{% set ns_em.val = "%.2f"|format(m.total) ~ 'x' %}{% endif %}
+  {% if m.label == 'LP IRR' %}{% set ns_irr.val = fmt_total(m.total, m.label) %}{% endif %}
+  {% if m.label == 'LP Equity Multiple' %}{% set ns_em.val = fmt_total(m.total, m.label) %}{% endif %}
 {% endfor %}
 
 <div class="project-card" id="project-{{ loop.index }}">
@@ -185,7 +268,6 @@
       <thead>
         <tr>
           <th class="sticky-col" style="min-width:180px">Metric</th>
-          <th>Status</th>
           <th>Total</th>
           {% for i in ns.active_cols %}
           <th>{{ data.years[i] }}</th>
@@ -196,19 +278,9 @@
         {% for m in project.metrics %}
         <tr class="{% if m.label == 'LP IRR' %}metric-irr{% elif m.label == 'LP Equity Multiple' %}metric-em{% endif %}">
           <td class="label">{{ m.label }}</td>
-          <td class="status {% if m.status == 'OK' %}status-ok{% endif %}">
-            {% if m.status == 'OK' %}OK{% elif m.status is number and m.status == 0 %}—{% elif m.status is number %}{{ m.status }}{% else %}{{ m.status }}{% endif %}
-          </td>
-          <td style="font-weight:600">
-            {% if 'IRR' in m.label %}{{ "%.1f"|format(m.total * 100) }}%
-            {% elif 'Multiple' in m.label %}{{ "%.2f"|format(m.total) }}x
-            {% else %}{{ "{:,.0f}".format(m.total) }}{% endif %}
-          </td>
+          <td style="font-weight:600">{{ fmt_total(m.total, m.label) }}</td>
           {% for i in ns.active_cols %}
-          <td>
-            {% set v = m.yearly[i] %}
-            {% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}
-          </td>
+          <td>{{ fmt_cell(m.yearly[i], m.label) }}</td>
           {% endfor %}
         </tr>
         {% endfor %}
@@ -247,9 +319,12 @@
         {% endif %}
         <tr class="summary-section {{ flow_class }} {% if loop.last %}total-row{% endif %}">
           <td class="label">{{ s.label }}</td>
-          <td style="font-weight:600">{{ "{:,.0f}".format(s.total) }}</td>
+          <td style="font-weight:600">
+            {%- if s.total < 0 -%}({{ "{:,.0f}".format(s.total|abs) }})
+            {%- else -%}{{ "{:,.0f}".format(s.total) }}{%- endif -%}
+          </td>
           {% for i in ns.active_cols %}
-          <td>{% set v = s.yearly[i] %}{% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}</td>
+          <td>{{ fmt(s.yearly[i]) }}</td>
           {% endfor %}
         </tr>
         {% endfor %}
@@ -265,6 +340,7 @@
   <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
 </div>
 {% endif %}
+</div>{# end report-content #}
 
 <script>
 function toggleCard(header){
@@ -283,6 +359,35 @@ function scrollToProject(idx){
     chev.classList.remove('collapsed');
   }
   card.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function downloadPDF(){
+  const btn=document.querySelector('.pdf-btn');
+  btn.disabled=true;
+  btn.textContent='Generating...';
+
+  const el=document.getElementById('report-content');
+  el.classList.add('pdf-mode');
+
+  // Expand all collapsed cards for PDF
+  el.querySelectorAll('.card-body.collapsed').forEach(b=>{
+    b.classList.remove('collapsed');
+  });
+
+  const opt={
+    margin:       [0.3, 0.3, 0.3, 0.3],
+    filename:     'Ember_Project_Returns.pdf',
+    image:        {type:'jpeg',quality:0.98},
+    html2canvas:  {scale:2,useCORS:true,backgroundColor:'#0d0f13',scrollY:0,windowWidth:1400},
+    jsPDF:        {unit:'in',format:'letter',orientation:'landscape'},
+    pagebreak:    {mode:['avoid-all','css','legacy']}
+  };
+
+  html2pdf().set(opt).from(el).save().then(()=>{
+    el.classList.remove('pdf-mode');
+    btn.disabled=false;
+    btn.innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Download PDF';
+  });
 }
 </script>
 </body>
