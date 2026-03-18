@@ -8,6 +8,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 :root {
   --bg: #0d0f13;
@@ -370,7 +372,7 @@ tr.pod-inactive input { pointer-events: none; }
     <div style="padding:8px 10px 14px">
       <a href="/home" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);font-size:12px;text-decoration:none;transition:all .15s;justify-content:center" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1m-2 0h2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        Return to Home
+        Back to Home
       </a>
     </div>
   </nav>
@@ -400,6 +402,10 @@ tr.pod-inactive input { pointer-events: none; }
       <button class="header-btn" id="btn-download" onclick="downloadProject()" style="display:none">
         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Download Excel
+      </button>
+      <button class="header-btn" id="btn-pdf" onclick="downloadPerformancePDF()" style="display:none">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Download PDF
       </button>
     </div>
 
@@ -1060,6 +1066,7 @@ async function selectProject(id) {
   document.getElementById('tab-bar').style.display = 'flex';
   document.getElementById('btn-save').style.display = 'flex';
   document.getElementById('btn-download').style.display = 'flex';
+  document.getElementById('btn-pdf').style.display = 'flex';
   document.getElementById('btn-backup').style.display = 'flex';
   document.getElementById('btn-refresh-outputs').style.display = 'flex';
   document.getElementById('save-indicator').style.display = 'flex';
@@ -1080,6 +1087,7 @@ function navTo(view) {
     document.getElementById('header-title').innerHTML = '<span>All Projects</span>';
     document.getElementById('btn-save').style.display = 'none';
     document.getElementById('btn-download').style.display = 'none';
+    document.getElementById('btn-pdf').style.display = 'none';
     document.getElementById('btn-backup').style.display = 'none';
     document.getElementById('btn-refresh-outputs').style.display = 'none';
     document.getElementById('save-indicator').style.display = 'none';
@@ -1297,6 +1305,7 @@ async function deleteProject(id, e) {
     document.getElementById('view-welcome').style.display = 'flex';
     document.getElementById('btn-save').style.display = 'none';
     document.getElementById('btn-download').style.display = 'none';
+    document.getElementById('btn-pdf').style.display = 'none';
     document.getElementById('btn-backup').style.display = 'none';
     document.getElementById('btn-refresh-outputs').style.display = 'none';
     document.getElementById('save-indicator').style.display = 'none';
@@ -3823,6 +3832,212 @@ async function deleteUser(id, name) {
   const res = await fetch(`/api/admin/users/${id}`, {method:'DELETE'});
   if (res.ok) { toast('User removed', 'success'); await refreshUserList(); }
   else toast('Error removing user', 'error');
+}
+
+// ─── PROJECT PERFORMANCE PDF ─────────────────────────────────────────────────
+async function downloadPerformancePDF(){
+  const btn=document.getElementById('btn-pdf');
+  const origHTML=btn.innerHTML;
+  btn.disabled=true;
+  btn.textContent='Generating PDF...';
+
+  const o=window._lastOutputs||{};
+  if(!o||!Object.keys(o).length){
+    toast('No outputs to export — run calculations first','error');
+    btn.disabled=false;btn.innerHTML=origHTML;return;
+  }
+
+  const projName=(o.project_name||window._lastInputs?.project_name||'Project').replace(/[^a-zA-Z0-9 ]/g,'');
+
+  // Format helpers
+  const f$=(v)=>{if(!v&&v!==0)return'—';const n=parseFloat(v);if(isNaN(n))return'—';return'$'+Math.round(n).toLocaleString();};
+  const fP=(v)=>{if(!v&&v!==0)return'—';return(parseFloat(v)*100).toFixed(1)+'%';};
+  const f$M=(v)=>{if(!v&&v!==0)return'—';return'$'+(parseFloat(v)/1e6).toFixed(2)+'M';};
+  const fN=(v)=>{if(!v&&v!==0)return'—';return Math.round(parseFloat(v)).toLocaleString();};
+  const fYr=(v)=>{if(!v)return'—';return parseFloat(v).toFixed(1)+' yrs';};
+  const fAc=(v)=>(v!=null&&v!==0)?parseFloat(v).toFixed(1)+' ac':'0.0 ac';
+  const _gc=parseFloat(o.gross_costs)||0;
+  const _tr=parseFloat(o.total_revenue)||0;
+  const pctC=(v)=>{const n=parseFloat(v);return(n&&_gc)?(n/_gc*100).toFixed(1)+'%':'';};
+  const pctR=(v)=>{const n=parseFloat(v);return(n&&_tr)?(n/_tr*100).toFixed(1)+'%':'';};
+
+  // Build light-mode PDF pages
+  const PW=1056,PH=816;
+  const hdr=`<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+    <h1 style="font-family:'Instrument Serif',serif;font-size:18px;color:#1a1a1a;margin:0">${projName} — Project Performance</h1>
+    <span style="font-size:9px;color:#888">${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</span>
+  </div>`;
+
+  // KPI cards
+  const kpis=[
+    ['Unlevered IRR',o.unlevered_irr?(parseFloat(o.unlevered_irr)*100).toFixed(1)+'%':'—'],
+    ['Gross Margin',fP(o.gross_margin_pct)],
+    ['Return on Cost',fP(o.return_on_cost)],
+    ['Total Revenue',f$M(o.total_revenue)],
+    ['Gross Profit',f$M(o.gross_profit)],
+    ['Total Lots',fN(o.total_lots)],
+    ['Project Length',fYr(o.project_length_years)],
+    ['Home Sales/Yr',fN(o.home_sales_per_year)]
+  ];
+  let kpiHTML='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px">';
+  kpis.forEach(([lbl,val])=>{
+    kpiHTML+=`<div style="border:1px solid #ddd;border-radius:4px;padding:6px 8px;border-left:2px solid #8a7040">
+      <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${lbl}</div>
+      <div style="font-size:14px;font-weight:600;color:#1a1a1a">${val}</div>
+    </div>`;
+  });
+  kpiHTML+='</div>';
+
+  // Revenue/Cost table
+  function mkRow(label,amt,pcC,pcR,style=''){
+    return`<tr style="${style}"><td style="padding:3px 6px;text-align:left">${label}</td><td style="padding:3px 6px;text-align:right">${amt}</td><td style="padding:3px 6px;text-align:right">${pcC}</td><td style="padding:3px 6px;text-align:right">${pcR}</td></tr>`;
+  }
+  function mkSection(label,bg){
+    return`<tr style="background:${bg}"><td colspan="4" style="font-weight:600;font-size:9px;letter-spacing:.05em;padding:6px 6px 3px">${label}</td></tr>`;
+  }
+
+  const revRows=[
+    ['Lot Sale Revenues',o.rev_lot_sales],['MUD Proceeds',o.rev_mud],['WCID Proceeds',o.rev_wcid],
+    ['Lot Premiums',o.rev_premiums],['Fence Fees',o.rev_fence_fees],['Escalations',o.rev_escalations],
+    ['Marketing Fees',o.rev_mktg_fees],['Residential Pod Sales',o.rev_res_pods],['Commercial Pod Sales',o.rev_comm_pods]
+  ];
+  const costRows=[
+    ['Land',o.cost_land],['Plant Projects',o.cost_plants],['Amenities',o.cost_amenities],
+    ['Detention',o.cost_detention],['Sections (Lot Dev)',o.cost_lot_dev],['Other Net-outs',o.cost_other],
+    ['Roads & Landscaping',o.cost_roads],['Fencing',o.cost_fencing],['Dry Utilities',o.cost_dry_utilities],
+    ['Site Work',o.cost_site_work],['Landscaping',o.cost_lot_landscaping],['Legal',o.cost_legal],
+    ['Lot Taxes',o.cost_lot_taxes],['MUD/HOA',o.cost_mud_hoa],['Insurance',o.cost_insurance],
+    ['Marketing',o.cost_marketing],['Brokerage Fees',o.cost_brokerage],['Lot Closing Costs',o.cost_closing],
+    ['Mailboxes',o.cost_mailboxes],['Prof. Services',o.cost_prof_svc],['Contingency',o.cost_contingency]
+  ];
+  const btlRows=[
+    ['Development Mgmt Fee (DMF)',o.below_line_dmf],['Project Personnel',o.below_line_personnel],
+    ['Bookkeeping',o.below_line_bookkeeping],['MUD/WCID Recv. Fees',o.below_line_recv_fees]
+  ];
+
+  let tbl=`<table style="border-collapse:collapse;width:100%;font-size:8px">
+    <thead><tr style="border-bottom:1px solid #ccc;font-size:8px;text-transform:uppercase;letter-spacing:.05em;color:#888">
+      <th style="text-align:left;padding:4px 6px">Item</th><th style="text-align:right;padding:4px 6px">Amount</th>
+      <th style="text-align:right;padding:4px 6px">% of Costs</th><th style="text-align:right;padding:4px 6px">% of Rev</th>
+    </tr></thead><tbody>`;
+  tbl+=mkSection('REVENUES','rgba(94,158,140,0.08)');
+  revRows.forEach(([l,v])=>{tbl+=mkRow(l,f$(v),'',pctR(v));});
+  tbl+=mkRow('Total Revenue',f$(o.total_revenue),'','100.0%','border-top:2px solid #5e9e8c;font-weight:700;color:#5e9e8c');
+  tbl+=mkSection('COSTS','rgba(220,80,80,0.06)');
+  costRows.forEach(([l,v])=>{tbl+=mkRow(l,f$(v),pctC(v),pctR(v));});
+  tbl+=mkRow('Gross Costs',f$(o.gross_costs),'100.0%',pctR(o.gross_costs),'border-top:2px solid rgba(220,80,80,0.5);font-weight:700');
+  tbl+=mkRow('Gross Margin',f$(o.gross_margin_amt),fP(o.gross_margin_of_costs),fP(o.gross_margin_of_rev),'background:rgba(200,169,110,0.1);font-weight:700;color:#8a7040');
+  tbl+=mkSection('BELOW THE LINE','rgba(100,120,200,0.06)');
+  btlRows.forEach(([l,v])=>{tbl+=mkRow(l,f$(v),pctC(v),pctR(v));});
+  tbl+=mkRow('Net Margin',f$(o.net_margin_amt),fP(o.net_margin_of_costs),fP(o.net_margin_of_rev),'border-top:2px solid #5e9e8c;font-weight:700;color:#5e9e8c;background:rgba(94,158,140,0.08)');
+  tbl+='</tbody></table>';
+
+  // Acreage summary
+  const acreRows=[
+    ['Plant / Infrastructure',o.plant_net_out_acres],['Detention',o.det_net_out_acres],
+    ['Amenities',o.amenity_net_out_acres],['Parks',o.parks_net_out_acres],
+    ['Other Net-outs',o.other_net_out_acres],['Roads / ROW',o.road_net_out_acres]
+  ];
+  let acTbl=`<div style="border:1px solid #ddd;border-radius:4px;padding:8px;margin-top:8px">
+    <div style="font-weight:600;font-size:9px;color:#8a7040;margin-bottom:6px">Acreage Summary</div>
+    <table style="border-collapse:collapse;width:100%;font-size:8px">
+    <tr style="font-weight:600"><td style="padding:2px 4px">Gross Acreage</td><td style="text-align:right;padding:2px 4px">${fAc(o.gross_acreage)}</td></tr>`;
+  acreRows.forEach(([l,v])=>{
+    acTbl+=`<tr><td style="padding:2px 4px 2px 14px;color:#888">Less: ${l}</td><td style="text-align:right;padding:2px 4px;color:#888">(${fAc(v)})</td></tr>`;
+  });
+  acTbl+=`<tr style="border-top:1px solid #ddd;font-weight:600"><td style="padding:2px 4px">Developable Acres</td><td style="text-align:right;padding:2px 4px">${fAc(o.dev_acres)}</td></tr>
+    <tr><td style="padding:2px 4px 2px 14px;color:#888">Less: Commercial Pods</td><td style="text-align:right;padding:2px 4px;color:#888">(${fAc(o.comm_pod_acres_net)})</td></tr>
+    <tr><td style="padding:2px 4px 2px 14px;color:#888">Less: Residential Pods</td><td style="text-align:right;padding:2px 4px;color:#888">(${fAc(o.res_pod_acres_net)})</td></tr>
+    <tr style="border-top:1px solid #ddd;font-weight:600;color:#5e9e8c"><td style="padding:2px 4px">Residential Dev Acres</td><td style="text-align:right;padding:2px 4px">${fAc(o.residential_dev_acres)}</td></tr>
+    </table></div>`;
+
+  // Per-acre metrics
+  const paMetrics=[
+    ['Rev / Dev Acre',f$(o.rev_per_dev_acre)],['Cost / Dev Acre',f$(o.cost_per_dev_acre)],
+    ['Infra / Dev Acre',f$(o.infra_per_dev_acre)],['GM / Acre',f$(o.gm_per_acre)],
+    ['Amenities / Lot',f$(o.amenities_per_lot)],['Major Infra / Lot',f$(o.infra_per_lot)],
+    ['Lot AV',f$M(o.lot_av)],['Commercial AV',f$M(o.comm_av)]
+  ];
+  let paTbl='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:8px">';
+  paMetrics.forEach(([l,v])=>{
+    paTbl+=`<div style="border:1px solid #ddd;border-radius:3px;padding:4px 6px">
+      <div style="font-size:7px;color:#888;text-transform:uppercase;letter-spacing:.04em">${l}</div>
+      <div style="font-size:11px;font-weight:600;color:#1a1a1a">${v}</div></div>`;
+  });
+  paTbl+='</div>';
+
+  // PAGE 1: KPIs + Financial Table (left) + Acreage + Per-Acre (right)
+  const page1=`${hdr}${kpiHTML}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+      <div style="border:1px solid #ddd;border-radius:4px;padding:8px">
+        <div style="font-weight:600;font-size:9px;color:#8a7040;margin-bottom:6px">Project Performance</div>
+        ${tbl}
+      </div>
+      <div>
+        ${acTbl}
+        ${paTbl}
+      </div>
+    </div>`;
+
+  // PAGE 2: Charts (capture the existing canvas elements)
+  // We'll capture the actual chart canvases from the live page
+
+  try{
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'landscape',unit:'px',format:[PW,PH],hotfixes:['px_scaling']});
+
+    // Render page 1
+    const div1=document.createElement('div');
+    div1.style.cssText=`position:fixed;left:0;top:0;z-index:99999;width:${PW}px;background:#fff;color:#1a1a1a;font-family:'DM Sans',sans-serif;font-size:9px;padding:28px 32px;box-sizing:border-box;overflow:hidden;`;
+    div1.innerHTML=page1;
+    document.body.appendChild(div1);
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+    const c1=await html2canvas(div1,{scale:2,useCORS:true,backgroundColor:'#ffffff',width:PW,height:PH,windowWidth:PW,windowHeight:PH});
+    pdf.addImage(c1.toDataURL('image/jpeg',0.95),'JPEG',0,0,PW,PH);
+    div1.remove();
+
+    // Page 2: Charts
+    const chartRC=document.getElementById('chart-rev-cost');
+    const chartCF=document.getElementById('chart-cf');
+    const chartLT=document.getElementById('chart-lot-takedowns');
+    const chartHS=document.getElementById('chart-home-sales');
+
+    if(chartRC||chartCF||chartLT||chartHS){
+      pdf.addPage([PW,PH],'landscape');
+      const div2=document.createElement('div');
+      div2.style.cssText=`position:fixed;left:0;top:0;z-index:99999;width:${PW}px;height:${PH}px;background:#fff;color:#1a1a1a;font-family:'DM Sans',sans-serif;font-size:9px;padding:28px 32px;box-sizing:border-box;overflow:hidden;`;
+
+      let chartsHTML=hdr+`<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">`;
+      const addChart=(canvas,title)=>{
+        if(!canvas)return;
+        const img=canvas.toDataURL('image/png');
+        chartsHTML+=`<div style="border:1px solid #ddd;border-radius:4px;padding:8px">
+          <div style="font-weight:600;font-size:9px;color:#8a7040;margin-bottom:6px">${title}</div>
+          <img src="${img}" style="width:100%;height:auto">
+        </div>`;
+      };
+      addChart(chartRC,'Revenue vs. Cost by Year ($M)');
+      addChart(chartCF,'Cumulative Cashflow ($M)');
+      addChart(chartLT,'Annual Lot Takedowns');
+      addChart(chartHS,'Annual Home Sales');
+      chartsHTML+='</div>';
+
+      div2.innerHTML=chartsHTML;
+      document.body.appendChild(div2);
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+      const c2=await html2canvas(div2,{scale:2,useCORS:true,backgroundColor:'#ffffff',width:PW,height:PH,windowWidth:PW,windowHeight:PH});
+      pdf.addImage(c2.toDataURL('image/jpeg',0.95),'JPEG',0,0,PW,PH);
+      div2.remove();
+    }
+
+    pdf.save(`${projName.replace(/\s+/g,'_')}_Performance.pdf`);
+  }catch(e){
+    console.error('PDF error:',e);
+    toast('Error generating PDF','error');
+  }
+
+  btn.disabled=false;
+  btn.innerHTML=origHTML;
 }
 </script>
 </body>
