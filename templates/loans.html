@@ -16,33 +16,84 @@
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;padding:24px 32px;}
   a{color:var(--accent);text-decoration:none;}
   a:hover{text-decoration:underline;}
-  .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+  .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:8px;}
   .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
   .top-bar .meta{font-size:12px;color:var(--text-muted);}
   .back-link{font-size:13px;color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;}
   .back-link:hover{color:var(--accent);}
   .section-title{font-family:'Instrument Serif',serif;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
 
-  .report-table-wrap{overflow-x:auto;margin-bottom:24px;}
+  /* ── Tables ── */
+  .report-table-wrap{overflow-x:auto;margin-bottom:24px;background:var(--card);border:1px solid var(--border);border-radius:8px;}
   table{border-collapse:collapse;width:100%;font-size:12px;}
   th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
-  th{background:#191e28;color:var(--text-muted);font-weight:600;text-align:center;position:sticky;top:0;z-index:2;}
+  th{background:#191e28;color:var(--text-muted);font-weight:600;text-align:center;}
   td{text-align:right;}
   td.label{text-align:left;color:var(--text);font-weight:500;}
+
+  /* Sticky first column */
+  td.sticky-col,th.sticky-col{position:sticky;left:0;z-index:1;background:var(--card);}
+  th.sticky-col{background:#191e28;z-index:3;}
+  .totals-row td.sticky-col{background:#161b24;}
+
+  /* Column group headers */
+  .group-header{
+    background:#1a2030;color:var(--accent);font-family:'Instrument Serif',serif;
+    font-size:13px;border-bottom:2px solid rgba(200,169,110,0.3);padding:6px 8px;text-align:center;
+  }
+  .group-header.sticky-col{position:sticky;left:0;z-index:3;background:#1a2030;}
+
   .totals-row td{font-weight:700;border-top:2px solid var(--accent);background:#161b24;}
 
-  .health-good{color:var(--green);font-weight:600;}
-  .health-warn{color:var(--yellow);font-weight:600;}
-  .health-bad{color:var(--red);font-weight:600;}
+  /* Health pills */
+  .health-pill{
+    display:inline-block;padding:2px 10px;border-radius:12px;
+    font-size:11px;font-weight:700;text-align:center;min-width:48px;
+  }
+  .health-pill.good{background:rgba(74,222,128,0.15);color:var(--green);}
+  .health-pill.warn{background:rgba(251,191,36,0.15);color:var(--yellow);}
+  .health-pill.bad{background:rgba(248,113,113,0.15);color:var(--red);}
 
   .footnote{font-size:12px;color:var(--text-muted);font-style:italic;margin:8px 0 24px;line-height:1.6;max-width:900px;}
 
+  /* Debt schedules */
   .ds-section{margin-top:32px;}
-  .ds-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+  .ds-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;}
   @media(max-width:1200px){.ds-grid{grid-template-columns:1fr;}}
+  .ds-subtitle{font-size:13px;color:var(--text-muted);margin-bottom:8px;font-weight:600;}
+
+  /* Bar chart */
+  .chart-cell{padding:4px 2px;vertical-align:bottom;}
+  .bar-wrap{display:flex;gap:1px;align-items:flex-end;height:100%;justify-content:center;}
+  .bar{width:8px;border-radius:2px 2px 0 0;min-height:1px;}
+  .bar-rev{background:var(--teal);}
+  .bar-pay{background:var(--accent);}
+  .chart-legend{display:flex;gap:16px;font-size:11px;color:var(--text-muted);margin:6px 0 0 0;}
+  .legend-dot{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:4px;}
 
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
   .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+
+  /* ── Print ── */
+  @media print{
+    body{background:#fff;color:#000;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    @page{size:landscape letter;margin:0.4in;}
+    .back-link{display:none;}
+    .ds-grid{grid-template-columns:1fr;}
+    .report-table-wrap{border-color:#ccc;}
+    table{font-size:9px;}
+    th{background:#eee!important;color:#333;}
+    td{color:#000;}
+    td.sticky-col,th.sticky-col{position:static;}
+    .group-header{background:#f0ead8!important;color:#6b5a2e;border-bottom-color:#999;}
+    .section-title{color:#333;border-bottom-color:#999;}
+    .health-pill.good{background:#d1fae5;color:#166534;}
+    .health-pill.warn{background:#fef3c7;color:#92400e;}
+    .health-pill.bad{background:#fee2e2;color:#991b1b;}
+    .totals-row td{background:#f5f5f5!important;}
+    .bar-rev{background:#3d7a6a;}
+    .bar-pay{background:#8a7040;}
+  }
 </style>
 </head>
 <body>
@@ -59,29 +110,47 @@
 
 {% if data %}
 
-<!-- MPC Loans -->
-<div class="section-title">MPC Loans</div>
+{# ── Column Group Definitions ── #}
+{% set col_groups = [
+  {"name": "Identity", "cols": ["Community", "Lender", "Collateral", "Recourse"]},
+  {"name": "Timeline", "cols": ["Loan Origination", "Loan Term Date", "Months Remaining", "Extensions Remaining", "Extension Cost"]},
+  {"name": "Interest Reserve", "cols": ["Rem. Interest Reserve", "Monthly Interest Burn", "Remaining Mos. of IR", "IR Health"]},
+  {"name": "Rate", "cols": ["Index + Spread", "Today's Rate"]},
+  {"name": "Capacity", "cols": ["Loan Amount", "Drawn", "Balance", "Utilization", "Remaining", "Forecasted Thru Term", "Capacity Health"]}
+] %}
+
+{# ── Macro: Render a loan table ── #}
+{% macro loan_table(section) %}
 <div class="report-table-wrap">
 <table>
 <thead>
-<tr>
-  {% for h in data.mpc_loans.headers %}
-  <th>{{ h }}</th>
-  {% endfor %}
-</tr>
+  <tr>
+    {% for g in col_groups %}
+      {% set count = namespace(n=0) %}
+      {% for h in section.headers %}
+        {% if h in g.cols %}{% set count.n = count.n + 1 %}{% endif %}
+      {% endfor %}
+      {% if count.n > 0 %}
+      <th colspan="{{ count.n }}" class="group-header {% if loop.first %}sticky-col{% endif %}">{{ g.name }}</th>
+      {% endif %}
+    {% endfor %}
+  </tr>
+  <tr>
+    {% for h in section.headers %}
+    <th class="{% if loop.first %}sticky-col{% endif %}">{{ h }}</th>
+    {% endfor %}
+  </tr>
 </thead>
 <tbody>
-{% for row in data.mpc_loans.rows %}
+{% for row in section.rows %}
 <tr>
-  {% for h in data.mpc_loans.headers %}
-  <td class="{% if h == 'Community' %}label{% endif %}">
+  {% for h in section.headers %}
+  <td class="{% if loop.first %}sticky-col{% endif %}{% if h == 'Community' %} label{% endif %}">
     {% set v = row[h] %}
     {% if h == 'Community' or h == 'Lender' or h == 'Collateral' or h == 'Recourse' %}{{ v }}
     {% elif h == 'IR Health' or h == 'Capacity Health' %}
       {% set fv = v|float %}
-      <span class="{% if fv >= 1.0 %}health-good{% elif fv >= 0.5 %}health-warn{% else %}health-bad{% endif %}">
-        {{ "%.2f"|format(fv) }}
-      </span>
+      <span class="health-pill {% if fv >= 1.0 %}good{% elif fv >= 0.5 %}warn{% else %}bad{% endif %}">{{ "%.2f"|format(fv) }}</span>
     {% elif 'Rate' in h or 'Spread' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
     {% elif h == 'Loan Origination' or h == 'Loan Term Date' %}{{ v }}
     {% elif h == 'Months Remaining' or h == 'Remaining Mos. of IR' %}{{ "%.1f"|format(v) }}
@@ -92,15 +161,17 @@
   {% endfor %}
 </tr>
 {% endfor %}
-{% if data.mpc_loans.totals %}
+{% if section.totals %}
 <tr class="totals-row">
-  {% for h in data.mpc_loans.headers %}
-  <td>
-    {% if h in data.mpc_loans.totals %}
-      {% set v = data.mpc_loans.totals[h] %}
+  {% for h in section.headers %}
+  <td class="{% if loop.first %}sticky-col{% endif %}">
+    {% if h in section.totals %}
+      {% set v = section.totals[h] %}
       {% if h == 'Community' %}{{ v }}
       {% elif 'Rate' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
-      {% elif h == 'Capacity Health' %}{{ "{:,.0f}".format(v|float) }}
+      {% elif h == 'Capacity Health' %}
+        {% set fv = v|float %}
+        <span class="health-pill {% if fv >= 1.0 %}good{% elif fv >= 0.5 %}warn{% else %}bad{% endif %}">{{ "{:,.0f}".format(fv) }}</span>
       {% else %}{{ "{:,.0f}".format(v) }}
       {% endif %}
     {% endif %}
@@ -111,59 +182,15 @@
 </tbody>
 </table>
 </div>
+{% endmacro %}
+
+<!-- MPC Loans -->
+<div class="section-title">MPC Loans</div>
+{{ loan_table(data.mpc_loans) }}
 
 <!-- Vertical Loans -->
 <div class="section-title">Vertical Loans</div>
-<div class="report-table-wrap">
-<table>
-<thead>
-<tr>
-  {% for h in data.vertical_loans.headers %}
-  <th>{{ h }}</th>
-  {% endfor %}
-</tr>
-</thead>
-<tbody>
-{% for row in data.vertical_loans.rows %}
-<tr>
-  {% for h in data.vertical_loans.headers %}
-  <td class="{% if h == 'Community' %}label{% endif %}">
-    {% set v = row[h] %}
-    {% if h == 'Community' or h == 'Lender' or h == 'Collateral' or h == 'Recourse' %}{{ v }}
-    {% elif h == 'IR Health' or h == 'Capacity Health' %}
-      {% set fv = v|float %}
-      <span class="{% if fv >= 1.0 %}health-good{% elif fv >= 0.5 %}health-warn{% else %}health-bad{% endif %}">
-        {{ "%.2f"|format(fv) }}
-      </span>
-    {% elif 'Rate' in h or 'Spread' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
-    {% elif h == 'Loan Origination' or h == 'Loan Term Date' %}{{ v }}
-    {% elif h == 'Months Remaining' or h == 'Remaining Mos. of IR' %}{{ "%.1f"|format(v) }}
-    {% elif h == 'Extensions Remaining' %}{{ v|int }}
-    {% else %}{{ "{:,.0f}".format(v) }}
-    {% endif %}
-  </td>
-  {% endfor %}
-</tr>
-{% endfor %}
-{% if data.vertical_loans.totals %}
-<tr class="totals-row">
-  {% for h in data.vertical_loans.headers %}
-  <td>
-    {% if h in data.vertical_loans.totals %}
-      {% set v = data.vertical_loans.totals[h] %}
-      {% if h == 'Community' %}{{ v }}
-      {% elif 'Rate' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
-      {% elif h == 'Capacity Health' %}{{ "{:,.0f}".format(v|float) }}
-      {% else %}{{ "{:,.0f}".format(v) }}
-      {% endif %}
-    {% endif %}
-  </td>
-  {% endfor %}
-</tr>
-{% endif %}
-</tbody>
-</table>
-</div>
+{{ loan_table(data.vertical_loans) }}
 {% if data.vertical_loans.footnote %}
 <div class="footnote">{{ data.vertical_loans.footnote }}</div>
 {% endif %}
@@ -173,12 +200,13 @@
 <div class="section-title">Debt Schedules</div>
 {% for ds in data.debt_schedules %}
 <div class="ds-section">
-  <h3 style="font-family:'Instrument Serif',serif;font-size:16px;color:var(--text);margin-bottom:12px;">{{ ds.project }}</h3>
+  <h3 style="font-family:'Instrument Serif',serif;font-size:16px;color:var(--text);margin-bottom:16px;">{{ ds.project }}</h3>
 
   <div class="ds-grid">
     <!-- Upcoming Payments -->
     <div>
-      <h4 style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Upcoming Payments</h4>
+      <div class="ds-subtitle">Upcoming Payments</div>
+      <div class="report-table-wrap">
       <table>
         <thead><tr><th>Date</th><th>Lender</th><th>Amount</th><th>Covered</th></tr></thead>
         <tbody>
@@ -188,8 +216,8 @@
           <td>{{ p.lender }}</td>
           <td>{{ "{:,.0f}".format(p.amount) }}</td>
           <td style="text-align:center">
-            {% if 'Paid' in p.covered %}<span class="health-good">{{ p.covered }}</span>
-            {% elif 'Expected' in p.covered %}<span class="health-warn">{{ p.covered }}</span>
+            {% if 'Paid' in p.covered %}<span class="health-pill good">{{ p.covered }}</span>
+            {% elif 'Expected' in p.covered %}<span class="health-pill warn">{{ p.covered }}</span>
             {% else %}{{ p.covered }}{% endif %}
           </td>
         </tr>
@@ -201,21 +229,24 @@
         </tr>
         </tbody>
       </table>
+      </div>
     </div>
 
     <!-- Associated Revenues -->
     <div>
-      <h4 style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Associated Revenues</h4>
+      <div class="ds-subtitle">Associated Revenues</div>
+      <div class="report-table-wrap">
       <table>
         <thead>
-          <tr><th>Type</th><th>%</th><th>Total</th>
-          {% for mo in ds.months %}<th>{{ mo[5:7] }}/{{ mo[2:4] }}</th>{% endfor %}
+          <tr>
+            <th class="sticky-col">Type</th><th>%</th><th>Total</th>
+            {% for mo in ds.months %}<th>{{ mo[5:7] }}/{{ mo[2:4] }}</th>{% endfor %}
           </tr>
         </thead>
         <tbody>
         {% for rv in ds.revenues %}
         <tr>
-          <td class="label">{{ rv.type }}</td>
+          <td class="label sticky-col">{{ rv.type }}</td>
           <td>{{ "%.1f"|format(rv.pct * 100) }}%</td>
           <td>{{ "{:,.0f}".format(rv.total) }}</td>
           {% for v in rv.monthly %}
@@ -225,7 +256,7 @@
         {% endfor %}
         {% if ds.total_revenues %}
         <tr class="totals-row">
-          <td class="label">Total Revenues</td>
+          <td class="label sticky-col">Total Revenues</td>
           <td>{{ "%.0f"|format(ds.total_revenues.pct * 100) }}%</td>
           <td>{{ "{:,.0f}".format(ds.total_revenues.total) }}</td>
           {% for v in ds.total_revenues.monthly %}
@@ -234,19 +265,46 @@
         </tr>
         {% endif %}
         <tr>
-          <td class="label" colspan="3" style="font-weight:600">Cumulative Revenues</td>
+          <td class="label sticky-col" style="font-weight:600;color:var(--teal)">Cumulative Revenues</td>
+          <td colspan="2"></td>
           {% for v in ds.cumulative_revenues %}
           <td style="color:var(--teal)">{{ "{:,.0f}".format(v) }}</td>
           {% endfor %}
         </tr>
         <tr>
-          <td class="label" colspan="3" style="font-weight:600">Cumulative Payments</td>
+          <td class="label sticky-col" style="font-weight:600;color:var(--accent)">Cumulative Payments</td>
+          <td colspan="2"></td>
           {% for v in ds.cumulative_payments %}
           <td style="color:var(--accent)">{{ "{:,.0f}".format(v) }}</td>
           {% endfor %}
         </tr>
+        {# ── Visual Bar Chart Row ── #}
+        {% set max_cum = namespace(val=1) %}
+        {% for v in ds.cumulative_revenues %}
+          {% if v > max_cum.val %}{% set max_cum.val = v %}{% endif %}
+        {% endfor %}
+        {% for v in ds.cumulative_payments %}
+          {% if v > max_cum.val %}{% set max_cum.val = v %}{% endif %}
+        {% endfor %}
+        <tr>
+          <td class="label sticky-col" style="font-weight:600;color:var(--text-muted);vertical-align:bottom">Coverage</td>
+          <td colspan="2" style="vertical-align:bottom"></td>
+          {% for i in range(ds.months|length) %}
+          <td class="chart-cell" style="height:60px;">
+            <div class="bar-wrap">
+              <div class="bar bar-rev" style="height:{{ ((ds.cumulative_revenues[i] / max_cum.val) * 100)|int }}%;" title="Rev: {{ '{:,.0f}'.format(ds.cumulative_revenues[i]) }}"></div>
+              <div class="bar bar-pay" style="height:{{ ((ds.cumulative_payments[i] / max_cum.val) * 100)|int }}%;" title="Pay: {{ '{:,.0f}'.format(ds.cumulative_payments[i]) }}"></div>
+            </div>
+          </td>
+          {% endfor %}
+        </tr>
         </tbody>
       </table>
+      </div>
+      <div class="chart-legend">
+        <span><span class="legend-dot" style="background:var(--teal)"></span>Cumulative Revenue</span>
+        <span><span class="legend-dot" style="background:var(--accent)"></span>Cumulative Payments</span>
+      </div>
     </div>
   </div>
 </div>

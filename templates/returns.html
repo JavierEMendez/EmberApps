@@ -16,31 +16,100 @@
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;padding:24px 32px;}
   a{color:var(--accent);text-decoration:none;}
   a:hover{text-decoration:underline;}
-  .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+  .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px;}
   .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
   .top-bar .meta{font-size:12px;color:var(--text-muted);}
+  .subtitle{font-size:12px;color:var(--text-muted);margin-bottom:24px;}
   .back-link{font-size:13px;color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;}
   .back-link:hover{color:var(--accent);}
 
-  .report-table-wrap{overflow-x:auto;margin-bottom:32px;}
-  table{border-collapse:collapse;width:100%;min-width:1200px;font-size:12px;}
+  /* ── Dashboard Grid ── */
+  .dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:28px;}
+  .dash-card{
+    background:var(--card);border:1px solid var(--border);border-radius:8px;
+    padding:14px 16px;cursor:pointer;transition:all .2s;border-left:3px solid var(--accent);
+  }
+  .dash-card:hover{background:#191e28;transform:translateY(-1px);}
+  .dash-name{font-family:'Instrument Serif',serif;font-size:14px;color:var(--text);margin-bottom:8px;}
+  .dash-metric{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;}
+  .dash-label{color:var(--text-muted);}
+  .dash-value{color:var(--accent);font-weight:600;}
+
+  /* ── Project Cards ── */
+  .project-card{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden;}
+  .card-header{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 16px;cursor:pointer;background:#191e28;
+    border-bottom:2px solid var(--accent);user-select:none;gap:12px;
+  }
+  .card-header:hover{background:#1e2535;}
+  .card-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .card-title{font-family:'Instrument Serif',serif;font-size:15px;color:var(--accent);font-weight:600;}
+  .kpi-pill{
+    display:inline-block;background:rgba(200,169,110,0.1);border:1px solid rgba(200,169,110,0.3);
+    border-radius:4px;padding:2px 10px;font-size:12px;color:var(--accent);
+  }
+  .kpi-pill strong{font-weight:700;}
+  .card-chevron{color:var(--text-muted);font-size:12px;transition:transform .2s;flex-shrink:0;}
+  .card-chevron.collapsed{transform:rotate(-90deg);}
+  .card-body{overflow-x:auto;transition:max-height .3s ease;}
+  .card-body.collapsed{display:none;}
+
+  /* ── Tables ── */
+  table{border-collapse:collapse;width:100%;min-width:600px;font-size:12px;}
   th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
-  th{background:#191e28;color:var(--text-muted);font-weight:600;text-align:center;position:sticky;top:0;z-index:2;}
+  th{background:#191e28;color:var(--text-muted);font-weight:600;text-align:center;}
   td{text-align:right;}
   td.label{text-align:left;color:var(--text);font-weight:500;min-width:180px;}
   td.status{text-align:center;font-weight:600;}
   td.status-ok{color:var(--green);}
-  td.status-warn{color:var(--red);}
 
-  .project-header{background:#191e28;}
-  .project-header td{font-family:'Instrument Serif',serif;font-size:15px;color:var(--accent);font-weight:600;text-align:left;border-bottom:2px solid var(--accent);padding:10px 8px;}
-  .metric-irr td, .metric-em td{font-weight:600;color:var(--accent);}
-  .summary-section td{background:#161b24;}
-  .summary-header td{font-family:'Instrument Serif',serif;font-size:14px;color:var(--accent);font-weight:600;text-align:left;border-top:2px solid var(--accent);padding:10px 8px;}
-  .total-row td{font-weight:700;border-top:2px solid var(--accent);}
+  /* Sticky first column */
+  td.label, th.sticky-col{
+    position:sticky;left:0;z-index:1;background:var(--card);
+  }
+  th.sticky-col{background:#191e28;z-index:3;}
+
+  /* Highlighted metrics */
+  .metric-irr td,.metric-em td{font-weight:600;color:var(--accent);}
+  .metric-irr td.label,.metric-em td.label{color:var(--accent);}
+
+  /* Summary section */
+  .summary-card{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-top:28px;overflow:hidden;}
+  .summary-card .card-header{border-bottom-color:var(--teal);}
+  .summary-card .card-title{color:var(--teal);}
+  .summary-section td{background:var(--card);}
+  .total-row td{font-weight:700;border-top:2px solid var(--teal);}
+  .flow-in td{color:var(--green);}
+  .flow-in td.label{color:var(--green);}
+  .flow-out td{color:var(--red);}
+  .flow-out td.label{color:var(--red);}
+  .flow-net td{color:var(--accent);font-weight:600;}
+  .flow-net td.label{color:var(--accent);}
 
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
   .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+
+  /* ── Print ── */
+  @media print{
+    body{background:#fff;color:#000;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    @page{size:landscape letter;margin:0.4in;}
+    .back-link,.dashboard-grid{display:none;}
+    .project-card,.summary-card{break-inside:avoid;border:1px solid #ccc;margin-bottom:8px;}
+    .card-body.collapsed{display:block!important;}
+    table{font-size:9px;min-width:unset;}
+    th{background:#eee!important;color:#333;}
+    td{color:#000;}
+    td.label,th.sticky-col{position:static;}
+    .card-header{background:#f5f5f5;border-bottom-color:#999;}
+    .card-title,.kpi-pill,.dash-value{color:#333;}
+    .metric-irr td,.metric-em td,.metric-irr td.label,.metric-em td.label{color:#6b5a2e;}
+    .flow-in td,.flow-in td.label{color:#16a34a;}
+    .flow-out td,.flow-out td.label{color:#dc2626;}
+    .flow-net td,.flow-net td.label{color:#6b5a2e;}
+    .summary-card .card-header{border-bottom-color:#3d7a6a;}
+    .summary-card .card-title{color:#3d7a6a;}
+  }
 </style>
 </head>
 <body>
@@ -54,73 +123,167 @@
     {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
   </div>
 </div>
+<div class="subtitle">($ in 000s)</div>
 
 {% if data %}
-<div class="report-table-wrap">
-<table>
-<thead>
-<tr>
-  <th style="min-width:180px">Metric</th>
-  <th>Status</th>
-  <th>Total</th>
-  {% for y in data.years %}
-  <th>{{ y if y else '' }}</th>
+
+{# ── Compute active year columns (skip all-zero years) ── #}
+{% set ns = namespace(active_cols=[]) %}
+{% for i in range(data.years|length) %}
+  {% set has_val = namespace(found=false) %}
+  {% for project in data.projects %}
+    {% for m in project.metrics %}
+      {% if m.yearly[i] != 0 %}{% set has_val.found = true %}{% endif %}
+    {% endfor %}
   {% endfor %}
-</tr>
-</thead>
-<tbody>
-{% for project in data.projects %}
-<tr class="project-header">
-  <td colspan="{{ 3 + data.years|length }}">{{ project.name }}</td>
-</tr>
-{% for m in project.metrics %}
-<tr class="{% if m.label == 'LP IRR' %}metric-irr{% elif m.label == 'LP Equity Multiple' %}metric-em{% endif %}">
-  <td class="label">{{ m.label }}</td>
-  <td class="status {% if m.status == 'OK' %}status-ok{% elif m.status is string and m.status and m.status != 'OK' %}status-warn{% endif %}">
-    {% if m.status == 'OK' %}OK{% elif m.status is number and m.status == 0 %}—{% elif m.status is number and m.status == 1 %}1{% else %}{{ m.status }}{% endif %}
-  </td>
-  <td style="font-weight:600">
-    {% if 'IRR' in m.label %}{{ "%.1f" | format(m.total * 100) }}%
-    {% elif 'Multiple' in m.label %}{{ "%.2f" | format(m.total) }}x
-    {% else %}{{ "{:,.0f}".format(m.total) }}
-    {% endif %}
-  </td>
-  {% for v in m.yearly %}
-  <td>
-    {% if 'IRR' in m.label or 'Multiple' in m.label %}
-      {% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}
-    {% else %}
-      {% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}
-    {% endif %}
-  </td>
+  {% for s in data.summary %}
+    {% if s.yearly[i] != 0 %}{% set has_val.found = true %}{% endif %}
   {% endfor %}
-</tr>
-{% endfor %}
+  {% if has_val.found %}
+    {% set ns.active_cols = ns.active_cols + [i] %}
+  {% endif %}
 {% endfor %}
 
-{% if data.summary %}
-<tr class="summary-header">
-  <td colspan="{{ 3 + data.years|length }}">Summary</td>
-</tr>
-{% for s in data.summary %}
-<tr class="summary-section {% if loop.last %}total-row{% endif %}">
-  <td class="label">{{ s.label }}</td>
-  <td></td>
-  <td style="font-weight:600">{{ "{:,.0f}".format(s.total) }}</td>
-  {% for v in s.yearly %}
-  <td>{% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}</td>
+{# ── Summary Dashboard ── #}
+<div class="dashboard-grid">
+  {% for project in data.projects %}
+  <div class="dash-card" onclick="scrollToProject({{ loop.index }})">
+    <div class="dash-name">{{ project.name }}</div>
+    {% for m in project.metrics %}
+      {% if m.label == 'LP IRR' %}
+      <div class="dash-metric"><span class="dash-label">IRR</span><span class="dash-value">{{ "%.1f"|format(m.total * 100) }}%</span></div>
+      {% elif m.label == 'LP Equity Multiple' %}
+      <div class="dash-metric"><span class="dash-label">Equity Multiple</span><span class="dash-value">{{ "%.2f"|format(m.total) }}x</span></div>
+      {% elif m.label == 'Total LP Profit' %}
+      <div class="dash-metric"><span class="dash-label">Total Profit</span><span class="dash-value">{{ "{:,.0f}".format(m.total) }}</span></div>
+      {% endif %}
+    {% endfor %}
+  </div>
   {% endfor %}
-</tr>
-{% endfor %}
-{% endif %}
-</tbody>
-</table>
 </div>
+
+{# ── Project Detail Cards ── #}
+{% for project in data.projects %}
+{% set ns_irr = namespace(val='') %}
+{% set ns_em = namespace(val='') %}
+{% for m in project.metrics %}
+  {% if m.label == 'LP IRR' %}{% set ns_irr.val = "%.1f"|format(m.total * 100) ~ '%' %}{% endif %}
+  {% if m.label == 'LP Equity Multiple' %}{% set ns_em.val = "%.2f"|format(m.total) ~ 'x' %}{% endif %}
+{% endfor %}
+
+<div class="project-card" id="project-{{ loop.index }}">
+  <div class="card-header" onclick="toggleCard(this)">
+    <div class="card-left">
+      <span class="card-title">{{ project.name }}</span>
+      <span class="kpi-pill">IRR <strong>{{ ns_irr.val }}</strong></span>
+      <span class="kpi-pill">Equity <strong>{{ ns_em.val }}</strong></span>
+    </div>
+    <span class="card-chevron">&#9660;</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <thead>
+        <tr>
+          <th class="sticky-col" style="min-width:180px">Metric</th>
+          <th>Status</th>
+          <th>Total</th>
+          {% for i in ns.active_cols %}
+          <th>{{ data.years[i] }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in project.metrics %}
+        <tr class="{% if m.label == 'LP IRR' %}metric-irr{% elif m.label == 'LP Equity Multiple' %}metric-em{% endif %}">
+          <td class="label">{{ m.label }}</td>
+          <td class="status {% if m.status == 'OK' %}status-ok{% endif %}">
+            {% if m.status == 'OK' %}OK{% elif m.status is number and m.status == 0 %}—{% elif m.status is number %}{{ m.status }}{% else %}{{ m.status }}{% endif %}
+          </td>
+          <td style="font-weight:600">
+            {% if 'IRR' in m.label %}{{ "%.1f"|format(m.total * 100) }}%
+            {% elif 'Multiple' in m.label %}{{ "%.2f"|format(m.total) }}x
+            {% else %}{{ "{:,.0f}".format(m.total) }}{% endif %}
+          </td>
+          {% for i in ns.active_cols %}
+          <td>
+            {% set v = m.yearly[i] %}
+            {% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}
+          </td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endfor %}
+
+{# ── Summary Section ── #}
+{% if data.summary %}
+<div class="summary-card">
+  <div class="card-header" onclick="toggleCard(this)">
+    <div class="card-left">
+      <span class="card-title">Portfolio Summary</span>
+    </div>
+    <span class="card-chevron">&#9660;</span>
+  </div>
+  <div class="card-body">
+    <table>
+      <thead>
+        <tr>
+          <th class="sticky-col" style="min-width:180px">Metric</th>
+          <th>Total</th>
+          {% for i in ns.active_cols %}
+          <th>{{ data.years[i] }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in data.summary %}
+        {% set flow_class = '' %}
+        {% if 'Distribution' in s.label %}{% set flow_class = 'flow-in' %}
+        {% elif 'Contribution' in s.label %}{% set flow_class = 'flow-out' %}
+        {% elif 'Net Cashflow' in s.label or 'Profit' in s.label %}{% set flow_class = 'flow-net' %}
+        {% endif %}
+        <tr class="summary-section {{ flow_class }} {% if loop.last %}total-row{% endif %}">
+          <td class="label">{{ s.label }}</td>
+          <td style="font-weight:600">{{ "{:,.0f}".format(s.total) }}</td>
+          {% for i in ns.active_cols %}
+          <td>{% set v = s.yearly[i] %}{% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
 {% else %}
 <div class="empty-state">
   <h2>No Report Data</h2>
   <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
 </div>
 {% endif %}
+
+<script>
+function toggleCard(header){
+  const body=header.nextElementSibling;
+  const chev=header.querySelector('.card-chevron');
+  body.classList.toggle('collapsed');
+  chev.classList.toggle('collapsed');
+}
+function scrollToProject(idx){
+  const card=document.getElementById('project-'+idx);
+  if(!card)return;
+  const body=card.querySelector('.card-body');
+  const chev=card.querySelector('.card-chevron');
+  if(body.classList.contains('collapsed')){
+    body.classList.remove('collapsed');
+    chev.classList.remove('collapsed');
+  }
+  card.scrollIntoView({behavior:'smooth',block:'start'});
+}
+</script>
 </body>
 </html>
