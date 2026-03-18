@@ -3863,9 +3863,9 @@ async function downloadPerformancePDF(){
 
   // Build light-mode PDF pages
   const PW=1056,PH=816;
-  const hdr=`<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-    <h1 style="font-family:'Instrument Serif',serif;font-size:18px;color:#1a1a1a;margin:0">${projName} — Project Performance</h1>
-    <span style="font-size:9px;color:#888">${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</span>
+  const hdr=`<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+    <h1 style="font-family:'Instrument Serif',serif;font-size:15px;color:#1a1a1a;margin:0">${projName} — Project Performance</h1>
+    <span style="font-size:8px;color:#888">${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</span>
   </div>`;
 
   // KPI cards
@@ -3879,21 +3879,21 @@ async function downloadPerformancePDF(){
     ['Project Length',fYr(o.project_length_years)],
     ['Home Sales/Yr',fN(o.home_sales_per_year)]
   ];
-  let kpiHTML='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px">';
+  let kpiHTML='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:6px">';
   kpis.forEach(([lbl,val])=>{
-    kpiHTML+=`<div style="border:1px solid #ddd;border-radius:4px;padding:6px 8px;border-left:2px solid #8a7040">
-      <div style="font-size:8px;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">${lbl}</div>
-      <div style="font-size:14px;font-weight:600;color:#1a1a1a">${val}</div>
+    kpiHTML+=`<div style="border:1px solid #ddd;border-radius:3px;padding:3px 6px;border-left:2px solid #8a7040">
+      <div style="font-size:6.5px;color:#888;text-transform:uppercase;letter-spacing:.04em;margin-bottom:1px">${lbl}</div>
+      <div style="font-size:11px;font-weight:600;color:#1a1a1a">${val}</div>
     </div>`;
   });
   kpiHTML+='</div>';
 
   // Revenue/Cost table
   function mkRow(label,amt,pcC,pcR,style=''){
-    return`<tr style="${style}"><td style="padding:3px 6px;text-align:left">${label}</td><td style="padding:3px 6px;text-align:right">${amt}</td><td style="padding:3px 6px;text-align:right">${pcC}</td><td style="padding:3px 6px;text-align:right">${pcR}</td></tr>`;
+    return`<tr style="${style}"><td style="padding:1px 4px;text-align:left">${label}</td><td style="padding:1px 4px;text-align:right">${amt}</td><td style="padding:1px 4px;text-align:right">${pcC}</td><td style="padding:1px 4px;text-align:right">${pcR}</td></tr>`;
   }
   function mkSection(label,bg){
-    return`<tr style="background:${bg}"><td colspan="4" style="font-weight:600;font-size:9px;letter-spacing:.05em;padding:6px 6px 3px">${label}</td></tr>`;
+    return`<tr style="background:${bg}"><td colspan="4" style="font-weight:600;font-size:7px;letter-spacing:.05em;padding:3px 4px 1px">${label}</td></tr>`;
   }
 
   const revRows=[
@@ -3915,10 +3915,10 @@ async function downloadPerformancePDF(){
     ['Bookkeeping',o.below_line_bookkeeping],['MUD/WCID Recv. Fees',o.below_line_recv_fees]
   ];
 
-  let tbl=`<table style="border-collapse:collapse;width:100%;font-size:8px">
-    <thead><tr style="border-bottom:1px solid #ccc;font-size:8px;text-transform:uppercase;letter-spacing:.05em;color:#888">
-      <th style="text-align:left;padding:4px 6px">Item</th><th style="text-align:right;padding:4px 6px">Amount</th>
-      <th style="text-align:right;padding:4px 6px">% of Costs</th><th style="text-align:right;padding:4px 6px">% of Rev</th>
+  let tbl=`<table style="border-collapse:collapse;width:100%;font-size:7px;line-height:1.3">
+    <thead><tr style="border-bottom:1px solid #ccc;font-size:6.5px;text-transform:uppercase;letter-spacing:.04em;color:#888">
+      <th style="text-align:left;padding:2px 4px">Item</th><th style="text-align:right;padding:2px 4px">Amount</th>
+      <th style="text-align:right;padding:2px 4px">% Costs</th><th style="text-align:right;padding:2px 4px">% Rev</th>
     </tr></thead><tbody>`;
   tbl+=mkSection('REVENUES','rgba(94,158,140,0.08)');
   revRows.forEach(([l,v])=>{tbl+=mkRow(l,f$(v),'',pctR(v));});
@@ -3938,17 +3938,17 @@ async function downloadPerformancePDF(){
     ['Amenities',o.amenity_net_out_acres],['Parks',o.parks_net_out_acres],
     ['Other Net-outs',o.other_net_out_acres],['Roads / ROW',o.road_net_out_acres]
   ];
-  let acTbl=`<div style="border:1px solid #ddd;border-radius:4px;padding:8px;margin-top:8px">
-    <div style="font-weight:600;font-size:9px;color:#8a7040;margin-bottom:6px">Acreage Summary</div>
-    <table style="border-collapse:collapse;width:100%;font-size:8px">
-    <tr style="font-weight:600"><td style="padding:2px 4px">Gross Acreage</td><td style="text-align:right;padding:2px 4px">${fAc(o.gross_acreage)}</td></tr>`;
+  let acTbl=`<div style="border:1px solid #ddd;border-radius:3px;padding:5px 6px;margin-top:6px">
+    <div style="font-weight:600;font-size:7px;color:#8a7040;margin-bottom:3px">Acreage Summary</div>
+    <table style="border-collapse:collapse;width:100%;font-size:7px;line-height:1.3">
+    <tr style="font-weight:600"><td style="padding:1px 3px">Gross Acreage</td><td style="text-align:right;padding:1px 3px">${fAc(o.gross_acreage)}</td></tr>`;
   acreRows.forEach(([l,v])=>{
-    acTbl+=`<tr><td style="padding:2px 4px 2px 14px;color:#888">Less: ${l}</td><td style="text-align:right;padding:2px 4px;color:#888">(${fAc(v)})</td></tr>`;
+    acTbl+=`<tr><td style="padding:1px 3px 1px 10px;color:#888">Less: ${l}</td><td style="text-align:right;padding:1px 3px;color:#888">(${fAc(v)})</td></tr>`;
   });
-  acTbl+=`<tr style="border-top:1px solid #ddd;font-weight:600"><td style="padding:2px 4px">Developable Acres</td><td style="text-align:right;padding:2px 4px">${fAc(o.dev_acres)}</td></tr>
-    <tr><td style="padding:2px 4px 2px 14px;color:#888">Less: Commercial Pods</td><td style="text-align:right;padding:2px 4px;color:#888">(${fAc(o.comm_pod_acres_net)})</td></tr>
-    <tr><td style="padding:2px 4px 2px 14px;color:#888">Less: Residential Pods</td><td style="text-align:right;padding:2px 4px;color:#888">(${fAc(o.res_pod_acres_net)})</td></tr>
-    <tr style="border-top:1px solid #ddd;font-weight:600;color:#5e9e8c"><td style="padding:2px 4px">Residential Dev Acres</td><td style="text-align:right;padding:2px 4px">${fAc(o.residential_dev_acres)}</td></tr>
+  acTbl+=`<tr style="border-top:1px solid #ddd;font-weight:600"><td style="padding:1px 3px">Developable Acres</td><td style="text-align:right;padding:1px 3px">${fAc(o.dev_acres)}</td></tr>
+    <tr><td style="padding:1px 3px 1px 10px;color:#888">Less: Commercial Pods</td><td style="text-align:right;padding:1px 3px;color:#888">(${fAc(o.comm_pod_acres_net)})</td></tr>
+    <tr><td style="padding:1px 3px 1px 10px;color:#888">Less: Residential Pods</td><td style="text-align:right;padding:1px 3px;color:#888">(${fAc(o.res_pod_acres_net)})</td></tr>
+    <tr style="border-top:1px solid #ddd;font-weight:600;color:#5e9e8c"><td style="padding:1px 3px">Residential Dev Acres</td><td style="text-align:right;padding:1px 3px">${fAc(o.residential_dev_acres)}</td></tr>
     </table></div>`;
 
   // Per-acre metrics
@@ -3958,24 +3958,24 @@ async function downloadPerformancePDF(){
     ['Amenities / Lot',f$(o.amenities_per_lot)],['Major Infra / Lot',f$(o.infra_per_lot)],
     ['Lot AV',f$M(o.lot_av)],['Commercial AV',f$M(o.comm_av)]
   ];
-  let paTbl='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-top:8px">';
+  let paTbl='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin-top:6px">';
   paMetrics.forEach(([l,v])=>{
-    paTbl+=`<div style="border:1px solid #ddd;border-radius:3px;padding:4px 6px">
-      <div style="font-size:7px;color:#888;text-transform:uppercase;letter-spacing:.04em">${l}</div>
-      <div style="font-size:11px;font-weight:600;color:#1a1a1a">${v}</div></div>`;
+    paTbl+=`<div style="border:1px solid #ddd;border-radius:2px;padding:2px 4px">
+      <div style="font-size:6px;color:#888;text-transform:uppercase;letter-spacing:.03em">${l}</div>
+      <div style="font-size:9px;font-weight:600;color:#1a1a1a">${v}</div></div>`;
   });
   paTbl+='</div>';
 
   // PAGE 1: Left = KPIs + Acreage + Per-Acre | Right = Full-height Financial Table
   const page1=`${hdr}
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start">
       <div>
         ${kpiHTML}
         ${acTbl}
         ${paTbl}
       </div>
-      <div style="border:1px solid #ddd;border-radius:4px;padding:8px">
-        <div style="font-weight:600;font-size:9px;color:#8a7040;margin-bottom:6px">Project Performance</div>
+      <div style="border:1px solid #ddd;border-radius:3px;padding:5px 6px">
+        <div style="font-weight:600;font-size:7px;color:#8a7040;margin-bottom:3px">Project Performance</div>
         ${tbl}
       </div>
     </div>`;
@@ -3989,7 +3989,7 @@ async function downloadPerformancePDF(){
 
     // Render page 1
     const div1=document.createElement('div');
-    div1.style.cssText=`position:fixed;left:0;top:0;z-index:99999;width:${PW}px;background:#fff;color:#1a1a1a;font-family:'DM Sans',sans-serif;font-size:9px;padding:28px 32px;box-sizing:border-box;overflow:hidden;`;
+    div1.style.cssText=`position:fixed;left:0;top:0;z-index:99999;width:${PW}px;background:#fff;color:#1a1a1a;font-family:'DM Sans',sans-serif;font-size:7px;padding:20px 24px;box-sizing:border-box;overflow:hidden;`;
     div1.innerHTML=page1;
     document.body.appendChild(div1);
     await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
