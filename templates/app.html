@@ -1564,6 +1564,8 @@ function recalcCommPod(i) {
 
 // ── RECALC ALL LIVE FIELDS (after save/recalculate re-renders inputs) ──
 function recalcAllLiveFields() {
+  // Land cost preview
+  updateLandCostPreview();
   // Lot rows
   for (let i = 0; i < 16; i++) {
     if (!document.getElementById(`ci-lot-row-${i}`)) break;
@@ -1900,14 +1902,14 @@ async function loadInputs() {
   const tdFmts   = ['n','pct','$','$','$'];
   const tb = document.getElementById('ci-takedowns-body');
   const rawTds = t.takedowns || [];
-  const calcTds = c.takedown_rows || [];
+  const calcTds = c.land_takedowns || c.takedown_rows || [];
   // Merge: editable fields from raw inputs, computed fields from calc outputs
   const tds = [0,1,2].map(i => ({
     period:        rawTds[i]?.period  ?? calcTds[i]?.period  ?? '',
     pct:           rawTds[i]?.pct     ?? calcTds[i]?.pct     ?? '',
-    purchase_price: calcTds[i]?.purchase ?? null,
-    closing_costs:  calcTds[i]?.closing  ?? null,
-    total_land_cost:calcTds[i]?.total    ?? null,
+    purchase_price: calcTds[i]?.purchase_price ?? calcTds[i]?.purchase ?? null,
+    closing_costs:  calcTds[i]?.closing_costs ?? calcTds[i]?.closing  ?? null,
+    total_land_cost:calcTds[i]?.total_land_cost ?? calcTds[i]?.total    ?? null,
   }));
   const tdTotal = calcTds.reduce((s,r) => s + (r?.total||0), 0);
   const pctCheck = (rawTds||[]).reduce((s,td)=>s+(td?.pct||0), 0);
