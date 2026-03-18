@@ -1057,9 +1057,9 @@ async function selectProject(id) {
   document.getElementById('btn-refresh-outputs').style.display = 'flex';
   document.getElementById('save-indicator').style.display = 'flex';
   await loadInputs();
-  recalcAllLiveFields();
   showTab('tab-outputs');
-  loadOutputs();
+  await loadOutputs();
+  recalcAllLiveFields();
 }
 
 function navTo(view) {

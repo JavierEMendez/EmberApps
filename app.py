@@ -150,11 +150,16 @@ def list_projects():
 def create_project():
     data = request.json or {}
     name = data.get("name", "New Project")
+    inputs = default_inputs(name)
+    try:
+        outputs = calculate(inputs)
+    except Exception:
+        outputs = {}
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO projects (name, address, created_by, inputs) VALUES (%s, %s, %s, %s) RETURNING id",
-        (name, data.get("address", ""), session["user_id"], json.dumps(default_inputs(name)))
+        "INSERT INTO projects (name, address, created_by, inputs, outputs) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (name, data.get("address", ""), session["user_id"], json.dumps(inputs), json.dumps(outputs))
     )
     pid = cur.fetchone()["id"]
     conn.commit(); cur.close(); conn.close()
