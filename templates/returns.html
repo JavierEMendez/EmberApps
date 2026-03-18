@@ -100,12 +100,13 @@
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
   .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
 
-  /* ── PDF Light-Mode Container (built by JS, off-screen) ── */
+  /* ── PDF Light-Mode Container (built by JS, rendered on-screen then removed) ── */
   #pdf-render{
-    position:absolute;left:-9999px;top:0;
+    position:fixed;left:0;top:0;z-index:99999;
     width:1056px; /* 11in * 96dpi */
     font-family:'DM Sans',sans-serif;font-size:9px;
     background:#fff;color:#1a1a1a;padding:0;
+    overflow:auto;
   }
   #pdf-render *{color:#1a1a1a;}
   #pdf-render .pdf-page{
@@ -337,9 +338,21 @@
       <tbody>
         {% for m in project.metrics %}
         {% set display_label = LABEL_MAP.get(m.label, m.label) %}
+        {# Compute correct total for renamed rows #}
+        {% if m.label == 'LP IRR' %}
+          {# Net Cashflow: total = sum of all yearly values #}
+          {% set row_total = namespace(v=0) %}
+          {% for val in m.yearly %}{% set row_total.v = row_total.v + val %}{% endfor %}
+        {% elif m.label == 'LP Equity Multiple' %}
+          {# Cumulative Net Cashflow: total = last non-zero value #}
+          {% set row_total = namespace(v=0) %}
+          {% for val in m.yearly %}{% if val != 0 %}{% set row_total.v = val %}{% endif %}{% endfor %}
+        {% else %}
+          {% set row_total = namespace(v=m.total) %}
+        {% endif %}
         <tr class="{% if m.label == 'LP IRR' %}metric-irr{% elif m.label == 'LP Equity Multiple' %}metric-em{% endif %}">
           <td class="label">{{ display_label }}</td>
-          <td style="font-weight:600">{{ fmt_total(m.total) }}</td>
+          <td style="font-weight:600">{{ fmt_total(row_total.v) }}</td>
           {% for i in ns_global.active_cols %}{% if i >= pfa.idx %}
           <td>{{ fmt(m.yearly[i]) }}</td>
           {% endif %}{% endfor %}
