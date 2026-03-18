@@ -165,6 +165,12 @@
 
 {% if data %}
 
+{# ── Label remapping ── #}
+{% set LABEL_MAP = {
+  'LP IRR': 'Net Cashflow',
+  'LP Equity Multiple': 'Cumulative Net Cashflow'
+} %}
+
 {# ── Jinja2 macro for accounting-style number formatting ── #}
 {# Negative: (1,000)  Zero: blank  Positive: 1,000 #}
 {% macro fmt(v, force_show_zero=false) %}
@@ -174,44 +180,26 @@
   {%- endif -%}
 {% endmacro %}
 
-{% macro fmt_irr(v) %}
-  {%- if v == 0 -%}
-  {%- elif v < 0 -%}({{ "%.1f"|format((v * 100)|abs) }}%)
-  {%- else -%}{{ "%.1f"|format(v * 100) }}%
-  {%- endif -%}
-{% endmacro %}
-
-{% macro fmt_em(v) %}
-  {%- if v == 0 -%}
-  {%- elif v < 0 -%}({{ "%.2f"|format(v|abs) }}x)
-  {%- else -%}{{ "%.2f"|format(v) }}x
-  {%- endif -%}
-{% endmacro %}
-
-{# Format a cell value based on metric label #}
-{% macro fmt_cell(v, label) %}
-  {%- if 'IRR' in label -%}{{ fmt_irr(v) }}
-  {%- elif 'Multiple' in label -%}{{ fmt_em(v) }}
-  {%- else -%}{{ fmt(v) }}
-  {%- endif -%}
-{% endmacro %}
-
 {# Format total (always show even if zero) #}
-{% macro fmt_total(v, label) %}
-  {%- if 'IRR' in label -%}
-    {%- if v < 0 -%}({{ "%.1f"|format((v * 100)|abs) }}%)
-    {%- else -%}{{ "%.1f"|format(v * 100) }}%{%- endif -%}
-  {%- elif 'Multiple' in label -%}
-    {%- if v < 0 -%}({{ "%.2f"|format(v|abs) }}x)
-    {%- else -%}{{ "%.2f"|format(v) }}x{%- endif -%}
-  {%- else -%}
-    {%- if v < 0 -%}({{ "{:,.0f}".format(v|abs) }})
-    {%- else -%}{{ "{:,.0f}".format(v) }}{%- endif -%}
-  {%- endif -%}
+{% macro fmt_total(v) %}
+  {%- if v < 0 -%}({{ "{:,.0f}".format(v|abs) }})
+  {%- else -%}{{ "{:,.0f}".format(v) }}{%- endif -%}
 {% endmacro %}
 
-{# ── Compute active year columns (skip all-zero years) ── #}
-{% set ns = namespace(active_cols=[]) %}
+{# Format IRR as percentage for dashboard pills #}
+{% macro fmt_irr_pct(v) %}
+  {%- if v < 0 -%}({{ "%.1f"|format((v * 100)|abs) }}%)
+  {%- else -%}{{ "%.1f"|format(v * 100) }}%{%- endif -%}
+{% endmacro %}
+
+{# Format equity multiple for dashboard pills #}
+{% macro fmt_em_x(v) %}
+  {%- if v < 0 -%}({{ "%.2f"|format(v|abs) }}x)
+  {%- else -%}{{ "%.2f"|format(v) }}x{%- endif -%}
+{% endmacro %}
+
+{# ── Compute global active year columns for summary section ── #}
+{% set ns_global = namespace(active_cols=[]) %}
 {% for i in range(data.years|length) %}
   {% set has_val = namespace(found=false) %}
   {% for project in data.projects %}
@@ -223,7 +211,7 @@
     {% if s.yearly[i] != 0 %}{% set has_val.found = true %}{% endif %}
   {% endfor %}
   {% if has_val.found %}
-    {% set ns.active_cols = ns.active_cols + [i] %}
+    {% set ns_global.active_cols = ns_global.active_cols + [i] %}
   {% endif %}
 {% endfor %}
 
@@ -234,11 +222,11 @@
     <div class="dash-name">{{ project.name }}</div>
     {% for m in project.metrics %}
       {% if m.label == 'LP IRR' %}
-      <div class="dash-metric"><span class="dash-label">IRR</span><span class="dash-value">{{ fmt_total(m.total, m.label) }}</span></div>
+      <div class="dash-metric"><span class="dash-label">IRR</span><span class="dash-value">{{ fmt_irr_pct(m.total) }}</span></div>
       {% elif m.label == 'LP Equity Multiple' %}
-      <div class="dash-metric"><span class="dash-label">Equity Multiple</span><span class="dash-value">{{ fmt_total(m.total, m.label) }}</span></div>
+      <div class="dash-metric"><span class="dash-label">Equity Multiple</span><span class="dash-value">{{ fmt_em_x(m.total) }}</span></div>
       {% elif m.label == 'Total LP Profit' %}
-      <div class="dash-metric"><span class="dash-label">Total Profit</span><span class="dash-value">{{ fmt_total(m.total, m.label) }}</span></div>
+      <div class="dash-metric"><span class="dash-label">Total Profit</span><span class="dash-value">{{ fmt_total(m.total) }}</span></div>
       {% endif %}
     {% endfor %}
   </div>
@@ -247,19 +235,31 @@
 
 {# ── Project Detail Cards ── #}
 {% for project in data.projects %}
-{% set ns_irr = namespace(val='') %}
-{% set ns_em = namespace(val='') %}
+
+{# Find per-project first active year index #}
+{% set pfa = namespace(idx=data.years|length) %}
+{% for i in range(data.years|length) %}
+  {% for m in project.metrics %}
+    {% if m.yearly[i] != 0 and i < pfa.idx %}
+      {% set pfa.idx = i %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+
+{# Extract KPI values for header pills #}
+{% set pill_irr = namespace(val='') %}
+{% set pill_em = namespace(val='') %}
 {% for m in project.metrics %}
-  {% if m.label == 'LP IRR' %}{% set ns_irr.val = fmt_total(m.total, m.label) %}{% endif %}
-  {% if m.label == 'LP Equity Multiple' %}{% set ns_em.val = fmt_total(m.total, m.label) %}{% endif %}
+  {% if m.label == 'LP IRR' %}{% set pill_irr.val = fmt_irr_pct(m.total) %}{% endif %}
+  {% if m.label == 'LP Equity Multiple' %}{% set pill_em.val = fmt_em_x(m.total) %}{% endif %}
 {% endfor %}
 
 <div class="project-card" id="project-{{ loop.index }}">
   <div class="card-header" onclick="toggleCard(this)">
     <div class="card-left">
       <span class="card-title">{{ project.name }}</span>
-      <span class="kpi-pill">IRR <strong>{{ ns_irr.val }}</strong></span>
-      <span class="kpi-pill">Equity <strong>{{ ns_em.val }}</strong></span>
+      <span class="kpi-pill">IRR <strong>{{ pill_irr.val }}</strong></span>
+      <span class="kpi-pill">Equity <strong>{{ pill_em.val }}</strong></span>
     </div>
     <span class="card-chevron">&#9660;</span>
   </div>
@@ -269,19 +269,20 @@
         <tr>
           <th class="sticky-col" style="min-width:180px">Metric</th>
           <th>Total</th>
-          {% for i in ns.active_cols %}
+          {% for i in ns_global.active_cols %}{% if i >= pfa.idx %}
           <th>{{ data.years[i] }}</th>
-          {% endfor %}
+          {% endif %}{% endfor %}
         </tr>
       </thead>
       <tbody>
         {% for m in project.metrics %}
+        {% set display_label = LABEL_MAP.get(m.label, m.label) %}
         <tr class="{% if m.label == 'LP IRR' %}metric-irr{% elif m.label == 'LP Equity Multiple' %}metric-em{% endif %}">
-          <td class="label">{{ m.label }}</td>
-          <td style="font-weight:600">{{ fmt_total(m.total, m.label) }}</td>
-          {% for i in ns.active_cols %}
-          <td>{{ fmt_cell(m.yearly[i], m.label) }}</td>
-          {% endfor %}
+          <td class="label">{{ display_label }}</td>
+          <td style="font-weight:600">{{ fmt_total(m.total) }}</td>
+          {% for i in ns_global.active_cols %}{% if i >= pfa.idx %}
+          <td>{{ fmt(m.yearly[i]) }}</td>
+          {% endif %}{% endfor %}
         </tr>
         {% endfor %}
       </tbody>
@@ -305,7 +306,7 @@
         <tr>
           <th class="sticky-col" style="min-width:180px">Metric</th>
           <th>Total</th>
-          {% for i in ns.active_cols %}
+          {% for i in ns_global.active_cols %}
           <th>{{ data.years[i] }}</th>
           {% endfor %}
         </tr>
@@ -323,7 +324,7 @@
             {%- if s.total < 0 -%}({{ "{:,.0f}".format(s.total|abs) }})
             {%- else -%}{{ "{:,.0f}".format(s.total) }}{%- endif -%}
           </td>
-          {% for i in ns.active_cols %}
+          {% for i in ns_global.active_cols %}
           <td>{{ fmt(s.yearly[i]) }}</td>
           {% endfor %}
         </tr>
