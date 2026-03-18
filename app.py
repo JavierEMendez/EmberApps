@@ -9,6 +9,7 @@ import psycopg2
 import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
 from calc import calculate
+from report_parser import parse_dashboard
 import io
 
 app = Flask(__name__)
@@ -53,6 +54,13 @@ def init_db():
             inputs JSONB NOT NULL DEFAULT '{}'::jsonb,
             outputs JSONB NOT NULL DEFAULT '{}'::jsonb,
             archived BOOLEAN DEFAULT FALSE
+        );
+        CREATE TABLE IF NOT EXISTS reports (
+            id SERIAL PRIMARY KEY,
+            report_type TEXT NOT NULL,
+            data JSONB NOT NULL DEFAULT '{}'::jsonb,
+            uploaded_by INTEGER REFERENCES users(id),
+            uploaded_at TIMESTAMP DEFAULT NOW()
         );
     """)
     # Create default admin if no users exist
@@ -119,7 +127,7 @@ def logout():
 @app.route("/home")
 @login_required
 def home():
-    return render_template("home.html", username=session.get("username"))
+    return render_template("home.html", username=session.get("username"), is_admin=session.get("is_admin"))
 
 @app.route("/")
 @login_required
@@ -470,6 +478,60 @@ def restore_project():
     new_id = cur.fetchone()["id"]
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "id": new_id})
+
+# ─── DASHBOARD REPORTS ────────────────────────────────────────────────────────
+@app.route("/api/upload-dashboard", methods=["POST"])
+@login_required
+@admin_required
+def upload_dashboard():
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file provided"}), 400
+    try:
+        file_bytes = f.read()
+        data = parse_dashboard(file_bytes)
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse file: {e}"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    # Upsert returns
+    cur.execute("DELETE FROM reports WHERE report_type = 'returns'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("returns", json.dumps(data.get("returns", {})), session["user_id"])
+    )
+    # Upsert loans
+    cur.execute("DELETE FROM reports WHERE report_type = 'loans'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("loans", json.dumps(data.get("loans", {})), session["user_id"])
+    )
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/returns")
+@login_required
+def returns_report():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'returns' ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    data = row["data"] if row else None
+    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
+    return render_template("returns.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"))
+
+@app.route("/loans")
+@login_required
+def loans_report():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'loans' ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    data = row["data"] if row else None
+    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
+    return render_template("loans.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"))
 
 if __name__ == "__main__":
     init_db()

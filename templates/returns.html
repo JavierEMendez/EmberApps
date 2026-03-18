@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Active Project Returns — Ember</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f13;--card:#151921;--border:#1e2535;
+    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+    --teal:#5e9e8c;--green:#4ade80;--red:#f87171;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;padding:24px 32px;}
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+  .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
+  .top-bar .meta{font-size:12px;color:var(--text-muted);}
+  .back-link{font-size:13px;color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;}
+  .back-link:hover{color:var(--accent);}
+
+  .report-table-wrap{overflow-x:auto;margin-bottom:32px;}
+  table{border-collapse:collapse;width:100%;min-width:1200px;font-size:12px;}
+  th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
+  th{background:#191e28;color:var(--text-muted);font-weight:600;text-align:center;position:sticky;top:0;z-index:2;}
+  td{text-align:right;}
+  td.label{text-align:left;color:var(--text);font-weight:500;min-width:180px;}
+  td.status{text-align:center;font-weight:600;}
+  td.status-ok{color:var(--green);}
+  td.status-warn{color:var(--red);}
+
+  .project-header{background:#191e28;}
+  .project-header td{font-family:'Instrument Serif',serif;font-size:15px;color:var(--accent);font-weight:600;text-align:left;border-bottom:2px solid var(--accent);padding:10px 8px;}
+  .metric-irr td, .metric-em td{font-weight:600;color:var(--accent);}
+  .summary-section td{background:#161b24;}
+  .summary-header td{font-family:'Instrument Serif',serif;font-size:14px;color:var(--accent);font-weight:600;text-align:left;border-top:2px solid var(--accent);padding:10px 8px;}
+  .total-row td{font-weight:700;border-top:2px solid var(--accent);}
+
+  .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
+  .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+</style>
+</head>
+<body>
+<a href="/home" class="back-link">
+  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 12H5m7-7l-7 7 7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  Back to Home
+</a>
+<div class="top-bar">
+  <h1>Consolidated Ember Project Returns</h1>
+  <div class="meta">
+    {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+  </div>
+</div>
+
+{% if data %}
+<div class="report-table-wrap">
+<table>
+<thead>
+<tr>
+  <th style="min-width:180px">Metric</th>
+  <th>Status</th>
+  <th>Total</th>
+  {% for y in data.years %}
+  <th>{{ y if y else '' }}</th>
+  {% endfor %}
+</tr>
+</thead>
+<tbody>
+{% for project in data.projects %}
+<tr class="project-header">
+  <td colspan="{{ 3 + data.years|length }}">{{ project.name }}</td>
+</tr>
+{% for m in project.metrics %}
+<tr class="{% if m.label == 'LP IRR' %}metric-irr{% elif m.label == 'LP Equity Multiple' %}metric-em{% endif %}">
+  <td class="label">{{ m.label }}</td>
+  <td class="status {% if m.status == 'OK' %}status-ok{% elif m.status is string and m.status and m.status != 'OK' %}status-warn{% endif %}">
+    {% if m.status == 'OK' %}OK{% elif m.status is number and m.status == 0 %}—{% elif m.status is number and m.status == 1 %}1{% else %}{{ m.status }}{% endif %}
+  </td>
+  <td style="font-weight:600">
+    {% if 'IRR' in m.label %}{{ "%.1f" | format(m.total * 100) }}%
+    {% elif 'Multiple' in m.label %}{{ "%.2f" | format(m.total) }}x
+    {% else %}{{ "{:,.0f}".format(m.total) }}
+    {% endif %}
+  </td>
+  {% for v in m.yearly %}
+  <td>
+    {% if 'IRR' in m.label or 'Multiple' in m.label %}
+      {% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}
+    {% else %}
+      {% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}
+    {% endif %}
+  </td>
+  {% endfor %}
+</tr>
+{% endfor %}
+{% endfor %}
+
+{% if data.summary %}
+<tr class="summary-header">
+  <td colspan="{{ 3 + data.years|length }}">Summary</td>
+</tr>
+{% for s in data.summary %}
+<tr class="summary-section {% if loop.last %}total-row{% endif %}">
+  <td class="label">{{ s.label }}</td>
+  <td></td>
+  <td style="font-weight:600">{{ "{:,.0f}".format(s.total) }}</td>
+  {% for v in s.yearly %}
+  <td>{% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}</td>
+  {% endfor %}
+</tr>
+{% endfor %}
+{% endif %}
+</tbody>
+</table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h2>No Report Data</h2>
+  <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
+</div>
+{% endif %}
+</body>
+</html>

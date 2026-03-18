@@ -40,6 +40,15 @@
   .footer{display:flex;align-items:center;justify-content:space-between;margin-top:36px;font-size:12px;color:var(--text-dim);}
   .footer a{color:var(--text-muted);text-decoration:none;transition:color .15s;}
   .footer a:hover{color:var(--accent);}
+
+  .upload-area{display:flex;align-items:center;gap:10px;}
+  .upload-btn{
+    background:none;border:1px solid var(--border);color:var(--text-muted);
+    padding:6px 14px;border-radius:6px;font-size:11px;font-family:'DM Sans',sans-serif;
+    cursor:pointer;transition:all .15s;display:inline-flex;align-items:center;gap:6px;
+  }
+  .upload-btn:hover{border-color:var(--accent);color:var(--accent);}
+  .upload-status{font-size:11px;color:var(--teal);}
 </style>
 </head>
 <body>
@@ -62,21 +71,27 @@
       </div>
     </a>
 
-    <div class="app-card" style="opacity:.55;cursor:default;">
-      <div class="app-title">Active Project Returns</div>
-      <div class="app-desc">See current projected performance of active ember projects.</div>
-      <div class="app-arrow" style="color:var(--text-dim)">
-        Coming Soon
+    <a href="/returns" style="text-decoration:none">
+      <div class="app-card" style="height:100%">
+        <div class="app-title">Active Project Returns</div>
+        <div class="app-desc">See current projected performance of active ember projects.</div>
+        <div class="app-arrow">
+          Open
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
       </div>
-    </div>
+    </a>
 
-    <div class="app-card" style="opacity:.55;cursor:default;">
-      <div class="app-title">Loan Capacities and Debt Schedules</div>
-      <div class="app-desc">See all current active Ember loans and their respective KPIs.</div>
-      <div class="app-arrow" style="color:var(--text-dim)">
-        Coming Soon
+    <a href="/loans" style="text-decoration:none">
+      <div class="app-card" style="height:100%">
+        <div class="app-title">Loan Capacities and Debt Schedules</div>
+        <div class="app-desc">See all current active Ember loans and their respective KPIs.</div>
+        <div class="app-arrow">
+          Open
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
       </div>
-    </div>
+    </a>
 
     <div class="app-card" style="opacity:.55;cursor:default;">
       <div class="app-title">Project Sales</div>
@@ -88,9 +103,48 @@
   </div>
 
   <div class="footer">
-    <span>Ember Real Estate &amp; Development</span>
+    <div class="upload-area">
+      <span>Ember Real Estate &amp; Development</span>
+      {% if is_admin %}
+      <input type="file" id="dashUpload" accept=".xlsx" hidden>
+      <button class="upload-btn" onclick="document.getElementById('dashUpload').click()">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m14-7l-5-5-5 5m5-5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Update Dashboard Reports
+      </button>
+      <span id="uploadStatus" class="upload-status"></span>
+      {% endif %}
+    </div>
     <a href="/logout">Sign Out</a>
   </div>
 </div>
+
+{% if is_admin %}
+<script>
+document.getElementById('dashUpload').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file) return;
+  const status = document.getElementById('uploadStatus');
+  status.textContent = 'Uploading...';
+  status.style.color = 'var(--text-muted)';
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/upload-dashboard', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      status.textContent = 'Reports updated!';
+      status.style.color = 'var(--teal)';
+    } else {
+      status.textContent = data.error || 'Upload failed';
+      status.style.color = '#f87171';
+    }
+  } catch (e) {
+    status.textContent = 'Upload failed';
+    status.style.color = '#f87171';
+  }
+  this.value = '';
+});
+</script>
+{% endif %}
 </body>
 </html>

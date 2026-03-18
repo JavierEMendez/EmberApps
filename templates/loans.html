@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Loan Capacities & Debt Schedules — Ember</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f13;--card:#151921;--border:#1e2535;
+    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+    --teal:#5e9e8c;--green:#4ade80;--red:#f87171;--yellow:#fbbf24;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;padding:24px 32px;}
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;}
+  .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
+  .top-bar .meta{font-size:12px;color:var(--text-muted);}
+  .back-link{font-size:13px;color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;}
+  .back-link:hover{color:var(--accent);}
+  .section-title{font-family:'Instrument Serif',serif;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+
+  .report-table-wrap{overflow-x:auto;margin-bottom:24px;}
+  table{border-collapse:collapse;width:100%;font-size:12px;}
+  th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
+  th{background:#191e28;color:var(--text-muted);font-weight:600;text-align:center;position:sticky;top:0;z-index:2;}
+  td{text-align:right;}
+  td.label{text-align:left;color:var(--text);font-weight:500;}
+  .totals-row td{font-weight:700;border-top:2px solid var(--accent);background:#161b24;}
+
+  .health-good{color:var(--green);font-weight:600;}
+  .health-warn{color:var(--yellow);font-weight:600;}
+  .health-bad{color:var(--red);font-weight:600;}
+
+  .footnote{font-size:12px;color:var(--text-muted);font-style:italic;margin:8px 0 24px;line-height:1.6;max-width:900px;}
+
+  .ds-section{margin-top:32px;}
+  .ds-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+  @media(max-width:1200px){.ds-grid{grid-template-columns:1fr;}}
+
+  .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
+  .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+</style>
+</head>
+<body>
+<a href="/home" class="back-link">
+  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 12H5m7-7l-7 7 7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  Back to Home
+</a>
+<div class="top-bar">
+  <h1>Loan Capacities & Debt Schedules</h1>
+  <div class="meta">
+    {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+  </div>
+</div>
+
+{% if data %}
+
+<!-- MPC Loans -->
+<div class="section-title">MPC Loans</div>
+<div class="report-table-wrap">
+<table>
+<thead>
+<tr>
+  {% for h in data.mpc_loans.headers %}
+  <th>{{ h }}</th>
+  {% endfor %}
+</tr>
+</thead>
+<tbody>
+{% for row in data.mpc_loans.rows %}
+<tr>
+  {% for h in data.mpc_loans.headers %}
+  <td class="{% if h == 'Community' %}label{% endif %}">
+    {% set v = row[h] %}
+    {% if h == 'Community' or h == 'Lender' or h == 'Collateral' or h == 'Recourse' %}{{ v }}
+    {% elif h == 'IR Health' or h == 'Capacity Health' %}
+      {% set fv = v|float %}
+      <span class="{% if fv >= 1.0 %}health-good{% elif fv >= 0.5 %}health-warn{% else %}health-bad{% endif %}">
+        {{ "%.2f"|format(fv) }}
+      </span>
+    {% elif 'Rate' in h or 'Spread' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
+    {% elif h == 'Loan Origination' or h == 'Loan Term Date' %}{{ v }}
+    {% elif h == 'Months Remaining' or h == 'Remaining Mos. of IR' %}{{ "%.1f"|format(v) }}
+    {% elif h == 'Extensions Remaining' %}{{ v|int }}
+    {% else %}{{ "{:,.0f}".format(v) }}
+    {% endif %}
+  </td>
+  {% endfor %}
+</tr>
+{% endfor %}
+{% if data.mpc_loans.totals %}
+<tr class="totals-row">
+  {% for h in data.mpc_loans.headers %}
+  <td>
+    {% if h in data.mpc_loans.totals %}
+      {% set v = data.mpc_loans.totals[h] %}
+      {% if h == 'Community' %}{{ v }}
+      {% elif 'Rate' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
+      {% elif h == 'Capacity Health' %}{{ "{:,.0f}".format(v|float) }}
+      {% else %}{{ "{:,.0f}".format(v) }}
+      {% endif %}
+    {% endif %}
+  </td>
+  {% endfor %}
+</tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+
+<!-- Vertical Loans -->
+<div class="section-title">Vertical Loans</div>
+<div class="report-table-wrap">
+<table>
+<thead>
+<tr>
+  {% for h in data.vertical_loans.headers %}
+  <th>{{ h }}</th>
+  {% endfor %}
+</tr>
+</thead>
+<tbody>
+{% for row in data.vertical_loans.rows %}
+<tr>
+  {% for h in data.vertical_loans.headers %}
+  <td class="{% if h == 'Community' %}label{% endif %}">
+    {% set v = row[h] %}
+    {% if h == 'Community' or h == 'Lender' or h == 'Collateral' or h == 'Recourse' %}{{ v }}
+    {% elif h == 'IR Health' or h == 'Capacity Health' %}
+      {% set fv = v|float %}
+      <span class="{% if fv >= 1.0 %}health-good{% elif fv >= 0.5 %}health-warn{% else %}health-bad{% endif %}">
+        {{ "%.2f"|format(fv) }}
+      </span>
+    {% elif 'Rate' in h or 'Spread' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
+    {% elif h == 'Loan Origination' or h == 'Loan Term Date' %}{{ v }}
+    {% elif h == 'Months Remaining' or h == 'Remaining Mos. of IR' %}{{ "%.1f"|format(v) }}
+    {% elif h == 'Extensions Remaining' %}{{ v|int }}
+    {% else %}{{ "{:,.0f}".format(v) }}
+    {% endif %}
+  </td>
+  {% endfor %}
+</tr>
+{% endfor %}
+{% if data.vertical_loans.totals %}
+<tr class="totals-row">
+  {% for h in data.vertical_loans.headers %}
+  <td>
+    {% if h in data.vertical_loans.totals %}
+      {% set v = data.vertical_loans.totals[h] %}
+      {% if h == 'Community' %}{{ v }}
+      {% elif 'Rate' in h or h == 'Utilization' %}{{ "%.2f"|format(v * 100) }}%
+      {% elif h == 'Capacity Health' %}{{ "{:,.0f}".format(v|float) }}
+      {% else %}{{ "{:,.0f}".format(v) }}
+      {% endif %}
+    {% endif %}
+  </td>
+  {% endfor %}
+</tr>
+{% endif %}
+</tbody>
+</table>
+</div>
+{% if data.vertical_loans.footnote %}
+<div class="footnote">{{ data.vertical_loans.footnote }}</div>
+{% endif %}
+
+<!-- Debt Schedules -->
+{% if data.debt_schedules %}
+<div class="section-title">Debt Schedules</div>
+{% for ds in data.debt_schedules %}
+<div class="ds-section">
+  <h3 style="font-family:'Instrument Serif',serif;font-size:16px;color:var(--text);margin-bottom:12px;">{{ ds.project }}</h3>
+
+  <div class="ds-grid">
+    <!-- Upcoming Payments -->
+    <div>
+      <h4 style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Upcoming Payments</h4>
+      <table>
+        <thead><tr><th>Date</th><th>Lender</th><th>Amount</th><th>Covered</th></tr></thead>
+        <tbody>
+        {% for p in ds.payments %}
+        <tr>
+          <td class="label">{{ p.date }}</td>
+          <td>{{ p.lender }}</td>
+          <td>{{ "{:,.0f}".format(p.amount) }}</td>
+          <td style="text-align:center">
+            {% if 'Paid' in p.covered %}<span class="health-good">{{ p.covered }}</span>
+            {% elif 'Expected' in p.covered %}<span class="health-warn">{{ p.covered }}</span>
+            {% else %}{{ p.covered }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        <tr class="totals-row">
+          <td class="label" colspan="2">Total</td>
+          <td>{{ "{:,.0f}".format(ds.payment_total) }}</td>
+          <td></td>
+        </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Associated Revenues -->
+    <div>
+      <h4 style="font-size:13px;color:var(--text-muted);margin-bottom:8px;">Associated Revenues</h4>
+      <table>
+        <thead>
+          <tr><th>Type</th><th>%</th><th>Total</th>
+          {% for mo in ds.months %}<th>{{ mo[5:7] }}/{{ mo[2:4] }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for rv in ds.revenues %}
+        <tr>
+          <td class="label">{{ rv.type }}</td>
+          <td>{{ "%.1f"|format(rv.pct * 100) }}%</td>
+          <td>{{ "{:,.0f}".format(rv.total) }}</td>
+          {% for v in rv.monthly %}
+          <td>{% if v != 0 %}{{ "{:,.0f}".format(v) }}{% endif %}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+        {% if ds.total_revenues %}
+        <tr class="totals-row">
+          <td class="label">Total Revenues</td>
+          <td>{{ "%.0f"|format(ds.total_revenues.pct * 100) }}%</td>
+          <td>{{ "{:,.0f}".format(ds.total_revenues.total) }}</td>
+          {% for v in ds.total_revenues.monthly %}
+          <td>{{ "{:,.0f}".format(v) }}</td>
+          {% endfor %}
+        </tr>
+        {% endif %}
+        <tr>
+          <td class="label" colspan="3" style="font-weight:600">Cumulative Revenues</td>
+          {% for v in ds.cumulative_revenues %}
+          <td style="color:var(--teal)">{{ "{:,.0f}".format(v) }}</td>
+          {% endfor %}
+        </tr>
+        <tr>
+          <td class="label" colspan="3" style="font-weight:600">Cumulative Payments</td>
+          {% for v in ds.cumulative_payments %}
+          <td style="color:var(--accent)">{{ "{:,.0f}".format(v) }}</td>
+          {% endfor %}
+        </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+  <h2>No Report Data</h2>
+  <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
+</div>
+{% endif %}
+</body>
+</html>
