@@ -6,7 +6,8 @@
 <title>Active Project Returns — Ember</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -435,134 +436,113 @@ function scrollToProject(idx){
   card.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
-function downloadPDF(){
+async function downloadPDF(){
   const btn=document.querySelector('.pdf-btn');
   btn.disabled=true;
-  btn.textContent='Generating...';
+  btn.textContent='Generating PDF...';
 
-  // Build off-screen light-mode PDF container
-  const old=document.getElementById('pdf-render');
-  if(old)old.remove();
-
-  const wrap=document.createElement('div');
-  wrap.id='pdf-render';
-  document.body.appendChild(wrap);
-
-  // Gather project cards and summary
   const cards=[...document.querySelectorAll('.project-card')];
   const summary=document.querySelector('.summary-card');
   const dashCards=[...document.querySelectorAll('.dash-card')];
   const metaText=document.querySelector('.top-right .meta')?.textContent?.trim()||'';
 
-  // Helper: build page header
   function makeHeader(){
     return `<div class="pdf-header">
       <h1>Consolidated Ember Project Returns</h1>
       <span class="pdf-meta">${metaText}</span>
-    </div>
-    <div class="pdf-subtitle">($ in 000s)</div>`;
+    </div><div class="pdf-subtitle">($ in 000s)</div>`;
   }
 
-  // Helper: clone a project card into PDF-friendly light markup
   function cloneCard(card){
     const title=card.querySelector('.card-title')?.textContent||'';
     const pills=[...card.querySelectorAll('.kpi-pill')].map(p=>p.textContent.trim());
-    // Get the table, expand if collapsed
     const body=card.querySelector('.card-body');
-    const wasCollapsed=body?.classList.contains('collapsed');
-    if(wasCollapsed)body.classList.remove('collapsed');
-    const table=card.querySelector('table');
-    const tableHTML=table?table.outerHTML:'';
-    if(wasCollapsed)body.classList.add('collapsed');
-
-    return `<div class="pdf-project">
-      <div class="pdf-project-header">
-        <span class="pdf-project-title">${title}</span>
-        ${pills.map(p=>`<span class="pdf-pill">${p}</span>`).join('')}
-      </div>
-      ${tableHTML}
-    </div>`;
+    const was=body?.classList.contains('collapsed');
+    if(was)body.classList.remove('collapsed');
+    const tbl=card.querySelector('table')?.outerHTML||'';
+    if(was)body.classList.add('collapsed');
+    return `<div class="pdf-project"><div class="pdf-project-header">
+      <span class="pdf-project-title">${title}</span>
+      ${pills.map(p=>`<span class="pdf-pill">${p}</span>`).join('')}
+    </div>${tbl}</div>`;
   }
 
-  // Helper: clone summary card
   function cloneSummary(){
     if(!summary)return '';
     const body=summary.querySelector('.card-body');
-    const wasCollapsed=body?.classList.contains('collapsed');
-    if(wasCollapsed)body.classList.remove('collapsed');
-    const table=summary.querySelector('table');
-    const tableHTML=table?table.outerHTML:'';
-    if(wasCollapsed)body.classList.add('collapsed');
-
-    return `<div class="pdf-summary">
-      <div class="pdf-project-header">
-        <span class="pdf-project-title">Portfolio Summary</span>
-      </div>
-      ${tableHTML}
-    </div>`;
+    const was=body?.classList.contains('collapsed');
+    if(was)body.classList.remove('collapsed');
+    const tbl=summary.querySelector('table')?.outerHTML||'';
+    if(was)body.classList.add('collapsed');
+    return `<div class="pdf-summary"><div class="pdf-project-header">
+      <span class="pdf-project-title">Portfolio Summary</span>
+    </div>${tbl}</div>`;
   }
 
-  // Build KPI grid
   function makeKPIGrid(){
-    let html='<div class="pdf-kpi-grid">';
+    let h='<div class="pdf-kpi-grid">';
     dashCards.forEach(dc=>{
-      const name=dc.querySelector('.dash-name')?.textContent||'';
-      const metrics=[...dc.querySelectorAll('.dash-metric')];
-      html+=`<div class="pdf-kpi-card"><div class="pdf-kpi-name">${name}</div>`;
-      metrics.forEach(m=>{
-        const lbl=m.querySelector('.dash-label')?.textContent||'';
-        const val=m.querySelector('.dash-value')?.textContent||'';
-        html+=`<div class="pdf-kpi-row"><span class="pdf-kpi-label">${lbl}</span><span class="pdf-kpi-val">${val}</span></div>`;
+      const nm=dc.querySelector('.dash-name')?.textContent||'';
+      const ms=[...dc.querySelectorAll('.dash-metric')];
+      h+=`<div class="pdf-kpi-card"><div class="pdf-kpi-name">${nm}</div>`;
+      ms.forEach(m=>{
+        h+=`<div class="pdf-kpi-row"><span class="pdf-kpi-label">${m.querySelector('.dash-label')?.textContent||''}</span><span class="pdf-kpi-val">${m.querySelector('.dash-value')?.textContent||''}</span></div>`;
       });
-      html+='</div>';
+      h+='</div>';
     });
-    html+='</div>';
-    return html;
+    return h+'</div>';
   }
 
-  // Paginate: page 1 = KPI + 2 projects, then 3 per page
-  const pages=[];
+  // Build pages: page 1 = KPI + 2 projects, then 3 per page
+  const pageContents=[];
+  let p1=makeHeader()+makeKPIGrid();
+  for(let i=0;i<2&&i<cards.length;i++) p1+=cloneCard(cards[i]);
+  pageContents.push(p1);
 
-  // Page 1: header + KPIs + first 2 projects
-  let p1=`<div class="pdf-page">${makeHeader()}${makeKPIGrid()}`;
-  for(let i=0;i<2&&i<cards.length;i++){
-    p1+=cloneCard(cards[i]);
-  }
-  p1+='</div>';
-  pages.push(p1);
-
-  // Remaining projects + summary, 3 per page
-  const remaining=cards.slice(2);
-  // Add summary as a "card" at the end
-  const allRemaining=[...remaining.map(c=>cloneCard(c))];
-  if(summary)allRemaining.push(cloneSummary());
-
-  for(let i=0;i<allRemaining.length;i+=3){
-    let page=`<div class="pdf-page">${makeHeader()}`;
-    page+=allRemaining.slice(i,i+3).join('');
-    page+='</div>';
-    pages.push(page);
+  const rest=[...cards.slice(2).map(c=>cloneCard(c))];
+  if(summary) rest.push(cloneSummary());
+  for(let i=0;i<rest.length;i+=3){
+    pageContents.push(makeHeader()+rest.slice(i,i+3).join(''));
   }
 
-  wrap.innerHTML=pages.join('');
+  // Render each page to canvas individually, then combine into one PDF
+  // Page dimensions: 11in x 8.5in at 2x scale
+  const PW=1056, PH=816, SCALE=2;
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({orientation:'landscape',unit:'px',format:[PW,PH],hotfixes:['px_scaling']});
 
-  // Give browser a tick to render, then generate PDF
-  requestAnimationFrame(()=>{
-    const opt={
-      margin:       0,
-      filename:     'Ember_Project_Returns.pdf',
-      image:        {type:'jpeg',quality:0.95},
-      html2canvas:  {scale:2,useCORS:true,backgroundColor:'#ffffff',scrollY:0,windowWidth:1056},
-      jsPDF:        {unit:'px',format:[1056,816],orientation:'landscape',hotfixes:['px_scaling']},
-      pagebreak:    {mode:['css'],before:'.pdf-page'}
-    };
+  for(let p=0;p<pageContents.length;p++){
+    if(p>0) pdf.addPage([PW,PH],'landscape');
 
-    html2pdf().set(opt).from(wrap).save().then(()=>{
-      wrap.remove();
-      btn.disabled=false;
-      btn.innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Download PDF';
+    // Create a temporary visible container for this page
+    const div=document.createElement('div');
+    div.id='pdf-render';
+    div.innerHTML=`<div class="pdf-page">${pageContents[p]}</div>`;
+    document.body.appendChild(div);
+
+    // Wait for fonts/layout
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+
+    const canvas=await html2canvas(div,{
+      scale:SCALE,
+      useCORS:true,
+      backgroundColor:'#ffffff',
+      width:PW,
+      height:PH,
+      scrollX:0,
+      scrollY:0,
+      windowWidth:PW,
+      windowHeight:PH
     });
-  });
+
+    const imgData=canvas.toDataURL('image/jpeg',0.95);
+    pdf.addImage(imgData,'JPEG',0,0,PW,PH);
+    div.remove();
+  }
+
+  pdf.save('Ember_Project_Returns.pdf');
+  btn.disabled=false;
+  btn.innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Download PDF';
 }
 </script>
 </body>
