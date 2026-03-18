@@ -6,6 +6,8 @@
 <title>Loan Capacities & Debt Schedules — Ember</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
@@ -74,6 +76,58 @@
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
   .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
 
+  /* Download PDF button */
+  .pdf-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:rgba(200,169,110,0.1);border:1px solid rgba(200,169,110,0.3);
+    color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;
+    font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;
+  }
+  .pdf-btn:hover{background:rgba(200,169,110,0.2);border-color:var(--accent);}
+  .pdf-btn:disabled{opacity:.5;cursor:wait;}
+
+  /* ── PDF Light-Mode Render ── */
+  #pdf-render{
+    position:fixed;left:0;top:0;z-index:99999;
+    width:1056px;font-family:'DM Sans',sans-serif;font-size:8px;
+    background:#fff;color:#1a1a1a;padding:0;overflow:auto;
+  }
+  #pdf-render *{color:#1a1a1a;background-color:transparent;}
+  #pdf-render{background:#fff!important;}
+  #pdf-render .pdf-page{
+    width:1056px;min-height:816px;
+    padding:20px 24px;box-sizing:border-box;background:#fff!important;
+    page-break-after:always;
+  }
+  #pdf-render .pdf-page:last-child{page-break-after:auto;}
+  #pdf-render .pdf-header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px;}
+  #pdf-render .pdf-header h1{font-family:'Instrument Serif',serif;font-size:15px;color:#1a1a1a;font-weight:600;}
+  #pdf-render .pdf-header .pdf-meta{font-size:8px;color:#666;}
+  #pdf-render .pdf-section-title{
+    font-family:'Instrument Serif',serif;font-size:11px;color:#8a7040;
+    margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid #ddd;
+  }
+  #pdf-render table{border-collapse:collapse;width:100%;font-size:7px;line-height:1.3;}
+  #pdf-render th,#pdf-render td{padding:2px 4px;border:1px solid #ddd;white-space:nowrap;}
+  #pdf-render th{background:#f7f6f3!important;color:#555;font-weight:600;text-align:center;font-size:6.5px;}
+  #pdf-render td{text-align:right;color:#1a1a1a;background:#fff!important;}
+  #pdf-render td.label{text-align:left;font-weight:500;background:#fff!important;}
+  #pdf-render .group-header{
+    background:#f0ead8!important;color:#6b5a2e;font-family:'Instrument Serif',serif;
+    font-size:8px;border-bottom:1.5px solid #c8a96e;text-align:center;padding:3px 4px;
+  }
+  #pdf-render .totals-row td{font-weight:700;border-top:1.5px solid #8a7040;background:#faf9f6!important;}
+  #pdf-render .health-pill{display:inline-block;padding:1px 6px;border-radius:8px;font-size:6.5px;font-weight:700;}
+  #pdf-render .health-pill.good{background:#d1fae5!important;color:#166534;}
+  #pdf-render .health-pill.warn{background:#fef3c7!important;color:#92400e;}
+  #pdf-render .health-pill.bad{background:#fee2e2!important;color:#991b1b;}
+  #pdf-render .ds-subtitle{font-size:8px;color:#555;font-weight:600;margin-bottom:3px;}
+  #pdf-render .bar-rev{background:#3d7a6a!important;}
+  #pdf-render .bar-pay{background:#8a7040!important;}
+  #pdf-render .chart-legend{font-size:7px;color:#555;}
+  #pdf-render .legend-dot{width:7px;height:7px;}
+  #pdf-render .footnote{font-size:7px;color:#666;font-style:italic;margin:3px 0 8px;}
+
   /* ── Print ── */
   @media print{
     body{background:#fff;color:#000;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
@@ -103,8 +157,16 @@
 </a>
 <div class="top-bar">
   <h1>Loan Capacities & Debt Schedules</h1>
-  <div class="meta">
-    {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+  <div style="text-align:right">
+    <div class="meta" style="margin-bottom:6px">
+      {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+    </div>
+    {% if data %}
+    <button class="pdf-btn" onclick="downloadLoansPDF()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download PDF
+    </button>
+    {% endif %}
   </div>
 </div>
 
@@ -316,6 +378,118 @@
   <h2>No Report Data</h2>
   <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
 </div>
+{% endif %}
+
+{% if data %}
+<script>
+async function downloadLoansPDF(){
+  const btn=document.querySelector('.pdf-btn');
+  const origHTML=btn.innerHTML;
+  btn.disabled=true;
+  btn.textContent='Generating PDF...';
+
+  const metaText=document.querySelector('.meta')?.textContent?.trim()||'';
+  const PW=1056,PH=816,SCALE=2;
+
+  function hdr(){
+    return `<div class="pdf-header">
+      <h1>Loan Capacities & Debt Schedules</h1>
+      <span class="pdf-meta">${metaText}</span>
+    </div>`;
+  }
+
+  // Clone a section's table from the live DOM
+  function cloneTable(sectionTitle, tableWrap, footnote){
+    let html=`<div class="pdf-section-title">${sectionTitle}</div>`;
+    if(tableWrap){
+      const tbl=tableWrap.querySelector('table');
+      if(tbl) html+=tbl.outerHTML;
+    }
+    if(footnote) html+=`<div class="footnote">${footnote}</div>`;
+    return html;
+  }
+
+  // Gather content sections
+  const sectionTitles=[...document.querySelectorAll('.section-title')];
+  const tableWraps=[...document.querySelectorAll('.report-table-wrap')];
+  const footnotes=[...document.querySelectorAll('.footnote')];
+  const dsSections=[...document.querySelectorAll('.ds-section')];
+
+  // PAGE 1: MPC Loans + Vertical Loans tables
+  let page1=hdr();
+  // MPC Loans — first section title + first table wrap
+  if(sectionTitles.length>=1 && tableWraps.length>=1){
+    page1+=cloneTable('MPC Loans', tableWraps[0]);
+  }
+  // Vertical Loans — second section title + second table wrap
+  if(sectionTitles.length>=2 && tableWraps.length>=2){
+    const fn=footnotes.length>0?footnotes[0].textContent:'';
+    page1+=cloneTable('Vertical Loans', tableWraps[1], fn);
+  }
+
+  // Debt schedule pages — one per debt schedule block
+  const dsPages=[];
+  dsSections.forEach(ds=>{
+    const projTitle=ds.querySelector('h3')?.textContent||'Debt Schedule';
+    let dsHTML=hdr()+`<div class="pdf-section-title">Debt Schedule — ${projTitle}</div>`;
+
+    // Payments table
+    const subTitles=[...ds.querySelectorAll('.ds-subtitle')];
+    const subWraps=[...ds.querySelectorAll('.report-table-wrap')];
+
+    // Two-column layout: payments left, revenues right
+    dsHTML+=`<div style="display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start">`;
+
+    // Payments
+    if(subTitles.length>=1 && subWraps.length>=1){
+      dsHTML+=`<div><div class="ds-subtitle">${subTitles[0].textContent}</div>${subWraps[0].querySelector('table')?.outerHTML||''}</div>`;
+    }
+    // Revenues
+    if(subTitles.length>=2 && subWraps.length>=2){
+      const revTbl=subWraps[1].querySelector('table')?.outerHTML||'';
+      const legend=ds.querySelector('.chart-legend')?.outerHTML||'';
+      dsHTML+=`<div><div class="ds-subtitle">${subTitles[1].textContent}</div>${revTbl}${legend}</div>`;
+    }
+    dsHTML+='</div>';
+    dsPages.push(dsHTML);
+  });
+
+  // Combine all pages
+  const allPages=[page1,...dsPages];
+
+  try{
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({orientation:'landscape',unit:'px',format:[PW,PH],hotfixes:['px_scaling']});
+
+    for(let p=0;p<allPages.length;p++){
+      if(p>0) pdf.addPage([PW,PH],'landscape');
+
+      const div=document.createElement('div');
+      div.id='pdf-render';
+      div.innerHTML=`<div class="pdf-page">${allPages[p]}</div>`;
+      document.body.appendChild(div);
+
+      await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+
+      const canvas=await html2canvas(div,{
+        scale:SCALE,useCORS:true,backgroundColor:'#ffffff',
+        width:PW,height:PH,scrollX:0,scrollY:0,windowWidth:PW,windowHeight:PH
+      });
+
+      pdf.addImage(canvas.toDataURL('image/jpeg',0.95),'JPEG',0,0,PW,PH);
+      div.remove();
+    }
+
+    pdf.save('Ember_Loan_Capacities_Debt_Schedules.pdf');
+  }catch(e){
+    console.error('PDF error:',e);
+    alert('Error generating PDF — see console for details');
+  }
+
+  btn.disabled=false;
+  btn.innerHTML=origHTML;
+}
+</script>
 {% endif %}
 </body>
 </html>
