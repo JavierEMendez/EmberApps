@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember Acquisitions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f13;--card:#151921;--border:#1e2535;
+    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+    --teal:#5e9e8c;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;
+    min-height:100vh;display:flex;align-items:center;justify-content:center;}
+  .home-wrap{width:100%;max-width:480px;padding:24px;text-align:center;}
+  .logo-area{margin-bottom:48px;}
+  .logo-area img{height:40px;margin-bottom:16px;}
+  .logo-area .tagline{font-family:'Instrument Serif',serif;font-size:15px;
+    color:var(--text-muted);font-style:italic;}
+  .welcome{font-size:13px;color:var(--text-muted);margin-bottom:36px;}
+  .welcome strong{color:var(--text);font-weight:500;}
+  .app-card{
+    background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:28px 32px;cursor:pointer;transition:all .2s;text-align:left;
+    border-left:3px solid var(--accent);
+  }
+  .app-card:hover{border-color:rgba(200,169,110,.4);background:#191e28;transform:translateY(-2px);}
+  .app-card .app-title{
+    font-family:'Instrument Serif',serif;font-size:18px;color:var(--text);margin-bottom:6px;
+  }
+  .app-card .app-desc{font-size:13px;color:var(--text-muted);line-height:1.6;}
+  .app-card .app-arrow{
+    display:flex;align-items:center;gap:6px;margin-top:14px;
+    font-size:12px;font-weight:600;color:var(--accent);letter-spacing:.04em;
+  }
+  .footer{display:flex;align-items:center;justify-content:space-between;margin-top:36px;font-size:12px;color:var(--text-dim);}
+  .footer a{color:var(--text-muted);text-decoration:none;transition:color .15s;}
+  .footer a:hover{color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="home-wrap">
+  <div class="logo-area">
+    <img src="/static/img/ember_logo.png" alt="Ember">
+    <div class="tagline">Land Acquisition Underwriting</div>
+  </div>
+  <div class="welcome">Welcome back, <strong>{{ username }}</strong></div>
+
+  <a href="/" style="text-decoration:none">
+    <div class="app-card">
+      <div class="app-title">MPC Underwriting</div>
+      <div class="app-desc">Tract-level underwriting models for master-planned community land acquisitions.</div>
+      <div class="app-arrow">
+        Open
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+  </a>
+
+  <div class="footer">
+    <span>Ember Acquisitions</span>
+    <a href="/logout">Sign Out</a>
+  </div>
+</div>
+</body>
+</html>

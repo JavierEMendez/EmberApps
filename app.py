@@ -106,7 +106,7 @@ def login():
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["is_admin"] = user["is_admin"]
-            return redirect(url_for("index"))
+            return redirect(url_for("home"))
         error = "Invalid username or password."
     return render_template("login.html", error=error)
 
@@ -116,6 +116,11 @@ def logout():
     return redirect(url_for("login"))
 
 # ─── MAIN APP ─────────────────────────────────────────────────────────────────
+@app.route("/home")
+@login_required
+def home():
+    return render_template("home.html", username=session.get("username"))
+
 @app.route("/")
 @login_required
 def index():
