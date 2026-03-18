@@ -109,7 +109,9 @@
     background:#fff;color:#1a1a1a;padding:0;
     overflow:auto;
   }
-  #pdf-render *{color:#1a1a1a;}
+  #pdf-render *{color:#1a1a1a;background-color:transparent;}
+  #pdf-render{background:#fff!important;}
+  #pdf-render .pdf-page{background:#fff!important;}
   #pdf-render .pdf-page{
     width:1056px;min-height:816px; /* 8.5in * 96dpi */
     padding:28px 32px;box-sizing:border-box;
@@ -160,10 +162,10 @@
     padding:2px 5px;border:1px solid #e0e0e0;white-space:nowrap;
   }
   #pdf-render th{
-    background:#f7f6f3;color:#555;font-weight:600;text-align:center;font-size:7.5px;
+    background:#f7f6f3!important;color:#555;font-weight:600;text-align:center;font-size:7.5px;
   }
-  #pdf-render td{text-align:right;color:#1a1a1a;}
-  #pdf-render td.label{text-align:left;font-weight:500;min-width:140px;}
+  #pdf-render td{text-align:right;color:#1a1a1a;background:#fff!important;}
+  #pdf-render td.label{text-align:left;font-weight:500;min-width:140px;background:#fff!important;}
 
   /* Highlighted metrics in PDF */
   #pdf-render .metric-irr td,#pdf-render .metric-em td{font-weight:600;color:#8a7040;}
@@ -173,13 +175,17 @@
   #pdf-render .pdf-summary{margin-bottom:8px;border:1px solid #ddd;border-radius:4px;overflow:hidden;}
   #pdf-render .pdf-summary .pdf-project-header{border-bottom-color:#3d7a6a;}
   #pdf-render .pdf-summary .pdf-project-title{color:#3d7a6a;}
-  #pdf-render .flow-in td{color:#16a34a;}
+  #pdf-render .flow-in td{color:#16a34a;background:#fff!important;}
   #pdf-render .flow-in td.label{color:#16a34a;}
-  #pdf-render .flow-out td{color:#dc2626;}
+  #pdf-render .flow-out td{color:#dc2626;background:#fff!important;}
   #pdf-render .flow-out td.label{color:#dc2626;}
-  #pdf-render .flow-net td{color:#8a7040;font-weight:600;}
+  #pdf-render .flow-net td{color:#8a7040;font-weight:600;background:#fff!important;}
   #pdf-render .flow-net td.label{color:#8a7040;}
-  #pdf-render .total-row td{font-weight:700;border-top:1.5px solid #3d7a6a;}
+  #pdf-render .total-row td{font-weight:700;border-top:1.5px solid #3d7a6a;background:#fff!important;}
+  /* Override any dark-theme backgrounds that leak through cloned HTML */
+  #pdf-render .summary-section td{background:#fff!important;}
+  #pdf-render .card-header,#pdf-render .card-body{background:#fff!important;}
+  #pdf-render .metric-irr td,#pdf-render .metric-em td{background:#fff!important;}
 
   /* ── Print ── */
   @media print{
