@@ -100,24 +100,84 @@
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
   .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
 
-  /* ── PDF Export Overrides ── */
-  .pdf-mode .back-link,
-  .pdf-mode .dashboard-grid,
-  .pdf-mode .pdf-btn,
-  .pdf-mode .card-chevron{display:none!important;}
-  .pdf-mode{background:#0d0f13;padding:20px 24px;}
-  .pdf-mode .card-body.collapsed{display:block!important;}
-  .pdf-mode .card-header{cursor:default;padding:8px 12px;}
-  .pdf-mode .card-header:hover{background:#191e28;}
-  .pdf-mode table{font-size:9px;min-width:unset;}
-  .pdf-mode th,
-  .pdf-mode td{padding:3px 5px;}
-  .pdf-mode td.label,
-  .pdf-mode th.sticky-col{position:static;}
-  .pdf-mode .project-card{margin-bottom:10px;break-inside:avoid;}
-  .pdf-mode .summary-card{margin-top:14px;break-inside:avoid;}
-  .pdf-mode .top-bar h1{font-size:18px;}
-  .pdf-mode .subtitle{margin-bottom:14px;}
+  /* ── PDF Light-Mode Container (built by JS, off-screen) ── */
+  #pdf-render{
+    position:absolute;left:-9999px;top:0;
+    width:1056px; /* 11in * 96dpi */
+    font-family:'DM Sans',sans-serif;font-size:9px;
+    background:#fff;color:#1a1a1a;padding:0;
+  }
+  #pdf-render *{color:#1a1a1a;}
+  #pdf-render .pdf-page{
+    width:1056px;min-height:816px; /* 8.5in * 96dpi */
+    padding:28px 32px;box-sizing:border-box;
+    page-break-after:always;
+  }
+  #pdf-render .pdf-page:last-child{page-break-after:auto;}
+  #pdf-render .pdf-header{
+    display:flex;align-items:baseline;justify-content:space-between;
+    margin-bottom:4px;
+  }
+  #pdf-render .pdf-header h1{
+    font-family:'Instrument Serif',serif;font-size:16px;color:#1a1a1a;font-weight:600;
+  }
+  #pdf-render .pdf-header .pdf-meta{font-size:9px;color:#666;}
+  #pdf-render .pdf-subtitle{font-size:9px;color:#666;margin-bottom:12px;}
+
+  /* KPI grid in PDF */
+  #pdf-render .pdf-kpi-grid{
+    display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-bottom:14px;
+  }
+  #pdf-render .pdf-kpi-card{
+    border:1px solid #ddd;border-radius:4px;padding:6px 8px;
+    border-left:2px solid #8a7040;
+  }
+  #pdf-render .pdf-kpi-name{
+    font-family:'Instrument Serif',serif;font-size:9px;color:#1a1a1a;
+    font-weight:600;margin-bottom:4px;
+  }
+  #pdf-render .pdf-kpi-row{display:flex;justify-content:space-between;font-size:8px;margin-bottom:1px;}
+  #pdf-render .pdf-kpi-label{color:#666;}
+  #pdf-render .pdf-kpi-val{color:#8a7040;font-weight:700;}
+
+  /* Project cards in PDF */
+  #pdf-render .pdf-project{margin-bottom:8px;border:1px solid #ddd;border-radius:4px;overflow:hidden;}
+  #pdf-render .pdf-project-header{
+    display:flex;align-items:center;gap:8px;
+    padding:5px 8px;background:#f7f6f3;border-bottom:1px solid #8a7040;
+  }
+  #pdf-render .pdf-project-title{
+    font-family:'Instrument Serif',serif;font-size:10px;color:#8a7040;font-weight:600;
+  }
+  #pdf-render .pdf-pill{
+    font-size:8px;color:#8a7040;background:#f0ead8;border:1px solid #d4c69a;
+    border-radius:3px;padding:1px 6px;font-weight:600;
+  }
+  #pdf-render table{border-collapse:collapse;width:100%;font-size:8px;}
+  #pdf-render th,#pdf-render td{
+    padding:2px 5px;border:1px solid #e0e0e0;white-space:nowrap;
+  }
+  #pdf-render th{
+    background:#f7f6f3;color:#555;font-weight:600;text-align:center;font-size:7.5px;
+  }
+  #pdf-render td{text-align:right;color:#1a1a1a;}
+  #pdf-render td.label{text-align:left;font-weight:500;min-width:140px;}
+
+  /* Highlighted metrics in PDF */
+  #pdf-render .metric-irr td,#pdf-render .metric-em td{font-weight:600;color:#8a7040;}
+  #pdf-render .metric-irr td.label,#pdf-render .metric-em td.label{color:#8a7040;}
+
+  /* Summary in PDF */
+  #pdf-render .pdf-summary{margin-bottom:8px;border:1px solid #ddd;border-radius:4px;overflow:hidden;}
+  #pdf-render .pdf-summary .pdf-project-header{border-bottom-color:#3d7a6a;}
+  #pdf-render .pdf-summary .pdf-project-title{color:#3d7a6a;}
+  #pdf-render .flow-in td{color:#16a34a;}
+  #pdf-render .flow-in td.label{color:#16a34a;}
+  #pdf-render .flow-out td{color:#dc2626;}
+  #pdf-render .flow-out td.label{color:#dc2626;}
+  #pdf-render .flow-net td{color:#8a7040;font-weight:600;}
+  #pdf-render .flow-net td.label{color:#8a7040;}
+  #pdf-render .total-row td{font-weight:700;border-top:1.5px solid #3d7a6a;}
 
   /* ── Print ── */
   @media print{
@@ -367,27 +427,128 @@ function downloadPDF(){
   btn.disabled=true;
   btn.textContent='Generating...';
 
-  const el=document.getElementById('report-content');
-  el.classList.add('pdf-mode');
+  // Build off-screen light-mode PDF container
+  const old=document.getElementById('pdf-render');
+  if(old)old.remove();
 
-  // Expand all collapsed cards for PDF
-  el.querySelectorAll('.card-body.collapsed').forEach(b=>{
-    b.classList.remove('collapsed');
-  });
+  const wrap=document.createElement('div');
+  wrap.id='pdf-render';
+  document.body.appendChild(wrap);
 
-  const opt={
-    margin:       [0.3, 0.3, 0.3, 0.3],
-    filename:     'Ember_Project_Returns.pdf',
-    image:        {type:'jpeg',quality:0.98},
-    html2canvas:  {scale:2,useCORS:true,backgroundColor:'#0d0f13',scrollY:0,windowWidth:1400},
-    jsPDF:        {unit:'in',format:'letter',orientation:'landscape'},
-    pagebreak:    {mode:['avoid-all','css','legacy']}
-  };
+  // Gather project cards and summary
+  const cards=[...document.querySelectorAll('.project-card')];
+  const summary=document.querySelector('.summary-card');
+  const dashCards=[...document.querySelectorAll('.dash-card')];
+  const metaText=document.querySelector('.top-right .meta')?.textContent?.trim()||'';
 
-  html2pdf().set(opt).from(el).save().then(()=>{
-    el.classList.remove('pdf-mode');
-    btn.disabled=false;
-    btn.innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Download PDF';
+  // Helper: build page header
+  function makeHeader(){
+    return `<div class="pdf-header">
+      <h1>Consolidated Ember Project Returns</h1>
+      <span class="pdf-meta">${metaText}</span>
+    </div>
+    <div class="pdf-subtitle">($ in 000s)</div>`;
+  }
+
+  // Helper: clone a project card into PDF-friendly light markup
+  function cloneCard(card){
+    const title=card.querySelector('.card-title')?.textContent||'';
+    const pills=[...card.querySelectorAll('.kpi-pill')].map(p=>p.textContent.trim());
+    // Get the table, expand if collapsed
+    const body=card.querySelector('.card-body');
+    const wasCollapsed=body?.classList.contains('collapsed');
+    if(wasCollapsed)body.classList.remove('collapsed');
+    const table=card.querySelector('table');
+    const tableHTML=table?table.outerHTML:'';
+    if(wasCollapsed)body.classList.add('collapsed');
+
+    return `<div class="pdf-project">
+      <div class="pdf-project-header">
+        <span class="pdf-project-title">${title}</span>
+        ${pills.map(p=>`<span class="pdf-pill">${p}</span>`).join('')}
+      </div>
+      ${tableHTML}
+    </div>`;
+  }
+
+  // Helper: clone summary card
+  function cloneSummary(){
+    if(!summary)return '';
+    const body=summary.querySelector('.card-body');
+    const wasCollapsed=body?.classList.contains('collapsed');
+    if(wasCollapsed)body.classList.remove('collapsed');
+    const table=summary.querySelector('table');
+    const tableHTML=table?table.outerHTML:'';
+    if(wasCollapsed)body.classList.add('collapsed');
+
+    return `<div class="pdf-summary">
+      <div class="pdf-project-header">
+        <span class="pdf-project-title">Portfolio Summary</span>
+      </div>
+      ${tableHTML}
+    </div>`;
+  }
+
+  // Build KPI grid
+  function makeKPIGrid(){
+    let html='<div class="pdf-kpi-grid">';
+    dashCards.forEach(dc=>{
+      const name=dc.querySelector('.dash-name')?.textContent||'';
+      const metrics=[...dc.querySelectorAll('.dash-metric')];
+      html+=`<div class="pdf-kpi-card"><div class="pdf-kpi-name">${name}</div>`;
+      metrics.forEach(m=>{
+        const lbl=m.querySelector('.dash-label')?.textContent||'';
+        const val=m.querySelector('.dash-value')?.textContent||'';
+        html+=`<div class="pdf-kpi-row"><span class="pdf-kpi-label">${lbl}</span><span class="pdf-kpi-val">${val}</span></div>`;
+      });
+      html+='</div>';
+    });
+    html+='</div>';
+    return html;
+  }
+
+  // Paginate: page 1 = KPI + 2 projects, then 3 per page
+  const pages=[];
+
+  // Page 1: header + KPIs + first 2 projects
+  let p1=`<div class="pdf-page">${makeHeader()}${makeKPIGrid()}`;
+  for(let i=0;i<2&&i<cards.length;i++){
+    p1+=cloneCard(cards[i]);
+  }
+  p1+='</div>';
+  pages.push(p1);
+
+  // Remaining projects + summary, 3 per page
+  const remaining=cards.slice(2);
+  // Add summary as a "card" at the end
+  const allRemaining=[...remaining.map(c=>cloneCard(c))];
+  if(summary)allRemaining.push(cloneSummary());
+
+  for(let i=0;i<allRemaining.length;i+=3){
+    let page=`<div class="pdf-page">${makeHeader()}`;
+    page+=allRemaining.slice(i,i+3).join('');
+    page+='</div>';
+    pages.push(page);
+  }
+
+  wrap.innerHTML=pages.join('');
+
+  // Give browser a tick to render, then generate PDF
+  requestAnimationFrame(()=>{
+    const opt={
+      margin:       0,
+      filename:     'Ember_Project_Returns.pdf',
+      image:        {type:'jpeg',quality:0.95},
+      html2canvas:  {scale:2,useCORS:true,backgroundColor:'#ffffff',scrollY:0,windowWidth:1056},
+      jsPDF:        {unit:'px',format:[1056,816],orientation:'landscape',hotfixes:['px_scaling']},
+      pagebreak:    {mode:['css'],before:'.pdf-page'}
+    };
+
+    html2pdf().set(opt).from(wrap).save().then(()=>{
+      wrap.remove();
+      btn.disabled=false;
+      btn.innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Download PDF';
+    });
   });
 }
 </script>
