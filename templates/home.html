@@ -73,6 +73,10 @@
   .btn-add-user:hover{opacity:.85}
   .btn-del-user{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px}
   .btn-del-user:hover{background:rgba(224,85,85,.15);color:#e05555}
+  .user-row{flex-wrap:wrap}
+  .user-access{display:flex;gap:10px;width:100%;padding:4px 0 2px;margin-top:2px}
+  .user-access label{font-size:11px;color:var(--text-dim);display:flex;align-items:center;gap:4px;cursor:pointer}
+  .user-access input[type=checkbox]{accent-color:var(--teal)}
 </style>
 </head>
 <body>
@@ -84,6 +88,7 @@
   <div class="welcome">Welcome back, <strong>{{ username }}</strong></div>
 
   <div class="app-grid">
+    {% if page_access.get('mpc_underwriting', true) %}
     <a href="/" style="text-decoration:none">
       <div class="app-card" style="height:100%">
         <div class="app-title">MPC Underwriting</div>
@@ -94,7 +99,9 @@
         </div>
       </div>
     </a>
+    {% endif %}
 
+    {% if page_access.get('returns', true) %}
     <a href="/returns" style="text-decoration:none">
       <div class="app-card" style="height:100%">
         <div class="app-title">Active Project Returns</div>
@@ -105,8 +112,9 @@
         </div>
       </div>
     </a>
+    {% endif %}
 
-    {% if is_admin %}
+    {% if page_access.get('loans', true) %}
     <a href="/loans" style="text-decoration:none">
       <div class="app-card" style="height:100%">
         <div class="app-title">Loan Capacities and Debt Schedules</div>
@@ -117,14 +125,6 @@
         </div>
       </div>
     </a>
-    {% else %}
-    <div class="app-card" style="opacity:.55;cursor:default;">
-      <div class="app-title">Loan Capacities and Debt Schedules</div>
-      <div class="app-desc">See all current active Ember loans and their respective KPIs.</div>
-      <div class="app-arrow" style="color:var(--text-dim)">
-        Coming Soon
-      </div>
-    </div>
     {% endif %}
 
     <div class="app-card" style="opacity:.55;cursor:default;">
@@ -177,9 +177,15 @@
           <input type="text" id="new-username" placeholder="Username">
           <input type="password" id="new-password" placeholder="Password">
         </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);margin-bottom:12px;cursor:pointer">
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);margin-bottom:8px;cursor:pointer">
           <input type="checkbox" id="new-is-admin"> Grant admin access
         </label>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;letter-spacing:.05em;text-transform:uppercase">Page Access</div>
+        <div class="user-access" style="margin-bottom:12px">
+          <label><input type="checkbox" id="new-pa-mpc" checked>MPC Underwriting</label>
+          <label><input type="checkbox" id="new-pa-returns" checked>Project Returns</label>
+          <label><input type="checkbox" id="new-pa-loans" checked>Loans & Debt</label>
+        </div>
         <button class="btn-add-user" onclick="addUser()">Add User</button>
       </div>
     </div>
@@ -194,33 +200,63 @@ async function openAdmin() {
 function closeAdmin() {
   document.getElementById('admin-modal').classList.remove('open');
 }
+const PAGE_LABELS = {mpc_underwriting:'MPC Underwriting', returns:'Project Returns', loans:'Loans & Debt'};
 async function refreshUserList() {
   const res = await fetch('/api/admin/users');
   if (!res.ok) return;
   const users = await res.json();
   document.getElementById('user-list').innerHTML = users.length === 0
     ? '<div style="color:var(--text-dim);font-size:13px">No users.</div>'
-    : users.map(u => `
-      <div class="user-row">
-        <div class="uname">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''}</div>
+    : users.map(u => {
+      const pa = u.page_access || {mpc_underwriting:true, returns:true, loans:true};
+      const checks = Object.entries(PAGE_LABELS).map(([k,label]) =>
+        `<label><input type="checkbox" ${pa[k] ? 'checked' : ''} ${u.is_admin ? 'disabled' : ''}
+          onchange="toggleAccess(${u.id},'${k}',this.checked)">${label}</label>`
+      ).join('');
+      return `<div class="user-row">
+        <div class="uname" style="flex:1">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''}</div>
         <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
-      </div>`).join('');
+        ${u.is_admin ? '' : `<div class="user-access">${checks}</div>`}
+      </div>`;
+    }).join('');
+}
+async function toggleAccess(uid, page, enabled) {
+  const res = await fetch('/api/admin/users');
+  if (!res.ok) return;
+  const users = await res.json();
+  const user = users.find(u => u.id === uid);
+  if (!user) return;
+  const pa = user.page_access || {mpc_underwriting:true, returns:true, loans:true};
+  pa[page] = enabled;
+  await fetch('/api/admin/users/' + uid + '/access', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({page_access: pa})
+  });
 }
 async function addUser() {
   const username = document.getElementById('new-username').value.trim();
   const password = document.getElementById('new-password').value;
   const is_admin = document.getElementById('new-is-admin').checked;
+  const page_access = {
+    mpc_underwriting: document.getElementById('new-pa-mpc').checked,
+    returns: document.getElementById('new-pa-returns').checked,
+    loans: document.getElementById('new-pa-loans').checked
+  };
   if (!username || !password) { alert('Username and password required'); return; }
   const res = await fetch('/api/admin/users', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({username, password, is_admin})
+    body: JSON.stringify({username, password, is_admin, page_access})
   });
   const d = await res.json();
   if (res.ok) {
     document.getElementById('new-username').value = '';
     document.getElementById('new-password').value = '';
     document.getElementById('new-is-admin').checked = false;
+    document.getElementById('new-pa-mpc').checked = true;
+    document.getElementById('new-pa-returns').checked = true;
+    document.getElementById('new-pa-loans').checked = true;
     await refreshUserList();
   } else {
     alert(d.error || 'Error creating user');

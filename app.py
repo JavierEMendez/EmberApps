@@ -42,8 +42,11 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             is_admin BOOLEAN DEFAULT FALSE,
+            page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true}'::jsonb,
             created_at TIMESTAMP DEFAULT NOW()
         );
+        -- Add page_access column if upgrading from older schema
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true}'::jsonb;
         CREATE TABLE IF NOT EXISTS projects (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
@@ -114,6 +117,7 @@ def login():
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["is_admin"] = user["is_admin"]
+            session["page_access"] = user.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True}
             return redirect(url_for("home"))
         error = "Invalid username or password."
     return render_template("login.html", error=error)
@@ -127,11 +131,18 @@ def logout():
 @app.route("/home")
 @login_required
 def home():
-    return render_template("home.html", username=session.get("username"), is_admin=session.get("is_admin"))
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True}
+    # Admins always have full access
+    if session.get("is_admin"):
+        pa = {"mpc_underwriting": True, "returns": True, "loans": True}
+    return render_template("home.html", username=session.get("username"), is_admin=session.get("is_admin"), page_access=pa)
 
 @app.route("/")
 @login_required
 def index():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("mpc_underwriting", True):
+        return redirect(url_for("home"))
     return render_template("app.html", username=session.get("username"), is_admin=session.get("is_admin"))
 
 # ─── PROJECT API ─────────────────────────────────────────────────────────────
@@ -252,7 +263,7 @@ def recalculate(pid):
 def list_users():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, username, is_admin, created_at FROM users ORDER BY id")
+    cur.execute("SELECT id, username, is_admin, page_access, created_at FROM users ORDER BY id")
     rows = cur.fetchall()
     cur.close(); conn.close()
     return jsonify([dict(r) for r in rows])
@@ -265,14 +276,15 @@ def create_user():
     username = data.get("username", "").strip()
     password = data.get("password", "")
     is_admin = data.get("is_admin", False)
+    page_access = data.get("page_access", {"mpc_underwriting": True, "returns": True, "loans": True})
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
     conn = get_db()
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO users (username, password_hash, is_admin) VALUES (%s, %s, %s) RETURNING id",
-            (username, generate_password_hash(password), is_admin)
+            "INSERT INTO users (username, password_hash, is_admin, page_access) VALUES (%s, %s, %s, %s) RETURNING id",
+            (username, generate_password_hash(password), is_admin, json.dumps(page_access))
         )
         uid = cur.fetchone()["id"]
         conn.commit()
@@ -307,6 +319,19 @@ def reset_password(uid):
     cur = conn.cursor()
     cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
                 (generate_password_hash(password), uid))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/admin/users/<int:uid>/access", methods=["PUT"])
+@login_required
+@admin_required
+def update_page_access(uid):
+    data = request.json or {}
+    page_access = data.get("page_access", {})
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET page_access = %s WHERE id = %s",
+                (json.dumps(page_access), uid))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
 
@@ -556,6 +581,9 @@ def upload_dashboard():
 @app.route("/returns")
 @login_required
 def returns_report():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("returns", True):
+        return redirect(url_for("home"))
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'returns' ORDER BY uploaded_at DESC LIMIT 1")
@@ -568,6 +596,9 @@ def returns_report():
 @app.route("/loans")
 @login_required
 def loans_report():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("loans", True):
+        return redirect(url_for("home"))
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'loans' ORDER BY uploaded_at DESC LIMIT 1")
