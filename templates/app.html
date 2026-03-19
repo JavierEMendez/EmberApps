@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Ember Tract – MPC Underwriting</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -69,7 +69,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 .new-proj-btn:hover{border-color:var(--accent);color:var(--accent)}
 
 /* ── HEADER ── */
-.header-project{font-family:'Instrument Serif',serif;font-size:18px;color:var(--text);flex:1}
+.header-project{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--text);flex:1}
 .header-project span{color:var(--text-muted);font-size:13px;font-family:'DM Sans',sans-serif;font-style:normal;margin-left:10px}
 .header-btn{padding:7px 14px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:12px;display:flex;align-items:center;gap:6px;transition:all .15s;font-family:'DM Sans',sans-serif}
 .header-btn:hover{border-color:var(--border-light);color:var(--text)}
@@ -91,7 +91,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 .panel{padding:28px 32px;display:none;animation:fadein .2s ease}
 .panel.active{display:block}
 @keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
-.panel-title{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:4px}
+.panel-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:22px;color:var(--text);margin-bottom:4px}
 .panel-sub{color:var(--text-muted);font-size:13px;margin-bottom:28px}
 
 /* ── FORM ELEMENTS ── */
@@ -179,7 +179,7 @@ select option{background:var(--card)}
 .modal-overlay.open{opacity:1;pointer-events:all}
 .modal{background:var(--card);border:1px solid var(--border-light);border-radius:10px;padding:28px 32px;width:380px;transform:scale(.96);transition:transform .2s}
 .modal-overlay.open .modal{transform:scale(1)}
-.modal-title{font-family:'Instrument Serif',serif;font-size:20px;margin-bottom:6px}
+.modal-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:20px;margin-bottom:6px}
 .modal-sub{color:var(--text-muted);font-size:13px;margin-bottom:22px}
 .modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:22px}
 .btn{padding:8px 18px;border-radius:5px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;font-size:13px;font-family:'DM Sans',sans-serif;transition:all .15s}
@@ -190,7 +190,7 @@ select option{background:var(--card)}
 /* ── EMPTY STATE ── */
 .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);gap:16px;text-align:center;padding:40px}
 .empty-icon{font-size:48px;opacity:.3}
-.empty-title{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text-muted)}
+.empty-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text-muted)}
 .empty-sub{font-size:13px;max-width:300px}
 
 /* ── NOTICE BAR ── */
@@ -1069,7 +1069,7 @@ async function loadProjectList() {
         const statStyle = 'font-family:"DM Sans",sans-serif;font-size:15px;font-weight:600';
         return `
         <div class="kpi-card" style="cursor:pointer;border-left:3px solid var(--accent)" onclick="selectProject(${p.id})">
-          <div style="font-family:'Instrument Serif',serif;font-size:16px;color:var(--text);margin:0 0 10px">${p.name || 'Unnamed'}</div>
+          <div style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:16px;color:var(--text);margin:0 0 10px">${p.name || 'Unnamed'}</div>
           <div style="font-size:11px;color:var(--text-dim);margin-bottom:8px">${p.address ? p.address.substring(0,35) : 'No address'}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;border-top:1px solid var(--border);padding-top:10px">
             <div>
@@ -3890,6 +3890,7 @@ document.addEventListener('keydown', e => {
 });
 </script>
 
+<script>
 // ─── PROJECT PERFORMANCE PDF ─────────────────────────────────────────────────
 async function downloadPerformancePDF(){
   const btn=document.getElementById('btn-pdf');
@@ -3920,7 +3921,7 @@ async function downloadPerformancePDF(){
   // Build light-mode PDF pages
   const PW=1056,PH=816;
   const hdr=`<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
-    <h1 style="font-family:'Instrument Serif',serif;font-size:15px;color:#1a1a1a;margin:0">${projName} — Project Performance</h1>
+    <h1 style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:15px;color:#1a1a1a;margin:0">${projName} — Project Performance</h1>
     <span style="font-size:8px;color:#888">${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</span>
   </div>`;
 

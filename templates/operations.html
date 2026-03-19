@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ember Operating Revenues</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -33,12 +33,12 @@
   a{color:var(--accent);text-decoration:none;}
   a:hover{text-decoration:underline;}
   .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:8px;}
-  .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
+  .top-bar h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text);}
   .top-right{text-align:right;}
   .top-right .meta{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
 
   /* Section titles */
-  .section-title{font-family:'Instrument Serif',serif;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+  .section-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
 
   /* Download PDF button */
   .pdf-btn{
@@ -86,7 +86,7 @@
   .filter-bar input[type="date"]:focus{outline:none;border-color:var(--accent);}
 
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
-  .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+  .empty-state h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:22px;color:var(--text);margin-bottom:8px;}
 
   /* ── PDF Light-Mode Render ── */
   #pdf-render{
@@ -103,10 +103,10 @@
   }
   #pdf-render .pdf-page:last-child{page-break-after:auto;}
   #pdf-render .pdf-header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;}
-  #pdf-render .pdf-header h1{font-family:'Instrument Serif',serif;font-size:16px;color:#1a1a1a;font-weight:600;}
+  #pdf-render .pdf-header h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:16px;color:#1a1a1a;}
   #pdf-render .pdf-header .pdf-meta{font-size:9px;color:#666;}
   #pdf-render .pdf-section-title{
-    font-family:'Instrument Serif',serif;font-size:11px;color:#8a7040;
+    font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:11px;color:#8a7040;
     margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid #ddd;
   }
   #pdf-render .pdf-kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px;}

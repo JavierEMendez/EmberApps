@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Loan Capacities & Debt Schedules — Ember</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -33,9 +33,9 @@
   a{color:var(--accent);text-decoration:none;}
   a:hover{text-decoration:underline;}
   .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:8px;}
-  .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
+  .top-bar h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text);}
   .top-bar .meta{font-size:12px;color:var(--text-muted);}
-  .section-title{font-family:'Instrument Serif',serif;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+  .section-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
 
   /* ── Tables ── */
   .report-table-wrap{overflow-x:auto;margin-bottom:24px;background:var(--card);border:1px solid var(--border);border-radius:8px;}
@@ -52,7 +52,7 @@
 
   /* Column group headers */
   .group-header{
-    background:#1a2030;color:var(--accent);font-family:'Instrument Serif',serif;
+    background:#1a2030;color:var(--accent);font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;
     font-size:13px;border-bottom:2px solid rgba(200,169,110,0.3);padding:6px 8px;text-align:center;
   }
   .group-header.sticky-col{position:sticky;left:0;z-index:3;background:#1a2030;}
@@ -86,7 +86,7 @@
   .legend-dot{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:middle;margin-right:4px;}
 
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
-  .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+  .empty-state h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:22px;color:var(--text);margin-bottom:8px;}
 
   /* Download PDF button */
   .pdf-btn{
@@ -113,10 +113,10 @@
   }
   #pdf-render .pdf-page:last-child{page-break-after:auto;}
   #pdf-render .pdf-header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:2px;}
-  #pdf-render .pdf-header h1{font-family:'Instrument Serif',serif;font-size:15px;color:#1a1a1a;font-weight:600;}
+  #pdf-render .pdf-header h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:15px;color:#1a1a1a;}
   #pdf-render .pdf-header .pdf-meta{font-size:8px;color:#666;}
   #pdf-render .pdf-section-title{
-    font-family:'Instrument Serif',serif;font-size:11px;color:#8a7040;
+    font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:11px;color:#8a7040;
     margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid #ddd;
   }
   #pdf-render table{border-collapse:collapse;width:100%;font-size:7px;line-height:1.3;}
@@ -125,7 +125,7 @@
   #pdf-render td{text-align:right;color:#1a1a1a;background:#fff!important;}
   #pdf-render td.label{text-align:left;font-weight:500;background:#fff!important;}
   #pdf-render .group-header{
-    background:#f0ead8!important;color:#6b5a2e;font-family:'Instrument Serif',serif;
+    background:#f0ead8!important;color:#6b5a2e;font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;
     font-size:8px;border-bottom:1.5px solid #c8a96e;text-align:center;padding:3px 4px;
   }
   #pdf-render .totals-row td{font-weight:700;border-top:1.5px solid #8a7040;background:#faf9f6!important;}
@@ -326,7 +326,7 @@
 <div class="section-title" id="sec-debt">Debt Schedules</div>
 {% for ds in data.debt_schedules %}
 <div class="ds-section">
-  <h3 style="font-family:'Instrument Serif',serif;font-size:16px;color:var(--text);margin-bottom:16px;">{{ ds.project }}</h3>
+  <h3 style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:16px;color:var(--text);margin-bottom:16px;">{{ ds.project }}</h3>
 
   <div class="ds-grid">
     <!-- Upcoming Payments -->

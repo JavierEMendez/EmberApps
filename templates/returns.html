@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Active Project Returns — Ember</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
@@ -33,7 +33,7 @@
   a{color:var(--accent);text-decoration:none;}
   a:hover{text-decoration:underline;}
   .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;}
-  .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
+  .top-bar h1{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text);}
   .top-right{text-align:right;}
   .top-right .meta{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
   .subtitle{font-size:12px;color:var(--text-muted);margin-bottom:24px;}
@@ -55,7 +55,7 @@
     padding:14px 16px;cursor:pointer;transition:all .2s;border-left:3px solid var(--accent);
   }
   .dash-card:hover{background:#191e28;transform:translateY(-1px);}
-  .dash-name{font-family:'Instrument Serif',serif;font-size:14px;color:var(--text);margin-bottom:8px;}
+  .dash-name{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:14px;color:var(--text);margin-bottom:8px;}
   .dash-metric{display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;}
   .dash-label{color:var(--text-muted);}
   .dash-value{color:var(--accent);font-weight:600;}
@@ -69,7 +69,7 @@
   }
   .card-header:hover{background:#1e2535;}
   .card-left{display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
-  .card-title{font-family:'Instrument Serif',serif;font-size:15px;color:var(--accent);font-weight:600;}
+  .card-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:15px;color:var(--accent);}
   .kpi-pill{
     display:inline-block;background:rgba(200,169,110,0.1);border:1px solid rgba(200,169,110,0.3);
     border-radius:4px;padding:2px 10px;font-size:12px;color:var(--accent);
@@ -111,7 +111,7 @@
   .flow-net td.label{color:var(--accent);}
 
   .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
-  .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+  .empty-state h2{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:22px;color:var(--text);margin-bottom:8px;}
 
   /* ── PDF Light-Mode Container (built by JS, rendered on-screen then removed) ── */
   #pdf-render{
@@ -135,7 +135,7 @@
     margin-bottom:4px;
   }
   #pdf-render .pdf-header h1{
-    font-family:'Instrument Serif',serif;font-size:16px;color:#1a1a1a;font-weight:600;
+    font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:16px;color:#1a1a1a;
   }
   #pdf-render .pdf-header .pdf-meta{font-size:9px;color:#666;}
   #pdf-render .pdf-subtitle{font-size:9px;color:#666;margin-bottom:12px;}
@@ -149,7 +149,7 @@
     border-left:2px solid #8a7040;
   }
   #pdf-render .pdf-kpi-name{
-    font-family:'Instrument Serif',serif;font-size:9px;color:#1a1a1a;
+    font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:9px;color:#1a1a1a;
     font-weight:600;margin-bottom:4px;
   }
   #pdf-render .pdf-kpi-row{display:flex;justify-content:space-between;font-size:8px;margin-bottom:1px;}
@@ -163,7 +163,7 @@
     padding:5px 8px;background:#f7f6f3;border-bottom:1px solid #8a7040;
   }
   #pdf-render .pdf-project-title{
-    font-family:'Instrument Serif',serif;font-size:10px;color:#8a7040;font-weight:600;
+    font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:10px;color:#8a7040;
   }
   #pdf-render .pdf-pill{
     font-size:8px;color:#8a7040;background:#f0ead8;border:1px solid #d4c69a;
