@@ -67,16 +67,27 @@ def npv_irr(cashflows, guess=0.1, max_iter=1000):
         return None
     r = guess / 12  # monthly
     for _ in range(max_iter):
-        npv = sum(c / (1 + r) ** t for t, c in enumerate(cashflows))
-        dnpv = sum(-t * c / (1 + r) ** (t + 1) for t, c in enumerate(cashflows))
+        try:
+            npv = sum(c / (1 + r) ** t for t, c in enumerate(cashflows))
+            dnpv = sum(-t * c / (1 + r) ** (t + 1) for t, c in enumerate(cashflows))
+        except (OverflowError, ZeroDivisionError):
+            return None
         if dnpv == 0:
             break
         r_new = r - npv / dnpv
+        # Clamp to prevent divergence
+        if r_new < -0.99:
+            r_new = -0.99
+        elif r_new > 10:
+            r_new = 10
         if abs(r_new - r) < 1e-8:
             r = r_new
             break
         r = r_new
-    annual = (1 + r) ** 12 - 1
+    try:
+        annual = (1 + r) ** 12 - 1
+    except OverflowError:
+        return None
     return annual if -0.5 < annual < 10 else None
 
 
