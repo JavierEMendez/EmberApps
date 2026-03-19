@@ -348,9 +348,9 @@ def calculate(inp: dict) -> dict:
         other_p = safe(dc.get("other_pct", default_other_pct))
         base_cost = det_base_per_proj
         total_cost = base_cost * (1 + other_p)
-        sm = sm_base + idx * 15  # each project offset +15 months (Excel F46=F45+15)
-        dur = 9  # fixed 9-month duration (Excel G45=9)
-        delivery = dur + sm - 1
+        sm = int(safe(dc.get("start_month", sm_base + idx * 15)))
+        dur = int(safe(dc.get("duration", 9)))
+        delivery = sm + dur - 1
         lsf = safe(dc.get("landscaping_per_foot", 2))  # default $2/LF from Excel I45
         total_landscaping = lsf * 43560 * det_acres_each * (1 + landscaping_other_pct) * 0.30
         det_cost_rows.append({
