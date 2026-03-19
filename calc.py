@@ -399,7 +399,8 @@ def calculate(inp: dict) -> dict:
         # Excel default start months for roads: 1, 12, 48, 72, 96, 1
         rd_default_sms = [default_start_month, 12, 48, 72, 96, default_start_month]
         sm_default = rd_default_sms[i] if i < len(rd_default_sms) else default_start_month
-        sm = safe(rc.get("start_month")) or sm_default
+        _sm = rc.get("start_month")
+        sm = int(safe(_sm)) if _sm is not None and _sm != "" else sm_default
         dur = int(mround(lf / 300 + 6, 1)) if lf else 6
         delivery = dur + sm - 1
         lsf = safe(rc.get("landscaping_per_sf", 0))

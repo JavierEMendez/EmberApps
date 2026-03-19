@@ -49,6 +49,30 @@
   }
   .upload-btn:hover{border-color:var(--accent);color:var(--accent);}
   .upload-status{font-size:11px;color:var(--teal);}
+
+  /* Admin modal */
+  .admin-modal{display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.7);align-items:center;justify-content:center}
+  .admin-modal.open{display:flex}
+  .admin-box{background:var(--card);border:1px solid var(--border);border-radius:12px;width:500px;max-width:95vw;max-height:80vh;overflow-y:auto}
+  .admin-header{padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+  .admin-header h3{font-size:15px;font-weight:600;color:var(--text)}
+  .admin-body{padding:20px 24px}
+  .user-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid rgba(37,44,61,.4)}
+  .user-row:last-child{border-bottom:none}
+  .user-row .uname{flex:1;font-size:13px;color:var(--text)}
+  .user-row .badge{font-size:10px;background:rgba(200,169,110,.12);color:var(--accent);
+    border:1px solid rgba(200,169,110,.2);border-radius:4px;padding:2px 6px}
+  .add-user-form{background:#0d0f13;border:1px solid var(--border);border-radius:8px;padding:16px;margin-top:16px}
+  .add-user-form h4{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-dim);margin-bottom:14px}
+  .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+  .form-row input{padding:8px 12px;background:var(--card);border:1px solid var(--border);
+    border-radius:6px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;outline:none}
+  .form-row input:focus{border-color:var(--teal)}
+  .btn-add-user{background:var(--teal);color:#fff;border:none;border-radius:6px;
+    padding:8px 18px;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;}
+  .btn-add-user:hover{opacity:.85}
+  .btn-del-user{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:4px}
+  .btn-del-user:hover{background:rgba(224,85,85,.15);color:#e05555}
 </style>
 </head>
 <body>
@@ -112,6 +136,15 @@
     </div>
   </div>
 
+  {% if is_admin %}
+  <div style="margin-top:16px;text-align:center">
+    <button onclick="openAdmin()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 18px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s" onmouseover="this.style.borderColor='rgba(123,143,212,.4)';this.style.color='#7b8fd4'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+      <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2m22-4l-4.5 4.5M18 13l4.5-4.5M15 3a4 4 0 110 8 4 4 0 010-8z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Admin / Users
+    </button>
+  </div>
+  {% endif %}
+
   <div class="footer">
     <div class="upload-area">
       <span>Ember Real Estate &amp; Development</span>
@@ -129,6 +162,78 @@
 </div>
 
 {% if is_admin %}
+<!-- ADMIN MODAL -->
+<div id="admin-modal" class="admin-modal">
+  <div class="admin-box">
+    <div class="admin-header">
+      <h3>Team Management</h3>
+      <button onclick="closeAdmin()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer">&times;</button>
+    </div>
+    <div class="admin-body">
+      <div id="user-list">Loading...</div>
+      <div class="add-user-form">
+        <h4>Add Team Member</h4>
+        <div class="form-row">
+          <input type="text" id="new-username" placeholder="Username">
+          <input type="password" id="new-password" placeholder="Password">
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);margin-bottom:12px;cursor:pointer">
+          <input type="checkbox" id="new-is-admin"> Grant admin access
+        </label>
+        <button class="btn-add-user" onclick="addUser()">Add User</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function openAdmin() {
+  document.getElementById('admin-modal').classList.add('open');
+  await refreshUserList();
+}
+function closeAdmin() {
+  document.getElementById('admin-modal').classList.remove('open');
+}
+async function refreshUserList() {
+  const res = await fetch('/api/admin/users');
+  if (!res.ok) return;
+  const users = await res.json();
+  document.getElementById('user-list').innerHTML = users.length === 0
+    ? '<div style="color:var(--text-dim);font-size:13px">No users.</div>'
+    : users.map(u => `
+      <div class="user-row">
+        <div class="uname">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''}</div>
+        <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
+      </div>`).join('');
+}
+async function addUser() {
+  const username = document.getElementById('new-username').value.trim();
+  const password = document.getElementById('new-password').value;
+  const is_admin = document.getElementById('new-is-admin').checked;
+  if (!username || !password) { alert('Username and password required'); return; }
+  const res = await fetch('/api/admin/users', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({username, password, is_admin})
+  });
+  const d = await res.json();
+  if (res.ok) {
+    document.getElementById('new-username').value = '';
+    document.getElementById('new-password').value = '';
+    document.getElementById('new-is-admin').checked = false;
+    await refreshUserList();
+  } else {
+    alert(d.error || 'Error creating user');
+  }
+}
+async function deleteUser(id, name) {
+  if (!confirm('Remove user "' + name + '"?')) return;
+  const res = await fetch('/api/admin/users/' + id, {method:'DELETE'});
+  if (res.ok) await refreshUserList();
+  else alert('Error removing user');
+}
+</script>
+
 <script>
 document.getElementById('dashUpload').addEventListener('change', async function() {
   const file = this.files[0];

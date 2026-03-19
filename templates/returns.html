@@ -11,7 +11,7 @@
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   :root{
-    --bg:#0d0f13;--card:#151921;--border:#1e2535;
+    --bg:#0d0f13;--card:#151921;--border:#1e2535;--border-light:#2e3750;
     --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
     --teal:#5e9e8c;--green:#4ade80;--red:#f87171;
   }
@@ -23,8 +23,9 @@
   .top-right{text-align:right;}
   .top-right .meta{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
   .subtitle{font-size:12px;color:var(--text-muted);margin-bottom:24px;}
-  .back-link{font-size:13px;color:var(--text-muted);display:inline-flex;align-items:center;gap:6px;margin-bottom:16px;}
-  .back-link:hover{color:var(--accent);}
+  .back-link{font-size:12px;color:var(--text-dim);display:inline-flex;align-items:center;gap:8px;
+    padding:8px 12px;border-radius:6px;border:1px solid var(--border);text-decoration:none;transition:all .15s;margin-bottom:16px;}
+  .back-link:hover{border-color:var(--border-light);color:var(--text-muted);}
 
   /* Download PDF button */
   .pdf-btn{

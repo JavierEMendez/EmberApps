@@ -355,13 +355,6 @@ tr.pod-inactive input { pointer-events: none; }
       Dashboard
     </div>
 
-    {% if is_admin %}
-    <div class="sidebar-item" onclick="openAdmin()" id="nav-admin" style="margin-top:2px">
-      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2m22-4l-4.5 4.5M18 13l4.5-4.5M15 3a4 4 0 110 8 4 4 0 010-8z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      Admin / Users
-    </div>
-    {% endif %}
-
     <div class="sidebar-section">Projects</div>
     <div class="proj-list" id="proj-list"></div>
     <div class="new-proj-btn" onclick="openNewProject()">
