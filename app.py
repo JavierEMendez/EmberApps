@@ -598,7 +598,10 @@ def returns_report():
     cur.close(); conn.close()
     data = row["data"] if row else None
     uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
-    return render_template("returns.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"))
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    if session.get("is_admin"):
+        pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    return render_template("returns.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"), page_access=pa)
 
 @app.route("/loans")
 @login_required
@@ -613,7 +616,10 @@ def loans_report():
     cur.close(); conn.close()
     data = row["data"] if row else None
     uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
-    return render_template("loans.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"))
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    if session.get("is_admin"):
+        pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    return render_template("loans.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"), page_access=pa)
 
 @app.route("/operations")
 @login_required
@@ -628,7 +634,10 @@ def operations_report():
     cur.close(); conn.close()
     data = row["data"] if row else None
     uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
-    return render_template("operations.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"))
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    if session.get("is_admin"):
+        pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    return render_template("operations.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"), page_access=pa)
 
 if __name__ == "__main__":
     init_db()

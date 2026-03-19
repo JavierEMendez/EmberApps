@@ -15,7 +15,21 @@
     --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
     --teal:#5e9e8c;--green:#4ade80;--red:#f87171;
   }
-  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;padding:24px 32px;}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden;padding:0;}
+  #app{display:flex;height:100vh;overflow:hidden}
+  #sidebar{width:240px;background:#141820;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+  #main-content{flex:1;overflow-y:auto;padding:24px 32px}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--border)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  .logo-sub{font-size:10px;color:var(--text-dim);letter-spacing:0.12em;text-transform:uppercase;margin-top:8px;text-align:center}
+  .sidebar-section{padding:8px 10px 4px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:8px}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:13px;text-decoration:none}
+  .sidebar-item:hover{background:rgba(200,169,110,.06);color:var(--text);text-decoration:none}
+  .sidebar-item.active{background:rgba(200,169,110,.12);color:var(--accent)}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1}
+  .nav-link{display:flex;align-items:center;gap:10px;padding:7px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:12px;text-decoration:none}
+  .nav-link:hover{background:rgba(200,169,110,.04);color:var(--text);text-decoration:none}
   a{color:var(--accent);text-decoration:none;}
   a:hover{text-decoration:underline;}
   .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px;}
@@ -23,9 +37,6 @@
   .top-right{text-align:right;}
   .top-right .meta{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
   .subtitle{font-size:12px;color:var(--text-muted);margin-bottom:24px;}
-  .back-link{font-size:12px;color:var(--text-dim);display:inline-flex;align-items:center;gap:8px;
-    padding:8px 12px;border-radius:6px;border:1px solid var(--border);text-decoration:none;transition:all .15s;margin-bottom:16px;}
-  .back-link:hover{border-color:var(--border-light);color:var(--text-muted);}
 
   /* Download PDF button */
   .pdf-btn{
@@ -190,9 +201,10 @@
 
   /* ── Print ── */
   @media print{
-    body{background:#fff;color:#000;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    body{background:#fff;color:#000;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    body,#app,#main-content{display:block;height:auto;overflow:visible;padding:8px;}
     @page{size:landscape letter;margin:0.4in;}
-    .back-link,.dashboard-grid,.pdf-btn{display:none;}
+    #sidebar,.dashboard-grid,.pdf-btn{display:none;}
     .project-card,.summary-card{break-inside:avoid;border:1px solid #ccc;margin-bottom:8px;}
     .card-body.collapsed{display:block!important;}
     table{font-size:9px;min-width:unset;}
@@ -211,10 +223,61 @@
 </style>
 </head>
 <body>
-<a href="/home" class="back-link">
-  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 12H5m7-7l-7 7 7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-  Back to Home
-</a>
+<div id="app">
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img">
+      <div class="logo-sub">Project Returns</div>
+    </div>
+
+    <div class="sidebar-section">Ember Apps</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans & Debt
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+
+    {% if data %}
+    <div class="sidebar-section">Projects</div>
+    {% for project in data.projects %}
+    <a href="#project-{{ loop.index }}" class="nav-link" onclick="event.preventDefault();document.getElementById('project-{{ loop.index }}').scrollIntoView({behavior:'smooth',block:'start'})">
+      {{ project.name }}
+    </a>
+    {% endfor %}
+    <a href="#portfolio-summary" class="nav-link" onclick="event.preventDefault();document.getElementById('portfolio-summary').scrollIntoView({behavior:'smooth',block:'start'})">
+      Portfolio Summary
+    </a>
+    {% endif %}
+
+    <div style="flex:1"></div>
+    <div style="padding:8px 10px 14px">
+      <a href="/home" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);font-size:12px;text-decoration:none;transition:all .15s;justify-content:center" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1m-2 0h2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Back to Home
+      </a>
+    </div>
+  </nav>
+
+  <div id="main-content">
 <div id="report-content">
 <div class="top-bar">
   <h1>Consolidated Ember Project Returns</h1>
@@ -374,7 +437,7 @@
 
 {# ── Summary Section ── #}
 {% if data.summary %}
-<div class="summary-card">
+<div class="summary-card" id="portfolio-summary">
   <div class="card-header" onclick="toggleCard(this)">
     <div class="card-left">
       <span class="card-title">Portfolio Summary</span>
@@ -552,5 +615,7 @@ async function downloadPDF(){
   btn.innerHTML='<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Download PDF';
 }
 </script>
+</div>{# end main-content #}
+</div>{# end app #}
 </body>
 </html>
