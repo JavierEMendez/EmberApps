@@ -143,7 +143,10 @@ def index():
     pa = session.get("page_access") or {}
     if not session.get("is_admin") and not pa.get("mpc_underwriting", True):
         return redirect(url_for("home"))
-    return render_template("app.html", username=session.get("username"), is_admin=session.get("is_admin"))
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    if session.get("is_admin"):
+        pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+    return render_template("app.html", username=session.get("username"), is_admin=session.get("is_admin"), page_access=pa)
 
 # ─── PROJECT API ─────────────────────────────────────────────────────────────
 @app.route("/api/projects", methods=["GET"])
