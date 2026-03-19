@@ -15,8 +15,10 @@
   }
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;
     min-height:100vh;display:flex;align-items:center;justify-content:center;}
-  .home-wrap{width:100%;max-width:720px;padding:24px;text-align:center;}
-  .app-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .home-wrap{width:100%;max-width:960px;padding:24px;text-align:center;}
+  .app-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  .app-grid .bottom-row{display:contents;}
+  @media(max-width:700px){.app-grid{grid-template-columns:1fr;}}
   .logo-area{margin-bottom:48px;}
   .logo-area img{height:40px;margin-bottom:16px;}
   .logo-area .tagline{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:15px;
@@ -88,6 +90,7 @@
   <div class="welcome">Welcome back, <strong>{{ username }}</strong></div>
 
   <div class="app-grid">
+    <!-- Top row: 3 cards -->
     {% if page_access.get('mpc_underwriting', true) %}
     <a href="/" style="text-decoration:none">
       <div class="app-card" style="height:100%">
@@ -114,8 +117,17 @@
     </a>
     {% endif %}
 
+    <div class="app-card" style="opacity:.55;cursor:default;">
+      <div class="app-title">Community Sales Tracker</div>
+      <div class="app-desc">See home and lot sales data for active Ember MPCs.</div>
+      <div class="app-arrow" style="color:var(--text-dim)">
+        Coming Soon
+      </div>
+    </div>
+
+    <!-- Bottom row: 2 cards, centered -->
     {% if page_access.get('loans', true) %}
-    <a href="/loans" style="text-decoration:none">
+    <a href="/loans" style="text-decoration:none;grid-column:1/2">
       <div class="app-card" style="height:100%">
         <div class="app-title">Loan Capacities and Debt Schedules</div>
         <div class="app-desc">See all current active Ember loans and their respective KPIs.</div>
@@ -139,14 +151,6 @@
       </div>
     </a>
     {% endif %}
-
-    <div class="app-card" style="opacity:.55;cursor:default;">
-      <div class="app-title">Project Sales</div>
-      <div class="app-desc">See home and lot sales data for active Ember MPCs.</div>
-      <div class="app-arrow" style="color:var(--text-dim)">
-        Coming Soon
-      </div>
-    </div>
   </div>
 
   {% if is_admin %}
