@@ -2,8 +2,9 @@
 excel_import.py — reads an Ember underwriting Excel workbook and returns
 an inputs dict that can be saved directly to a project.
 
-This is the exact reverse of excel_export.py: every cell address read here
-matches the cell address written in the export.
+Supports both the original template layout (exported by excel_export.py)
+and the newer acquisitions model which has an extra header row in Cost Inputs,
+shifting all data rows down by 1.
 """
 import io
 from typing import Any
@@ -33,6 +34,17 @@ def _int(val: Any, default=0) -> int:
     return int(_n(val, default))
 
 
+def _is_numeric(val: Any) -> bool:
+    """Check if a value is numeric (not a string header)."""
+    if val is None:
+        return True  # empty cell is fine
+    try:
+        float(val)
+        return True
+    except (TypeError, ValueError):
+        return False
+
+
 # ── main entry point ─────────────────────────────────────────────────────
 
 def import_excel(file_bytes: bytes) -> dict:
@@ -52,7 +64,6 @@ def import_excel(file_bytes: bytes) -> dict:
     ri = _find_sheet(wb, "revenue")
 
     if not ti or not ci or not ri:
-        found = [s for s in [ti, ci, ri] if s]
         missing = []
         if not ti:
             missing.append("Tract Inputs")
@@ -78,7 +89,7 @@ def import_excel(file_bytes: bytes) -> dict:
     for row in range(19, 27):
         plants.append({
             "type": _s(ti.cell(row=row, column=2).value) or "None",
-            "notes": "",
+            "notes": _s(ti.cell(row=row, column=4).value),
         })
     inputs["plants"] = plants
 
@@ -126,6 +137,12 @@ def import_excel(file_bytes: bytes) -> dict:
     inputs["residential_pod_acres"] = _n(ti["B77"].value)
 
     # ── COST INPUTS ──────────────────────────────────────────────────
+    # Auto-detect layout: in the original template, D25 is a number (plant
+    # base cost). In the newer model, D25 is a header string like "Base Cost ($)"
+    # and data starts one row later. Same +1 shift applies throughout.
+    _v25 = ci.cell(row=25, column=4).value  # D25
+    off = 1 if not _is_numeric(_v25) else 0  # offset for new model
+
     inputs["default_other_pct"] = _n(ci["B5"].value, 0.17)
     inputs["sectional_other_pct"] = _n(ci["B6"].value, 0.17)
     inputs["landscaping_other_pct"] = _n(ci["B7"].value, 0.12)
@@ -136,18 +153,21 @@ def import_excel(file_bytes: bytes) -> dict:
     inputs["cost_per_streetlight"] = _n(ci["B12"].value, 1700)
     inputs["default_start_month"] = _int(ci["B13"].value, 1)
 
-    # Takedowns (cols B/C/D, rows 17-18)
+    # Takedowns (cols B/C/D — period at row 17, pct at row 18+off)
+    # In the new model, row 18 = acreage, row 19 = pct (off=1)
+    # In the old template, row 18 = pct directly (off=0)
+    td_pct_row = 18 + off
     takedowns = []
     for col_letter in ["B", "C", "D"]:
         takedowns.append({
             "period": _int(ci[f"{col_letter}17"].value),
-            "pct": _n(ci[f"{col_letter}18"].value),
+            "pct": _n(ci.cell(row=td_pct_row, column=ord(col_letter) - 64).value),
         })
     inputs["takedowns"] = takedowns
 
-    # Plant costs (rows 25-32)
+    # Plant costs (rows 25-32 + off)
     plant_costs = []
-    for row in range(25, 33):
+    for row in range(25 + off, 33 + off):
         plant_costs.append({
             "base_cost": _n(ci.cell(row=row, column=4).value),       # D
             "other_pct": _n(ci.cell(row=row, column=5).value, 0.17), # E
@@ -158,9 +178,9 @@ def import_excel(file_bytes: bytes) -> dict:
         })
     inputs["plant_costs"] = plant_costs
 
-    # Amenity costs (rows 36-41)
+    # Amenity costs (rows 36-41 + off)
     amenity_costs = []
-    for row in range(36, 42):
+    for row in range(36 + off, 42 + off):
         amenity_costs.append({
             "base_cost": _n(ci.cell(row=row, column=4).value),       # D
             "other_pct": _n(ci.cell(row=row, column=5).value, 0.17), # E
@@ -168,9 +188,9 @@ def import_excel(file_bytes: bytes) -> dict:
         })
     inputs["amenity_costs"] = amenity_costs
 
-    # Detention costs (rows 45-50)
+    # Detention costs (rows 45-50 + off)
     det_costs = []
-    for row in range(45, 51):
+    for row in range(45 + off, 51 + off):
         det_costs.append({
             "other_pct": _n(ci.cell(row=row, column=4).value, 0.17), # D
             "start_month": _int(ci.cell(row=row, column=6).value, 1),# F
@@ -178,9 +198,9 @@ def import_excel(file_bytes: bytes) -> dict:
         })
     inputs["det_costs"] = det_costs
 
-    # Other costs (rows 54-59)
+    # Other costs (rows 54-59 + off)
     other_costs = []
-    for row in range(54, 60):
+    for row in range(54 + off, 60 + off):
         other_costs.append({
             "base_cost": _n(ci.cell(row=row, column=4).value),       # D
             "other_pct": _n(ci.cell(row=row, column=5).value, 0.17), # E
@@ -189,9 +209,9 @@ def import_excel(file_bytes: bytes) -> dict:
         })
     inputs["other_costs"] = other_costs
 
-    # Road costs (rows 63-68)
+    # Road costs (rows 63-68 + off)
     road_costs = []
-    for row in range(63, 69):
+    for row in range(63 + off, 69 + off):
         road_costs.append({
             "wsd_per_lf": _n(ci.cell(row=row, column=4).value),       # D
             "paving_per_lf": _n(ci.cell(row=row, column=5).value),    # E
@@ -202,10 +222,10 @@ def import_excel(file_bytes: bytes) -> dict:
         })
     inputs["road_costs"] = road_costs
 
-    # Lot sizes (rows 72-87, 16 sizes from 25FF to 100FF)
+    # Lot sizes (rows 72-87 + off, 16 sizes from 25FF to 100FF)
     lot_sizes = []
     ff_values = [25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100]
-    for idx, row in enumerate(range(72, 88)):
+    for idx, row in enumerate(range(72 + off, 88 + off)):
         ls = {
             "front_footage": ff_values[idx],
             "on": _int(ci.cell(row=row, column=2).value),             # B
@@ -222,16 +242,16 @@ def import_excel(file_bytes: bytes) -> dict:
         }
         lot_sizes.append(ls)
 
-    # Overhead
-    inputs["prof_svc_pct"] = _n(ci["B95"].value, 0.015)
-    inputs["dmf_pct"] = _n(ci["B99"].value, 0.025)
-    inputs["personnel_monthly"] = _n(ci["C103"].value, 50000)
-    inputs["marketing_personnel_monthly"] = _n(ci["C104"].value, 15000)
-    inputs["legal_monthly"] = _n(ci["C108"].value, 10000)
-    inputs["mud_monthly"] = _n(ci["C112"].value, 35000)
-    inputs["mud_pct"] = _n(ci["D112"].value, 0.2)
-    inputs["insurance_monthly"] = _n(ci["C116"].value, 10000)
-    inputs["bookkeeping_monthly"] = _n(ci["C120"].value, 10000)
+    # Overhead (rows shifted by off)
+    inputs["prof_svc_pct"] = _n(ci.cell(row=95 + off, column=2).value, 0.015)      # B95/96
+    inputs["dmf_pct"] = _n(ci.cell(row=99 + off, column=2).value, 0.025)           # B99/100
+    inputs["personnel_monthly"] = _n(ci.cell(row=103 + off, column=3).value, 50000) # C103/104
+    inputs["marketing_personnel_monthly"] = _n(ci.cell(row=104 + off, column=3).value, 15000) # C104/105
+    inputs["legal_monthly"] = _n(ci.cell(row=108 + off, column=3).value, 10000)     # C108/109
+    inputs["mud_monthly"] = _n(ci.cell(row=112 + off, column=3).value, 35000)       # C112/113
+    inputs["mud_pct"] = _n(ci.cell(row=112 + off, column=4).value, 0.2)            # D112/113
+    inputs["insurance_monthly"] = _n(ci.cell(row=116 + off, column=3).value, 10000) # C116/117
+    inputs["bookkeeping_monthly"] = _n(ci.cell(row=120 + off, column=3).value, 10000) # C120/121
 
     # ── REVENUE INPUTS ───────────────────────────────────────────────
     inputs["timing_method"] = _s(ri["B2"].value) or "50/25/25"
@@ -239,6 +259,11 @@ def import_excel(file_bytes: bytes) -> dict:
     inputs["bem_pct"] = _n(ri["B4"].value, 0.18)
     inputs["brokerage_fees"] = _n(ri["B5"].value, 0.03)
     inputs["lot_closing_costs"] = _n(ri["B6"].value, 0.015)
+
+    # Take weights (new model has these at B7/B8/B9)
+    take1 = _n(ri["B7"].value)
+    take2 = _n(ri["B8"].value)
+    take3 = _n(ri["B9"].value)
 
     # $/FF by year (rows 13-23)
     price_per_ff = {}
@@ -251,7 +276,9 @@ def import_excel(file_bytes: bytes) -> dict:
     for idx, row in enumerate(range(27, 43)):
         if idx < len(lot_sizes):
             lot_sizes[idx]["build_time"] = _int(ri.cell(row=row, column=2).value)   # B
-            lot_sizes[idx]["home_price"] = _n(ri.cell(row=row, column=3).value) or lot_sizes[idx].get("home_price", 0)  # C (override if present)
+            hp = _n(ri.cell(row=row, column=3).value)
+            if hp:
+                lot_sizes[idx]["home_price"] = hp  # C (override if present)
             lot_sizes[idx]["av_pct"] = _n(ri.cell(row=row, column=4).value)          # D
             lot_sizes[idx]["premium_per_ff"] = _n(ri.cell(row=row, column=6).value)  # F
             lot_sizes[idx]["escalation"] = _n(ri.cell(row=row, column=7).value)      # G
@@ -309,9 +336,9 @@ def import_excel(file_bytes: bytes) -> dict:
     }
 
     # Derived fields the app expects
-    inputs["take1_pct"] = takedowns[0]["pct"] if takedowns else 0.5
-    inputs["take2_pct"] = takedowns[1]["pct"] if len(takedowns) > 1 else 0.25
-    inputs["take3_pct"] = takedowns[2]["pct"] if len(takedowns) > 2 else 0.25
+    inputs["take1_pct"] = take1 if take1 else (takedowns[0]["pct"] if takedowns else 0.5)
+    inputs["take2_pct"] = take2 if take2 else (takedowns[1]["pct"] if len(takedowns) > 1 else 0.25)
+    inputs["take3_pct"] = take3 if take3 else (takedowns[2]["pct"] if len(takedowns) > 2 else 0.25)
     inputs["marketing_pct"] = 0.02  # not in Excel, use default
 
     wb.close()
