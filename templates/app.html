@@ -462,6 +462,9 @@ tr.pod-inactive input { pointer-events: none; }
       <div id="view-dashboard" style="display:none;padding:28px 32px">
         <div class="panel-title">Project Portfolio</div>
         <div class="panel-sub">Overview of all saved underwriting models</div>
+        <div id="portfolio-kpis" style="display:none;margin-bottom:24px">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px"></div>
+        </div>
         <div id="dashboard-cards" class="kpi-grid"></div>
 
         <!-- Portfolio Database -->
@@ -1212,7 +1215,49 @@ async function loadPortfolio() {
     const data = await res.json();
     _portfolioData = data;
     renderPortfolioTable(data);
+    renderPortfolioKPIs(data);
   } catch(e) { console.error('Portfolio load error', e); }
+}
+
+function renderPortfolioKPIs(data) {
+  const wrap = document.getElementById('portfolio-kpis');
+  const grid = wrap.querySelector('div');
+  if (!data.length) { wrap.style.display = 'none'; return; }
+
+  const projects = data.filter(p => p.outputs && Object.keys(p.outputs).length);
+  if (!projects.length) { wrap.style.display = 'none'; return; }
+
+  const n = projects.length;
+  const sum = (key) => projects.reduce((s, p) => s + (parseFloat(p.outputs[key]) || 0), 0);
+  const wAvg = (key) => {
+    const totalAc = sum('gross_acreage');
+    if (totalAc <= 0) return projects.reduce((s, p) => s + (parseFloat(p.outputs[key]) || 0), 0) / n;
+    return projects.reduce((s, p) => s + (parseFloat(p.outputs[key]) || 0) * (parseFloat(p.outputs.gross_acreage) || 0), 0) / totalAc;
+  };
+
+  const totalGross = sum('gross_acreage');
+  const totalDev = sum('dev_acres');
+  const avgDevPct = totalGross > 0 ? totalDev / totalGross : 0;
+  const totalLots = sum('total_lots');
+  const totalLandCost = sum('cost_land');
+
+  const kpis = [
+    { label: 'Total Projects',     value: n.toString(),                                           color: 'var(--text)' },
+    { label: 'Acres Evaluated',    value: totalGross.toLocaleString('en-US',{maximumFractionDigits:0}), color: 'var(--text)' },
+    { label: 'Total Lots',         value: totalLots.toLocaleString('en-US',{maximumFractionDigits:0}),  color: 'var(--text)' },
+    { label: 'Total Land Cost',    value: '$' + totalLandCost.toLocaleString('en-US',{maximumFractionDigits:0}), color: 'var(--text)' },
+    { label: 'Average IRR',        value: (wAvg('unlevered_irr') * 100).toFixed(1) + '%',         color: 'var(--success)' },
+    { label: 'Avg Gross Margin',   value: (wAvg('gross_margin_pct') * 100).toFixed(1) + '%',      color: 'var(--accent2)' },
+    { label: 'Avg Developable %',  value: (avgDevPct * 100).toFixed(1) + '%',                     color: 'var(--accent)' },
+  ];
+
+  grid.innerHTML = kpis.map(k => `
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:14px 16px;border-left:3px solid var(--accent)">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:6px;font-weight:500">${k.label}</div>
+      <div style="font-size:20px;font-weight:600;color:${k.color};font-variant-numeric:tabular-nums">${k.value}</div>
+    </div>
+  `).join('');
+  wrap.style.display = 'block';
 }
 
 function renderPortfolioTable(data) {
