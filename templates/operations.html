@@ -176,7 +176,7 @@
       {% for row in data.yearly_rollup.rows %}
       <tr>
         <td class="label">{{ row.label }}</td>
-        {% for v in row.values %}
+        {% for v in row['values'] %}
         <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
         {% endfor %}
       </tr>
@@ -214,7 +214,7 @@
       {% for row in data.monthly.rows %}
       <tr>
         <td class="label">{{ row.project }} — {{ row.category }}</td>
-        {% for v in row.values %}
+        {% for v in row['values'] %}
         <td class="month-col" data-date="{{ data.monthly.dates[loop.index0] }}">{{ "${:,.0f}".format(v) if v else "" }}</td>
         {% endfor %}
       </tr>
@@ -245,7 +245,7 @@
       {% for row in data.next_12_months.rows %}
       <tr>
         <td class="label">{{ row.label }}</td>
-        {% for v in row.values %}
+        {% for v in row['values'] %}
         <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
         {% endfor %}
       </tr>
@@ -276,7 +276,7 @@
       {% for row in data.quarterly_rollup.rows %}
       <tr>
         <td class="label">{{ row.label }}</td>
-        {% for v in row.values %}
+        {% for v in row['values'] %}
         <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
         {% endfor %}
       </tr>
