@@ -479,6 +479,35 @@ def restore_project():
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "id": new_id})
 
+@app.route("/api/projects/import_excel", methods=["POST"])
+@login_required
+def import_excel_project():
+    """Upload an Ember underwriting Excel and create a new project from it."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file provided"}), 400
+    try:
+        from excel_import import import_excel
+        file_bytes = f.read()
+        inputs = import_excel(file_bytes)
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse Excel: {e}"}), 400
+    try:
+        outputs = calculate(inputs)
+    except Exception:
+        outputs = {}
+    name = inputs.get("project_name", "Imported Project")
+    address = inputs.get("address", "")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO projects (name, address, created_by, inputs, outputs) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (name, address, session["user_id"], json.dumps(inputs), json.dumps(outputs))
+    )
+    pid = cur.fetchone()["id"]
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "id": pid, "name": name})
+
 # ─── DASHBOARD REPORTS ────────────────────────────────────────────────────────
 @app.route("/api/upload-dashboard", methods=["POST"])
 @login_required

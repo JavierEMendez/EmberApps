@@ -428,6 +428,8 @@ tr.pod-inactive input { pointer-events: none; }
         <button class="btn accent" onclick="openNewProject()" style="margin-top:8px">+ New Project</button>
         <button class="btn" onclick="document.getElementById('restore-file-input').click()" style="margin-top:4px;width:100%;font-size:11px;opacity:0.7">⬆ Restore from Backup</button>
         <input type="file" id="restore-file-input" accept=".json" style="display:none" onchange="restoreFromFile(this.files[0]); this.value=''">
+        <button class="btn" onclick="document.getElementById('import-excel-input').click()" style="margin-top:4px;width:100%;font-size:11px;opacity:0.7">📊 Import from Excel</button>
+        <input type="file" id="import-excel-input" accept=".xlsx,.xls" style="display:none" onchange="importFromExcel(this.files[0]); this.value=''">
       </div>
 
       <!-- DASHBOARD (non-project) -->
@@ -1374,6 +1376,26 @@ async function restoreFromFile(file) {
     loadProject(result.id);
   } else {
     toast('Restore failed: ' + (result.error || 'unknown'), 'error');
+  }
+}
+
+async function importFromExcel(file) {
+  if (!file) return;
+  if (!confirm('Import project from "' + file.name + '"? This creates a NEW project from the Excel workbook.')) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/projects/import_excel', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      toast('Project "' + data.name + '" imported!', 'success');
+      await loadProjectList();
+      selectProject(data.id);
+    } else {
+      toast('Import failed: ' + (data.error || 'unknown error'), 'error');
+    }
+  } catch (e) {
+    toast('Import failed: ' + e.message, 'error');
   }
 }
 
