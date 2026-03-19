@@ -407,6 +407,11 @@ tr.pod-inactive input { pointer-events: none; }
         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Download PDF
       </button>
+      <button class="header-btn" id="btn-import" onclick="document.getElementById('import-project-input').click()" style="display:none">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Import Excel
+      </button>
+      <input type="file" id="import-project-input" accept=".xlsx,.xls" style="display:none" onchange="importIntoProject(this.files[0]); this.value=''">
     </div>
 
     <!-- TAB BAR (hidden until project selected) -->
@@ -425,11 +430,13 @@ tr.pod-inactive input { pointer-events: none; }
         <div class="empty-icon">🏗</div>
         <div class="empty-title">Ember Tract Underwriting</div>
         <div class="empty-sub">Select an existing project from the sidebar, or create a new one to begin underwriting a land acquisition.</div>
-        <button class="btn accent" onclick="openNewProject()" style="margin-top:8px">+ New Project</button>
+        <div style="display:flex;gap:8px;margin-top:8px;justify-content:center">
+          <button class="btn accent" onclick="openNewProject()">+ New Project</button>
+          <button class="btn accent" onclick="document.getElementById('import-excel-input').click()">📊 Import from Excel</button>
+        </div>
+        <input type="file" id="import-excel-input" accept=".xlsx,.xls" style="display:none" onchange="importFromExcel(this.files[0]); this.value=''">
         <button class="btn" onclick="document.getElementById('restore-file-input').click()" style="margin-top:4px;width:100%;font-size:11px;opacity:0.7">⬆ Restore from Backup</button>
         <input type="file" id="restore-file-input" accept=".json" style="display:none" onchange="restoreFromFile(this.files[0]); this.value=''">
-        <button class="btn" onclick="document.getElementById('import-excel-input').click()" style="margin-top:4px;width:100%;font-size:11px;opacity:0.7">📊 Import from Excel</button>
-        <input type="file" id="import-excel-input" accept=".xlsx,.xls" style="display:none" onchange="importFromExcel(this.files[0]); this.value=''">
       </div>
 
       <!-- DASHBOARD (non-project) -->
@@ -1069,6 +1076,7 @@ async function selectProject(id) {
   document.getElementById('btn-save').style.display = 'flex';
   document.getElementById('btn-download').style.display = 'flex';
   document.getElementById('btn-pdf').style.display = 'flex';
+  document.getElementById('btn-import').style.display = 'flex';
   document.getElementById('btn-backup').style.display = 'flex';
   document.getElementById('btn-refresh-outputs').style.display = 'flex';
   document.getElementById('save-indicator').style.display = 'flex';
@@ -1090,6 +1098,7 @@ function navTo(view) {
     document.getElementById('btn-save').style.display = 'none';
     document.getElementById('btn-download').style.display = 'none';
     document.getElementById('btn-pdf').style.display = 'none';
+    document.getElementById('btn-import').style.display = 'none';
     document.getElementById('btn-backup').style.display = 'none';
     document.getElementById('btn-refresh-outputs').style.display = 'none';
     document.getElementById('save-indicator').style.display = 'none';
@@ -1308,6 +1317,7 @@ async function deleteProject(id, e) {
     document.getElementById('btn-save').style.display = 'none';
     document.getElementById('btn-download').style.display = 'none';
     document.getElementById('btn-pdf').style.display = 'none';
+    document.getElementById('btn-import').style.display = 'none';
     document.getElementById('btn-backup').style.display = 'none';
     document.getElementById('btn-refresh-outputs').style.display = 'none';
     document.getElementById('save-indicator').style.display = 'none';
@@ -1393,6 +1403,34 @@ async function importFromExcel(file) {
       selectProject(data.id);
     } else {
       toast('Import failed: ' + (data.error || 'unknown error'), 'error');
+    }
+  } catch (e) {
+    toast('Import failed: ' + e.message, 'error');
+  }
+}
+
+async function importIntoProject(file) {
+  if (!file || !currentProject) return;
+  if (!confirm('Import inputs from "' + file.name + '" into this project? This will overwrite all current inputs.')) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch('/api/parse_excel', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok || !data.ok) { toast('Import failed: ' + (data.error || 'unknown'), 'error'); return; }
+    // Save parsed inputs to current project
+    const saveRes = await fetch('/api/projects/' + currentProject, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ inputs: data.inputs })
+    });
+    const saveData = await saveRes.json();
+    if (saveRes.ok && saveData.ok) {
+      toast('Inputs imported from Excel!', 'success');
+      await loadProjectList();
+      await selectProject(currentProject);
+    } else {
+      toast('Save failed: ' + (saveData.error || 'unknown'), 'error');
     }
   } catch (e) {
     toast('Import failed: ' + e.message, 'error');

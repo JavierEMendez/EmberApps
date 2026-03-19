@@ -508,6 +508,21 @@ def import_excel_project():
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True, "id": pid, "name": name})
 
+@app.route("/api/parse_excel", methods=["POST"])
+@login_required
+def parse_excel():
+    """Parse an Ember underwriting Excel and return the inputs dict (no project created)."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file provided"}), 400
+    try:
+        from excel_import import import_excel
+        file_bytes = f.read()
+        inputs = import_excel(file_bytes)
+    except Exception as e:
+        return jsonify({"error": f"Failed to parse Excel: {e}"}), 400
+    return jsonify({"ok": True, "inputs": inputs})
+
 # ─── DASHBOARD REPORTS ────────────────────────────────────────────────────────
 @app.route("/api/upload-dashboard", methods=["POST"])
 @login_required
