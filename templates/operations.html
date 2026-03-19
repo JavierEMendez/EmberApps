@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ember Operating Revenues</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f13;--card:#151921;--border:#1e2535;--border-light:#2e3750;
+    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+    --teal:#5e9e8c;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;min-height:100vh;padding:24px 32px;}
+  a{color:var(--accent);text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  .top-bar{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:8px;}
+  .top-bar h1{font-family:'Instrument Serif',serif;font-size:24px;color:var(--text);}
+  .top-right{text-align:right;}
+  .top-right .meta{font-size:12px;color:var(--text-muted);margin-bottom:6px;}
+  .back-link{font-size:12px;color:var(--text-dim);display:inline-flex;align-items:center;gap:8px;
+    padding:8px 12px;border-radius:6px;border:1px solid var(--border);text-decoration:none;transition:all .15s;margin-bottom:16px;}
+  .back-link:hover{border-color:var(--border-light);color:var(--text-muted);}
+
+  /* Section titles */
+  .section-title{font-family:'Instrument Serif',serif;font-size:18px;color:var(--accent);margin:28px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+
+  /* Download PDF button */
+  .pdf-btn{
+    display:inline-flex;align-items:center;gap:6px;
+    background:rgba(200,169,110,0.1);border:1px solid rgba(200,169,110,0.3);
+    color:var(--accent);padding:6px 14px;border-radius:6px;font-size:12px;
+    font-family:'DM Sans',sans-serif;font-weight:600;cursor:pointer;transition:all .15s;
+  }
+  .pdf-btn:hover{background:rgba(200,169,110,0.2);border-color:var(--accent);}
+  .pdf-btn:disabled{opacity:.5;cursor:wait;}
+
+  /* KPI Cards */
+  .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px;}
+  @media(max-width:900px){.kpi-grid{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:500px){.kpi-grid{grid-template-columns:1fr;}}
+  .kpi-card{
+    background:var(--card);border:1px solid var(--border);border-radius:8px;
+    padding:14px 16px;border-left:3px solid var(--accent);
+  }
+  .kpi-label{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin-bottom:6px;font-weight:500;}
+  .kpi-value{font-size:20px;font-weight:600;color:var(--accent);}
+
+  /* Tables */
+  .report-table-wrap{overflow-x:auto;margin-bottom:24px;background:var(--card);border:1px solid var(--border);border-radius:8px;}
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th{background:var(--card);color:var(--text-muted);font-weight:500;text-transform:uppercase;font-size:10px;letter-spacing:.05em;}
+  th,td{padding:5px 8px;border:1px solid var(--border);white-space:nowrap;}
+  td{color:var(--text);text-align:right;}
+  td.label{text-align:left;font-weight:500;min-width:180px;}
+  tr:hover td{background:rgba(200,169,110,.04);}
+  .totals-row td{font-weight:700;border-top:2px solid var(--accent);background:#161b24;}
+
+  /* Sticky first column */
+  td.label,th.sticky-col{position:sticky;left:0;z-index:1;background:var(--card);}
+  th.sticky-col{z-index:3;}
+  .totals-row td.label{background:#161b24;}
+
+  /* Filter bar */
+  .filter-bar{display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap;}
+  .filter-bar label{font-size:12px;color:var(--text-muted);}
+  .filter-bar input[type="date"]{
+    background:var(--card);border:1px solid var(--border);color:var(--text);
+    padding:4px 8px;border-radius:4px;font-size:12px;font-family:'DM Sans',sans-serif;
+  }
+  .filter-bar input[type="date"]:focus{outline:none;border-color:var(--accent);}
+
+  .empty-state{text-align:center;padding:80px 20px;color:var(--text-muted);}
+  .empty-state h2{font-family:'Instrument Serif',serif;font-size:22px;color:var(--text);margin-bottom:8px;}
+
+  /* ── PDF Light-Mode Render ── */
+  #pdf-render{
+    position:fixed;left:0;top:0;z-index:99999;
+    width:1056px;font-family:'DM Sans',sans-serif;font-size:9px;
+    background:#fff;color:#1a1a1a;padding:0;overflow:auto;
+  }
+  #pdf-render *{color:#1a1a1a;background-color:transparent;}
+  #pdf-render{background:#fff!important;}
+  #pdf-render .pdf-page{
+    width:1056px;min-height:816px;
+    padding:28px 32px;box-sizing:border-box;background:#fff!important;
+    page-break-after:always;
+  }
+  #pdf-render .pdf-page:last-child{page-break-after:auto;}
+  #pdf-render .pdf-header{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:4px;}
+  #pdf-render .pdf-header h1{font-family:'Instrument Serif',serif;font-size:16px;color:#1a1a1a;font-weight:600;}
+  #pdf-render .pdf-header .pdf-meta{font-size:9px;color:#666;}
+  #pdf-render .pdf-section-title{
+    font-family:'Instrument Serif',serif;font-size:11px;color:#8a7040;
+    margin:10px 0 4px;padding-bottom:3px;border-bottom:1px solid #ddd;
+  }
+  #pdf-render .pdf-kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:14px;}
+  #pdf-render .pdf-kpi-card{border:1px solid #ddd;border-radius:4px;padding:6px 8px;border-left:2px solid #8a7040;}
+  #pdf-render .pdf-kpi-label{font-size:7px;text-transform:uppercase;letter-spacing:.05em;color:#888;margin-bottom:3px;}
+  #pdf-render .pdf-kpi-value{font-size:13px;font-weight:600;color:#8a7040;}
+  #pdf-render table{border-collapse:collapse;width:100%;font-size:8px;line-height:1.3;}
+  #pdf-render th,#pdf-render td{padding:2px 5px;border:1px solid #e0e0e0;white-space:nowrap;}
+  #pdf-render th{background:#f7f6f3!important;color:#555;font-weight:600;text-align:center;font-size:7.5px;}
+  #pdf-render td{text-align:right;color:#1a1a1a;background:#fff!important;}
+  #pdf-render td.label{text-align:left;font-weight:500;min-width:140px;background:#fff!important;}
+  #pdf-render .totals-row td{font-weight:700;border-top:1.5px solid #8a7040;background:#faf9f6!important;}
+
+  /* ── Print ── */
+  @media print{
+    body{background:#fff;color:#000;padding:8px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    @page{size:landscape letter;margin:0.4in;}
+    .back-link,.pdf-btn{display:none;}
+    .report-table-wrap{border-color:#ccc;}
+    table{font-size:9px;min-width:unset;}
+    th{background:#eee!important;color:#333;}
+    td{color:#000;}
+    td.label,th.sticky-col{position:static;}
+    .section-title{color:#333;border-bottom-color:#999;}
+    .totals-row td{background:#f5f5f5!important;}
+    .kpi-card{border-color:#ccc;border-left-color:#8a7040;}
+    .kpi-label{color:#666;}
+    .kpi-value{color:#333;}
+  }
+</style>
+</head>
+<body>
+<a href="/home" class="back-link">
+  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 12H5m7-7l-7 7 7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  Back to Home
+</a>
+
+<div class="top-bar">
+  <h1>Ember Operating Revenues</h1>
+  <div class="top-right">
+    <div class="meta">
+      {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
+    </div>
+    {% if data %}
+    <button class="pdf-btn" onclick="downloadOperationsPDF()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Download PDF
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{% if data %}
+
+{# ── KPI Cards ── #}
+<div class="kpi-grid">
+  {% for kpi in data.kpis %}
+  <div class="kpi-card">
+    <div class="kpi-label">{{ kpi.label }}</div>
+    <div class="kpi-value">${{ "{:,.0f}".format(kpi.value) }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ── Annual Revenue Forecast ── #}
+<div class="section-title">Annual Revenue Forecast (Next 5 Years)</div>
+<div class="report-table-wrap">
+  <table id="yearly-table">
+    <thead>
+      <tr>
+        <th class="sticky-col">Revenue Source</th>
+        {% for yr in data.yearly_rollup.years %}
+        <th>{{ yr }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.yearly_rollup.rows %}
+      <tr>
+        <td class="label">{{ row.label }}</td>
+        {% for v in row.values %}
+        <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="totals-row">
+        <td class="label">Total</td>
+        {% for v in data.yearly_rollup.totals %}
+        <td>{{ "${:,.0f}".format(v) }}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# ── Historical Monthly Table ── #}
+<div class="section-title">Monthly Fee Revenue</div>
+<div class="filter-bar">
+  <label for="filter-from">From:</label>
+  <input type="date" id="filter-from" value="2018-11-01">
+  <label for="filter-to">To:</label>
+  <input type="date" id="filter-to">
+  <button class="pdf-btn" onclick="applyMonthlyFilter()" style="font-weight:500;">Apply</button>
+</div>
+<div class="report-table-wrap">
+  <table id="monthly-table">
+    <thead>
+      <tr>
+        <th class="sticky-col">Project / Category</th>
+        {% for d in data.monthly.dates %}
+        <th class="month-col" data-date="{{ d }}">{{ d[5:7] }}/{{ d[2:4] }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.monthly.rows %}
+      <tr>
+        <td class="label">{{ row.project }} — {{ row.category }}</td>
+        {% for v in row.values %}
+        <td class="month-col" data-date="{{ data.monthly.dates[loop.index0] }}">{{ "${:,.0f}".format(v) if v else "" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="totals-row">
+        <td class="label">Total</td>
+        {% for v in data.monthly.totals %}
+        <td class="month-col" data-date="{{ data.monthly.dates[loop.index0] }}">{{ "${:,.0f}".format(v) }}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# ── Next 12 Months Table ── #}
+<div class="section-title">Next 12 Months</div>
+<div class="report-table-wrap">
+  <table id="next12m-table">
+    <thead>
+      <tr>
+        <th class="sticky-col">Revenue Source</th>
+        {% for d in data.next_12_months.dates %}
+        <th>{{ d[5:7] }}/{{ d[2:4] }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.next_12_months.rows %}
+      <tr>
+        <td class="label">{{ row.label }}</td>
+        {% for v in row.values %}
+        <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="totals-row">
+        <td class="label">Total</td>
+        {% for v in data.next_12_months.totals %}
+        <td>{{ "${:,.0f}".format(v) }}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{# ── Next 12 Quarters Table ── #}
+<div class="section-title">Next 12 Quarters</div>
+<div class="report-table-wrap">
+  <table id="quarterly-table">
+    <thead>
+      <tr>
+        <th class="sticky-col">Revenue Source</th>
+        {% for q in data.quarterly_rollup.quarters %}
+        <th>{{ q }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in data.quarterly_rollup.rows %}
+      <tr>
+        <td class="label">{{ row.label }}</td>
+        {% for v in row.values %}
+        <td>{{ "${:,.0f}".format(v) if v else "" }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr class="totals-row">
+        <td class="label">Total</td>
+        {% for v in data.quarterly_rollup.totals %}
+        <td>{{ "${:,.0f}".format(v) }}</td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+<div class="empty-state">
+  <h2>No Report Data</h2>
+  <p>An admin needs to upload the Ember Dashboard Excel file from the home page to populate this report.</p>
+</div>
+{% endif %}
+
+<script>
+const fmtC = v => '$' + Math.round(v).toLocaleString();
+
+{% if data %}
+// ── Set default "To" date to today ──
+(function(){
+  const today = new Date().toISOString().slice(0,10);
+  document.getElementById('filter-to').value = today;
+})();
+
+// ── Monthly filter ──
+function applyMonthlyFilter(){
+  const from = document.getElementById('filter-from').value;
+  const to = document.getElementById('filter-to').value;
+  const cols = document.querySelectorAll('#monthly-table .month-col');
+  cols.forEach(c => {
+    const d = c.getAttribute('data-date');
+    if(d){
+      c.style.display = (d >= from && d <= to) ? '' : 'none';
+    }
+  });
+}
+// Apply filter on load
+applyMonthlyFilter();
+
+{% endif %}
+
+// ── PDF Download ──
+async function downloadOperationsPDF(){
+  const btn = document.querySelector('.pdf-btn');
+  btn.disabled = true;
+  btn.textContent = 'Generating PDF...';
+
+  const metaText = document.querySelector('.top-right .meta')?.textContent?.trim() || '';
+  const PW = 1056, PH = 816, SCALE = 2;
+
+  function makeHeader(){
+    return `<div class="pdf-header">
+      <h1>Ember Operating Revenues</h1>
+      <span class="pdf-meta">${metaText}</span>
+    </div>`;
+  }
+
+  function makeKPIs(){
+    const cards = document.querySelectorAll('.kpi-card');
+    if(!cards.length) return '';
+    let h = '<div class="pdf-kpi-grid">';
+    cards.forEach(c => {
+      const lbl = c.querySelector('.kpi-label')?.textContent || '';
+      const val = c.querySelector('.kpi-value')?.textContent || '';
+      h += `<div class="pdf-kpi-card"><div class="pdf-kpi-label">${lbl}</div><div class="pdf-kpi-value">${val}</div></div>`;
+    });
+    return h + '</div>';
+  }
+
+  function cloneTable(id, title){
+    const tbl = document.getElementById(id);
+    if(!tbl) return '';
+    return `<div class="pdf-section-title">${title}</div>${tbl.outerHTML}`;
+  }
+
+  // Page 1: KPIs + Yearly rollup
+  const page1 = makeHeader() + makeKPIs() + cloneTable('yearly-table', 'Annual Revenue Forecast (Next 5 Years)');
+
+  // Page 2+: Next 12 months + Next 12 quarters
+  const page2 = makeHeader() + cloneTable('next12m-table', 'Next 12 Months');
+  const page3 = makeHeader() + cloneTable('quarterly-table', 'Next 12 Quarters');
+
+  const pages = [page1, page2, page3];
+
+  const {jsPDF} = window.jspdf;
+  const pdf = new jsPDF({orientation:'landscape', unit:'px', format:[PW,PH], hotfixes:['px_scaling']});
+
+  for(let p = 0; p < pages.length; p++){
+    if(p > 0) pdf.addPage([PW, PH], 'landscape');
+
+    const div = document.createElement('div');
+    div.id = 'pdf-render';
+    div.innerHTML = `<div class="pdf-page">${pages[p]}</div>`;
+    document.body.appendChild(div);
+
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    const canvas = await html2canvas(div, {
+      scale: SCALE,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      width: PW,
+      height: PH,
+      scrollX: 0,
+      scrollY: 0,
+      windowWidth: PW,
+      windowHeight: PH
+    });
+
+    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+    pdf.addImage(imgData, 'JPEG', 0, 0, PW, PH);
+    div.remove();
+  }
+
+  pdf.save('Ember_Operating_Revenues.pdf');
+  btn.disabled = false;
+  btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Download PDF';
+}
+</script>
+</body>
+</html>

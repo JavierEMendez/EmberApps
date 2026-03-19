@@ -92,7 +92,7 @@
     <a href="/" style="text-decoration:none">
       <div class="app-card" style="height:100%">
         <div class="app-title">MPC Underwriting</div>
-        <div class="app-desc">Underwriting and Database of master-planned community land acquisitions.</div>
+        <div class="app-desc">Database and underwriting tool for master-planned community acquisitions.</div>
         <div class="app-arrow">
           Open
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -119,6 +119,19 @@
       <div class="app-card" style="height:100%">
         <div class="app-title">Loan Capacities and Debt Schedules</div>
         <div class="app-desc">See all current active Ember loans and their respective KPIs.</div>
+        <div class="app-arrow">
+          Open
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+    </a>
+    {% endif %}
+
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" style="text-decoration:none">
+      <div class="app-card" style="height:100%">
+        <div class="app-title">Ember Operating Revenues</div>
+        <div class="app-desc">See forecasted Ember operating revenues from projects.</div>
         <div class="app-arrow">
           Open
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -185,6 +198,7 @@
           <label><input type="checkbox" id="new-pa-mpc" checked>MPC Underwriting</label>
           <label><input type="checkbox" id="new-pa-returns" checked>Project Returns</label>
           <label><input type="checkbox" id="new-pa-loans" checked>Loans & Debt</label>
+          <label><input type="checkbox" id="new-pa-operations" checked>Operating Revenues</label>
         </div>
         <button class="btn-add-user" onclick="addUser()">Add User</button>
       </div>
@@ -200,7 +214,7 @@ async function openAdmin() {
 function closeAdmin() {
   document.getElementById('admin-modal').classList.remove('open');
 }
-const PAGE_LABELS = {mpc_underwriting:'MPC Underwriting', returns:'Project Returns', loans:'Loans & Debt'};
+const PAGE_LABELS = {mpc_underwriting:'MPC Underwriting', returns:'Project Returns', loans:'Loans & Debt', operations:'Operating Revenues'};
 async function refreshUserList() {
   const res = await fetch('/api/admin/users');
   if (!res.ok) return;
@@ -208,7 +222,7 @@ async function refreshUserList() {
   document.getElementById('user-list').innerHTML = users.length === 0
     ? '<div style="color:var(--text-dim);font-size:13px">No users.</div>'
     : users.map(u => {
-      const pa = u.page_access || {mpc_underwriting:true, returns:true, loans:true};
+      const pa = u.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true};
       const checks = Object.entries(PAGE_LABELS).map(([k,label]) =>
         `<label><input type="checkbox" ${pa[k] ? 'checked' : ''} ${u.is_admin ? 'disabled' : ''}
           onchange="toggleAccess(${u.id},'${k}',this.checked)">${label}</label>`
@@ -226,7 +240,7 @@ async function toggleAccess(uid, page, enabled) {
   const users = await res.json();
   const user = users.find(u => u.id === uid);
   if (!user) return;
-  const pa = user.page_access || {mpc_underwriting:true, returns:true, loans:true};
+  const pa = user.page_access || {mpc_underwriting:true, returns:true, loans:true, operations:true};
   pa[page] = enabled;
   await fetch('/api/admin/users/' + uid + '/access', {
     method: 'PUT',
@@ -241,7 +255,8 @@ async function addUser() {
   const page_access = {
     mpc_underwriting: document.getElementById('new-pa-mpc').checked,
     returns: document.getElementById('new-pa-returns').checked,
-    loans: document.getElementById('new-pa-loans').checked
+    loans: document.getElementById('new-pa-loans').checked,
+    operations: document.getElementById('new-pa-operations').checked
   };
   if (!username || !password) { alert('Username and password required'); return; }
   const res = await fetch('/api/admin/users', {
@@ -257,6 +272,7 @@ async function addUser() {
     document.getElementById('new-pa-mpc').checked = true;
     document.getElementById('new-pa-returns').checked = true;
     document.getElementById('new-pa-loans').checked = true;
+    document.getElementById('new-pa-operations').checked = true;
     await refreshUserList();
   } else {
     alert(d.error || 'Error creating user');

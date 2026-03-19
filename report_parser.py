@@ -335,6 +335,188 @@ def _parse_debt_schedules(ws) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Operations (Ember Operating Revenues)
+# ---------------------------------------------------------------------------
+
+_OPS_CATEGORIES = [
+    "Development Fees",
+    "Project Personnel",
+    "Bookkeeping",
+    "Receivables & Bond Fees",
+    "Ember Brokerage Fees",
+]
+
+def _parse_operations(ws) -> dict:
+    """Parse the 'Operations' tab."""
+    from datetime import date as _date
+
+    # --- Determine column extent from row 52 (Model Dates) ---
+    dates = []       # list of ISO date strings
+    date_cols = []   # corresponding column indices
+    for c in range(5, 300):
+        v = ws.cell(row=52, column=c).value
+        if v is None:
+            break
+        d = v.date() if hasattr(v, 'date') else v
+        dates.append(d.isoformat() if hasattr(d, 'isoformat') else str(d))
+        date_cols.append(c)
+
+    if not dates:
+        return {}
+
+    # --- KPIs from D83:E85 ---
+    kpis = []
+    for r in range(83, 86):
+        label = _str(ws.cell(row=r, column=4).value)
+        value = _num(ws.cell(row=r, column=5).value, 2)
+        kpis.append({"label": label, "value": value})
+
+    # --- Expected Next 12 Months (sum of row 73 for next 12 months from today) ---
+    today = _date.today()
+    today_col = None
+    for i, c in enumerate(date_cols):
+        v = ws.cell(row=52, column=c).value
+        d = v.date() if hasattr(v, 'date') else v
+        if hasattr(d, 'year') and d.year == today.year and d.month == today.month:
+            today_col = c
+            break
+
+    next_12_sum = 0
+    if today_col:
+        for c in range(today_col, min(today_col + 12, date_cols[-1] + 1)):
+            val = ws.cell(row=73, column=c).value
+            next_12_sum += _num(val, 2)
+    kpis.append({"label": "Expected Next 12 Months", "value": round(next_12_sum, 2)})
+
+    # --- Monthly data: rows 53-72 (per-project per-category) + row 73 totals ---
+    # Structure: blocks of 5 rows per project, project name in col C of first row
+    monthly_rows = []
+    r = 53
+    while r <= 72:
+        project_name = _str(ws.cell(row=r, column=3).value)
+        if not project_name:
+            r += 1
+            continue
+        # 5 category rows per project
+        for offset in range(5):
+            cat = _str(ws.cell(row=r + offset, column=4).value)
+            values = [_num(ws.cell(row=r + offset, column=c).value, 2)
+                      for c in date_cols]
+            monthly_rows.append({
+                "project": project_name,
+                "category": cat,
+                "values": values,
+            })
+        r += 5
+
+    # Row 73 totals
+    monthly_totals = [_num(ws.cell(row=73, column=c).value, 2) for c in date_cols]
+
+    # --- Yearly rollup: find next 5 years of data ---
+    # Row 50 has years, rows 76-80 have category data, row 81 totals
+    # Aggregate months by year
+    year_map = {}  # year -> list of column indices
+    for c in date_cols:
+        yr = ws.cell(row=50, column=c).value
+        if yr is None:
+            continue
+        yr = int(yr)
+        year_map.setdefault(yr, []).append(c)
+
+    # Next 5 calendar years starting from current year
+    current_year = today.year
+    yearly_years = [y for y in sorted(year_map.keys()) if y >= current_year][:5]
+    yearly_rows = []
+    for cat_row, cat_name in zip(range(76, 81), _OPS_CATEGORIES):
+        values = []
+        for yr in yearly_years:
+            total = sum(_num(ws.cell(row=cat_row, column=c).value, 2)
+                        for c in year_map[yr])
+            values.append(round(total, 2))
+        yearly_rows.append({"label": cat_name, "values": values})
+
+    yearly_totals = []
+    for yr in yearly_years:
+        total = sum(_num(ws.cell(row=81, column=c).value, 2) for c in year_map[yr])
+        yearly_totals.append(round(total, 2))
+
+    # --- Quarterly rollup: next 12 quarters from today ---
+    # Row 75 has quarter labels like "Q1 2026", rows 76-80 categories, row 81 totals
+    # Group columns by quarter label
+    quarter_map = {}  # quarter_label -> list of columns
+    quarter_order = []
+    for c in date_cols:
+        qlabel = _str(ws.cell(row=75, column=c).value)
+        if not qlabel:
+            continue
+        if qlabel not in quarter_map:
+            quarter_map[qlabel] = []
+            quarter_order.append(qlabel)
+        quarter_map[qlabel].append(c)
+
+    # Find current quarter
+    q_num = (today.month - 1) // 3 + 1
+    current_q = f"Q{q_num} {today.year}"
+    try:
+        start_idx = quarter_order.index(current_q)
+    except ValueError:
+        start_idx = 0
+    next_12_quarters = quarter_order[start_idx:start_idx + 12]
+
+    quarterly_rows = []
+    for cat_row, cat_name in zip(range(76, 81), _OPS_CATEGORIES):
+        values = []
+        for qlabel in next_12_quarters:
+            total = sum(_num(ws.cell(row=cat_row, column=c).value, 2)
+                        for c in quarter_map[qlabel])
+            values.append(round(total, 2))
+        quarterly_rows.append({"label": cat_name, "values": values})
+
+    quarterly_totals = []
+    for qlabel in next_12_quarters:
+        total = sum(_num(ws.cell(row=81, column=c).value, 2)
+                    for c in quarter_map[qlabel])
+        quarterly_totals.append(round(total, 2))
+
+    # --- Next 12 months data (rows 76-80, 81) ---
+    next_12_dates = []
+    next_12_month_rows = []
+    if today_col:
+        n12_cols = [c for c in range(today_col, min(today_col + 12, date_cols[-1] + 1))]
+        next_12_dates = [dates[date_cols.index(c)] for c in n12_cols]
+        for cat_row, cat_name in zip(range(76, 81), _OPS_CATEGORIES):
+            values = [_num(ws.cell(row=cat_row, column=c).value, 2) for c in n12_cols]
+            next_12_month_rows.append({"label": cat_name, "values": values})
+        n12_totals = [_num(ws.cell(row=81, column=c).value, 2) for c in n12_cols]
+    else:
+        n12_totals = []
+
+    return {
+        "kpis": kpis,
+        "yearly_rollup": {
+            "years": yearly_years,
+            "rows": yearly_rows,
+            "totals": yearly_totals,
+        },
+        "monthly": {
+            "dates": dates,
+            "rows": monthly_rows,
+            "totals": monthly_totals,
+        },
+        "next_12_months": {
+            "dates": next_12_dates,
+            "rows": next_12_month_rows,
+            "totals": n12_totals,
+        },
+        "quarterly_rollup": {
+            "quarters": next_12_quarters,
+            "rows": quarterly_rows,
+            "totals": quarterly_totals,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -382,6 +564,17 @@ def parse_dashboard(file_bytes: bytes) -> dict:
 
     loans_data = _parse_loans(loans_ws) if loans_ws else {}
 
+    # --- Operations tab ---
+    ops_ws = None
+    for name in wb.sheetnames:
+        if "operation" in name.lower():
+            ops_ws = wb[name]
+            break
+    if ops_ws is None:
+        ops_ws = wb.get("Operations")
+
+    ops_data = _parse_operations(ops_ws) if ops_ws else {}
+
     # Use the returns date for loans if available
     if returns_data.get("date") and loans_data:
         loans_data["date"] = returns_data["date"]
@@ -391,4 +584,5 @@ def parse_dashboard(file_bytes: bytes) -> dict:
     return {
         "returns": returns_data,
         "loans": loans_data,
+        "operations": ops_data,
     }

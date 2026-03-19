@@ -42,11 +42,11 @@ def init_db():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             is_admin BOOLEAN DEFAULT FALSE,
-            page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true}'::jsonb,
+            page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true,"operations":true}'::jsonb,
             created_at TIMESTAMP DEFAULT NOW()
         );
         -- Add page_access column if upgrading from older schema
-        ALTER TABLE users ADD COLUMN IF NOT EXISTS page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true}'::jsonb;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true,"operations":true}'::jsonb;
         CREATE TABLE IF NOT EXISTS projects (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
@@ -117,7 +117,7 @@ def login():
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["is_admin"] = user["is_admin"]
-            session["page_access"] = user.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True}
+            session["page_access"] = user.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
             return redirect(url_for("home"))
         error = "Invalid username or password."
     return render_template("login.html", error=error)
@@ -131,10 +131,10 @@ def logout():
 @app.route("/home")
 @login_required
 def home():
-    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True}
+    pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     # Admins always have full access
     if session.get("is_admin"):
-        pa = {"mpc_underwriting": True, "returns": True, "loans": True}
+        pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     return render_template("home.html", username=session.get("username"), is_admin=session.get("is_admin"), page_access=pa)
 
 @app.route("/")
@@ -276,7 +276,7 @@ def create_user():
     username = data.get("username", "").strip()
     password = data.get("password", "")
     is_admin = data.get("is_admin", False)
-    page_access = data.get("page_access", {"mpc_underwriting": True, "returns": True, "loans": True})
+    page_access = data.get("page_access", {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True})
     if not username or not password:
         return jsonify({"error": "Username and password required"}), 400
     conn = get_db()
@@ -575,6 +575,13 @@ def upload_dashboard():
         "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
         ("loans", json.dumps(data.get("loans", {})), session["user_id"])
     )
+    # Upsert operations
+    cur.execute("DELETE FROM reports WHERE report_type = 'operations'")
+    if data.get("operations"):
+        cur.execute(
+            "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+            ("operations", json.dumps(data["operations"]), session["user_id"])
+        )
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
 
@@ -607,6 +614,21 @@ def loans_report():
     data = row["data"] if row else None
     uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
     return render_template("loans.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"))
+
+@app.route("/operations")
+@login_required
+def operations_report():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("operations", True):
+        return redirect(url_for("home"))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'operations' ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    data = row["data"] if row else None
+    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row else None
+    return render_template("operations.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"))
 
 if __name__ == "__main__":
     init_db()
