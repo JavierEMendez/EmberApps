@@ -624,6 +624,151 @@ def loans_report():
         pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     return render_template("loans.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"), page_access=pa)
 
+@app.route("/api/export-operations-excel")
+@login_required
+def export_operations_excel():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("operations", True):
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'operations' ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row or not row["data"]:
+        return jsonify({"error": "No data available"}), 404
+
+    data = row["data"]
+    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row["uploaded_at"] else ""
+
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from io import BytesIO
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Operating Revenues"
+
+    GOLD = "C8A96E"
+    HEADER_FILL = PatternFill("solid", fgColor="1E2535")
+    TOTALS_FILL = PatternFill("solid", fgColor="161B24")
+    thin = Side(style="thin", color="2E3750")
+    cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _hdr_font(bold=False):
+        return Font(name="Calibri", size=9, bold=bold, color="8B95A8")
+
+    def _val_font(bold=False):
+        return Font(name="Calibri", size=9, bold=bold)
+
+    def _gold_font(bold=True, size=10):
+        return Font(name="Calibri", size=size, bold=bold, color=GOLD)
+
+    def write_section(r, title):
+        c = ws.cell(row=r, column=1, value=title)
+        c.font = _gold_font(size=11)
+        return r + 1
+
+    def write_table(r, col_headers, data_rows, totals):
+        # Header row
+        for ci, h in enumerate(col_headers, 1):
+            c = ws.cell(row=r, column=ci, value=h)
+            c.font = _hdr_font(bold=True)
+            c.fill = HEADER_FILL
+            c.alignment = Alignment(horizontal="center" if ci > 1 else "left")
+            c.border = cell_border
+        r += 1
+        # Data rows
+        for dr in data_rows:
+            for ci, v in enumerate(dr, 1):
+                cell = ws.cell(row=r, column=ci, value=v if v != 0 else None)
+                cell.font = _val_font()
+                cell.border = cell_border
+                cell.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+                if ci > 1 and isinstance(v, (int, float)) and v:
+                    cell.number_format = "#,##0"
+            r += 1
+        # Totals row
+        ws.cell(row=r, column=1, value="Total").font = _val_font(bold=True)
+        ws.cell(row=r, column=1).border = cell_border
+        ws.cell(row=r, column=1).fill = TOTALS_FILL
+        ws.cell(row=r, column=1).alignment = Alignment(horizontal="left")
+        for ci, v in enumerate(totals, 2):
+            cell = ws.cell(row=r, column=ci, value=v if v else None)
+            cell.font = _val_font(bold=True)
+            cell.fill = TOTALS_FILL
+            cell.border = cell_border
+            cell.alignment = Alignment(horizontal="right")
+            if isinstance(v, (int, float)):
+                cell.number_format = "#,##0"
+        return r + 2
+
+    r = 1
+    # Title
+    ws.cell(row=r, column=1, value="Ember Operating Revenues").font = Font(name="Calibri", bold=True, size=14, color=GOLD)
+    r += 1
+    ws.cell(row=r, column=1, value=f"Last updated: {uploaded_at}").font = Font(name="Calibri", size=9, color="8B95A8")
+    r += 2
+
+    # KPIs
+    r = write_section(r, "KPI Summary")
+    for kpi in data.get("kpis", []):
+        ws.cell(row=r, column=1, value=kpi["label"]).font = _val_font()
+        vc = ws.cell(row=r, column=2, value=kpi["value"])
+        vc.font = _val_font(bold=True)
+        vc.number_format = "#,##0"
+        vc.alignment = Alignment(horizontal="right")
+        r += 1
+    r += 1
+
+    # Annual Forecast
+    yr = data.get("yearly_rollup", {})
+    if yr.get("years"):
+        r = write_section(r, "Annual Revenue Forecast (Next 5 Years)")
+        headers = ["Revenue Source"] + [str(y) for y in yr["years"]]
+        rows = [[row["label"]] + row["values"] for row in yr.get("rows", [])]
+        r = write_table(r, headers, rows, yr.get("totals", []))
+
+    # Monthly Revenue
+    mo = data.get("monthly", {})
+    if mo.get("dates"):
+        r = write_section(r, "Monthly Fee Revenue")
+        dates = mo["dates"]
+        headers = ["Project / Category"] + [f"{d[5:7]}/{d[2:4]}" for d in dates]
+        rows = [[f"{row['project']} — {row['category']}"] + row["values"] for row in mo.get("rows", [])]
+        r = write_table(r, headers, rows, mo.get("totals", []))
+
+    # Next 12 Months
+    n12 = data.get("next_12_months", {})
+    if n12.get("dates"):
+        r = write_section(r, "Next 12 Months")
+        dates = n12["dates"]
+        headers = ["Revenue Source"] + [f"{d[5:7]}/{d[2:4]}" for d in dates]
+        rows = [[row["label"]] + row["values"] for row in n12.get("rows", [])]
+        r = write_table(r, headers, rows, n12.get("totals", []))
+
+    # Next 12 Quarters
+    qr = data.get("quarterly_rollup", {})
+    if qr.get("quarters"):
+        r = write_section(r, "Next 12 Quarters")
+        headers = ["Revenue Source"] + qr["quarters"]
+        rows = [[row["label"]] + row["values"] for row in qr.get("rows", [])]
+        r = write_table(r, headers, rows, qr.get("totals", []))
+
+    ws.column_dimensions["A"].width = 36
+    for ci in range(2, 50):
+        from openpyxl.utils import get_column_letter
+        ws.column_dimensions[get_column_letter(ci)].width = 11
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    from flask import send_file
+    return send_file(output, as_attachment=True,
+                     download_name="Ember_Operating_Revenues.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.route("/operations")
 @login_required
 def operations_report():

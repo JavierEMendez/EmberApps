@@ -208,10 +208,16 @@
       {% if uploaded_at %}Last updated: {{ uploaded_at }}{% else %}No data uploaded yet{% endif %}
     </div>
     {% if data %}
+    <div style="display:flex;gap:8px;">
     <button class="pdf-btn" onclick="downloadOperationsPDF()">
       <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m4-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Download PDF
     </button>
+    <a class="pdf-btn" href="/api/export-operations-excel" download>
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" stroke-width="1.8"/><path d="M8 12h8M8 8h5M8 16h6" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Export Excel
+    </a>
+    </div>
     {% endif %}
   </div>
 </div>
