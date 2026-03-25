@@ -588,6 +588,227 @@ def upload_dashboard():
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
 
+@app.route("/api/export-returns-excel")
+@login_required
+def export_returns_excel():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("returns", True):
+        return jsonify({"error": "Access denied"}), 403
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports WHERE report_type = 'returns' ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row or not row["data"]:
+        return jsonify({"error": "No data available"}), 404
+
+    data = row["data"]
+    uploaded_at = row["uploaded_at"].strftime("%B %d, %Y") if row["uploaded_at"] else ""
+
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+    from io import BytesIO
+
+    LABEL_MAP = {"LP IRR": "Net Cashflow", "LP Equity Multiple": "Cumulative Net Cashflow"}
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Project Returns"
+
+    GOLD = "C8A96E"
+    TEAL = "5E9E8C"
+    HEADER_FILL = PatternFill("solid", fgColor="191E28")
+    PROJ_FILL   = PatternFill("solid", fgColor="191E28")
+    SUMM_FILL   = PatternFill("solid", fgColor="151921")
+    thin = Side(style="thin", color="1E2535")
+    cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def _vf(bold=False, color="E8EAF0", size=9):
+        return Font(name="Calibri", size=size, bold=bold, color=color)
+
+    def _num_fmt(ws_cell, val, label):
+        """Apply number format and value based on metric label."""
+        if label == "LP IRR":
+            ws_cell.value = val if val else None
+            ws_cell.number_format = "0.0%"
+        elif label == "LP Equity Multiple":
+            ws_cell.value = val if val else None
+            ws_cell.number_format = '0.00"x"'
+        elif isinstance(val, (int, float)) and val != 0:
+            ws_cell.value = val
+            ws_cell.number_format = "#,##0"
+        else:
+            ws_cell.value = None
+
+    years = data.get("years", [])
+
+    # --- Determine active year columns (have any non-zero data across all projects) ---
+    active_idxs = []
+    for i in range(len(years)):
+        for proj in data.get("projects", []):
+            if any(m["yearly"][i] != 0 for m in proj.get("metrics", []) if i < len(m["yearly"])):
+                active_idxs.append(i)
+                break
+        else:
+            for s in data.get("summary", []):
+                if i < len(s["yearly"]) and s["yearly"][i] != 0:
+                    active_idxs.append(i)
+                    break
+
+    active_years = [years[i] for i in active_idxs]
+
+    r = 1
+    # Title
+    ws.cell(row=r, column=1, value="Consolidated Ember Project Returns").font = Font(name="Calibri", bold=True, size=14, color=GOLD)
+    r += 1
+    ws.cell(row=r, column=1, value=f"Last updated: {uploaded_at}  |  ($ in 000s)").font = Font(name="Calibri", size=9, color="8B95A8")
+    r += 2
+
+    num_cols = 2 + len(active_years)  # label + total + years
+
+    def write_project(r, proj, color=GOLD):
+        name = proj["name"]
+        metrics = proj.get("metrics", [])
+
+        # Per-project first active year index
+        pfa = len(years)
+        for i in range(len(years)):
+            for m in metrics:
+                if i < len(m["yearly"]) and m["yearly"][i] != 0 and i < pfa:
+                    pfa = i
+                    break
+
+        proj_active = [i for i in active_idxs if i >= pfa]
+        proj_years  = [years[i] for i in proj_active]
+
+        # Project header spanning all cols
+        hdr = ws.cell(row=r, column=1, value=name)
+        hdr.font = Font(name="Calibri", bold=True, size=10, color=color)
+        hdr.fill = PROJ_FILL
+        hdr.border = cell_border
+        for ci in range(2, num_cols + 1):
+            c = ws.cell(row=r, column=ci)
+            c.fill = PROJ_FILL
+            c.border = cell_border
+        r += 1
+
+        # Column headers
+        ws.cell(row=r, column=1, value="Metric").font = _vf(bold=True, color="8B95A8")
+        ws.cell(row=r, column=1).fill = HEADER_FILL
+        ws.cell(row=r, column=1).border = cell_border
+        ws.cell(row=r, column=2, value="Total").font = _vf(bold=True, color="8B95A8")
+        ws.cell(row=r, column=2).fill = HEADER_FILL
+        ws.cell(row=r, column=2).alignment = Alignment(horizontal="center")
+        ws.cell(row=r, column=2).border = cell_border
+        for ci, yr in enumerate(proj_years, 3):
+            c = ws.cell(row=r, column=ci, value=yr)
+            c.font = _vf(bold=True, color="8B95A8")
+            c.fill = HEADER_FILL
+            c.alignment = Alignment(horizontal="center")
+            c.border = cell_border
+        r += 1
+
+        # Metric rows
+        for m in metrics:
+            label = m["label"]
+            display = LABEL_MAP.get(label, label)
+            # Compute total for renamed rows
+            if label == "LP IRR":
+                total = m["total"]
+            elif label == "LP Equity Multiple":
+                total = m["total"]
+            else:
+                total = m["total"]
+
+            lc = ws.cell(row=r, column=1, value=display)
+            lc.font = _vf(bold=(label in ("LP IRR", "LP Equity Multiple")), color=color if label in ("LP IRR", "LP Equity Multiple") else "E8EAF0")
+            lc.border = cell_border
+
+            tc = ws.cell(row=r, column=2)
+            tc.font = _vf(bold=(label in ("LP IRR", "LP Equity Multiple")), color=color if label in ("LP IRR", "LP Equity Multiple") else "E8EAF0")
+            tc.alignment = Alignment(horizontal="right")
+            tc.border = cell_border
+            _num_fmt(tc, total, label)
+
+            for ci, i in enumerate(proj_active, 3):
+                yc = ws.cell(row=r, column=ci)
+                yc.font = _vf()
+                yc.alignment = Alignment(horizontal="right")
+                yc.border = cell_border
+                val = m["yearly"][i] if i < len(m["yearly"]) else 0
+                _num_fmt(yc, val, label)
+            r += 1
+        return r + 1
+
+    # Projects
+    for proj in data.get("projects", []):
+        r = write_project(r, proj, color=GOLD)
+
+    # Portfolio Summary
+    summary = data.get("summary", [])
+    if summary:
+        hdr = ws.cell(row=r, column=1, value="Portfolio Summary")
+        hdr.font = Font(name="Calibri", bold=True, size=10, color=TEAL)
+        hdr.fill = SUMM_FILL
+        hdr.border = cell_border
+        for ci in range(2, num_cols + 1):
+            c = ws.cell(row=r, column=ci)
+            c.fill = SUMM_FILL
+            c.border = cell_border
+        r += 1
+
+        ws.cell(row=r, column=1, value="Category").font = _vf(bold=True, color="8B95A8")
+        ws.cell(row=r, column=1).fill = HEADER_FILL
+        ws.cell(row=r, column=1).border = cell_border
+        ws.cell(row=r, column=2, value="Total").font = _vf(bold=True, color="8B95A8")
+        ws.cell(row=r, column=2).fill = HEADER_FILL
+        ws.cell(row=r, column=2).alignment = Alignment(horizontal="center")
+        ws.cell(row=r, column=2).border = cell_border
+        for ci, yr in enumerate(active_years, 3):
+            c = ws.cell(row=r, column=ci, value=yr)
+            c.font = _vf(bold=True, color="8B95A8")
+            c.fill = HEADER_FILL
+            c.alignment = Alignment(horizontal="center")
+            c.border = cell_border
+        r += 1
+
+        for s in summary:
+            lc = ws.cell(row=r, column=1, value=s["label"])
+            lc.font = _vf()
+            lc.border = cell_border
+            tc = ws.cell(row=r, column=2, value=s["total"] if s["total"] else None)
+            tc.font = _vf()
+            tc.alignment = Alignment(horizontal="right")
+            tc.border = cell_border
+            if isinstance(s["total"], (int, float)):
+                tc.number_format = "#,##0"
+            for ci, i in enumerate(active_idxs, 3):
+                yc = ws.cell(row=r, column=ci)
+                val = s["yearly"][i] if i < len(s["yearly"]) else 0
+                yc.value = val if val else None
+                yc.font = _vf()
+                yc.alignment = Alignment(horizontal="right")
+                yc.border = cell_border
+                if isinstance(val, (int, float)) and val:
+                    yc.number_format = "#,##0"
+            r += 1
+
+    # Column widths
+    ws.column_dimensions["A"].width = 32
+    ws.column_dimensions["B"].width = 14
+    for ci in range(3, 3 + len(active_years)):
+        ws.column_dimensions[get_column_letter(ci)].width = 11
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    from flask import send_file
+    return send_file(output, as_attachment=True,
+                     download_name="Ember_Project_Returns.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @app.route("/returns")
 @login_required
 def returns_report():
