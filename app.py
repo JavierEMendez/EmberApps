@@ -650,6 +650,65 @@ def export_returns_excel():
     ws.cell(row=r, column=1, value=f"Last updated: {uploaded_at}  |  ($ in 000s)").font = _f(color="888888")
     r += 2
 
+    # ── Project Returns Summary Table ──
+    SUMMARY_HDR_FILL = PatternFill("solid", fgColor="EDE8DF")
+    summary_cols = ["Project", "LP IRR", "Equity Multiple", "Total LP Profit", "Promote"]
+    for ci, h in enumerate(summary_cols, 1):
+        c = ws.cell(row=r, column=ci, value=h)
+        c.font = _f(bold=True, color=HDR_TEXT)
+        c.fill = SUMMARY_HDR_FILL
+        c.border = cell_border
+        c.alignment = Alignment(horizontal="left" if ci == 1 else "center")
+    r += 1
+
+    for proj in data.get("projects", []):
+        metrics_by_label = {m["label"]: m for m in proj.get("metrics", [])}
+        irr_val  = metrics_by_label.get("LP IRR", {}).get("total", None)
+        em_val   = metrics_by_label.get("LP Equity Multiple", {}).get("total", None)
+        pft_val  = metrics_by_label.get("Total LP Profit", {}).get("total", None)
+        prom_val = metrics_by_label.get("Promote", {}).get("total", None)
+
+        # Project name
+        nc = ws.cell(row=r, column=1, value=proj["name"])
+        nc.font = _f(bold=True, color=PROJ_TEXT)
+        nc.border = cell_border
+
+        # LP IRR — display as percentage
+        ic = ws.cell(row=r, column=2)
+        ic.font = _f(bold=True, color=ACCENT)
+        ic.alignment = Alignment(horizontal="right")
+        ic.border = cell_border
+        if isinstance(irr_val, (int, float)) and irr_val:
+            ic.value = irr_val
+            ic.number_format = "0.0%"
+
+        # Equity Multiple — display as multiplier
+        ec = ws.cell(row=r, column=3)
+        ec.font = _f(bold=True, color=ACCENT)
+        ec.alignment = Alignment(horizontal="right")
+        ec.border = cell_border
+        if isinstance(em_val, (int, float)) and em_val:
+            ec.value = em_val
+            ec.number_format = '0.00"x"'
+
+        # Total LP Profit
+        pc = ws.cell(row=r, column=4)
+        pc.font = _f()
+        pc.alignment = Alignment(horizontal="right")
+        pc.border = cell_border
+        _set_num(pc, pft_val)
+
+        # Promote
+        prc = ws.cell(row=r, column=5)
+        prc.font = _f()
+        prc.alignment = Alignment(horizontal="right")
+        prc.border = cell_border
+        _set_num(prc, prom_val)
+
+        r += 1
+
+    r += 1  # blank spacer before detail sections
+
     def write_section_header(r, title, fill, color):
         c = ws.cell(row=r, column=1, value=title)
         c.font = Font(name="Calibri", bold=True, size=10, color=color)
@@ -743,10 +802,13 @@ def export_returns_excel():
                 _set_num(yc, val)
             r += 1
 
-    # Column widths
+    # Column widths — B=Total/IRR, C=EquityMult/yr1, D onwards = years
     ws.column_dimensions["A"].width = 32
     ws.column_dimensions["B"].width = 13
-    for ci in range(3, 3 + len(years)):
+    ws.column_dimensions["C"].width = 14   # "Equity Multiple" header needs a touch more
+    ws.column_dimensions["D"].width = 14   # "Total LP Profit"
+    ws.column_dimensions["E"].width = 13   # "Promote"
+    for ci in range(6, 3 + len(years)):
         ws.column_dimensions[get_column_letter(ci)].width = 11
 
     output = BytesIO()
