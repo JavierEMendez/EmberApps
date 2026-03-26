@@ -1,4 +1,4 @@
-# EmberAppd
+# EmberApps
 
 A web-based underwriting and reporting platform for residential land development. Built as a full replacement for the Excel pro forma model — all calculations run server-side in Python, and the results are accessible to the whole team through a shared URL with no Excel required.
 
