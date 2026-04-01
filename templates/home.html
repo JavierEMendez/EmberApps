@@ -152,7 +152,7 @@
     </a>
     {% endif %}
 
-    {% if page_access.get('portfolio', true) %}
+    {% if is_admin %}
     <a href="/portfolio" style="text-decoration:none">
       <div class="app-card" style="height:100%">
         <div class="app-title">Portfolio Dashboard</div>
@@ -163,6 +163,12 @@
         </div>
       </div>
     </a>
+    {% else %}
+    <div class="app-card" style="opacity:.55;cursor:default;">
+      <div class="app-title">Portfolio Dashboard</div>
+      <div class="app-desc">Aggregate view of all active projects: total lots, IRR, margins, and status at a glance.</div>
+      <div class="app-arrow" style="color:var(--text-dim)">Coming Soon</div>
+    </div>
     {% endif %}
   </div>
 

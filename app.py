@@ -774,14 +774,11 @@ def _apply_sensitivity_override(inp, field, value):
 @app.route("/portfolio")
 @login_required
 def portfolio_page():
-    pa = session.get("page_access") or {}
-    if not session.get("is_admin") and not pa.get("portfolio", True):
+    if not session.get("is_admin"):
         return redirect(url_for("home"))
-    pa2 = dict(pa)
-    if session.get("is_admin"):
-        pa2 = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True, "portfolio": True}
+    pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True, "portfolio": True}
     return render_template("portfolio.html", username=session.get("username"),
-                           is_admin=session.get("is_admin"), page_access=pa2)
+                           is_admin=True, page_access=pa)
 
 @app.route("/api/portfolio", methods=["GET"])
 @login_required
