@@ -585,27 +585,23 @@ tr.pod-inactive input { pointer-events: none; }
               <div class="sens-field">
                 <label>X Axis (columns)</label>
                 <select id="sens-x-field">
-                  <option value="purchase_price_per_acre">Purchase Price / Acre</option>
+                  <option value="contingency">Contingency %</option>
+                  <option value="price_per_ff_base">Lot Price / FF ($/FF)</option>
                   <option value="lot_sizes.home_price">Home Price (all active lots)</option>
-                  <option value="lot_sizes.pace">Absorption Pace (lots/mo)</option>
-                  <option value="gross_acreage">Gross Acreage</option>
-                  <option value="lot_sizes.yield_per_ac">Yield / Acre</option>
-                  <option value="lot_sizes.wsd_per_ff">WSD per FF</option>
-                  <option value="contingency">Contingency</option>
-                  <option value="land_escalator">Land Escalator</option>
+                  <option value="lot_sizes.pace">Home Sales Pace (lots/mo)</option>
+                  <option value="lot_sizes.yield_per_ac">Yield / Acre (all active)</option>
+                  <option value="lot_sizes.dev_cost_per_lot">Dev Cost / Lot (WSD+Paving)</option>
                 </select>
               </div>
               <div class="sens-field">
                 <label>Y Axis (rows)</label>
                 <select id="sens-y-field">
                   <option value="lot_sizes.home_price">Home Price (all active lots)</option>
-                  <option value="lot_sizes.pace">Absorption Pace (lots/mo)</option>
-                  <option value="purchase_price_per_acre">Purchase Price / Acre</option>
-                  <option value="gross_acreage">Gross Acreage</option>
-                  <option value="lot_sizes.yield_per_ac">Yield / Acre</option>
-                  <option value="lot_sizes.wsd_per_ff">WSD per FF</option>
-                  <option value="contingency">Contingency</option>
-                  <option value="land_escalator">Land Escalator</option>
+                  <option value="lot_sizes.pace">Home Sales Pace (lots/mo)</option>
+                  <option value="contingency">Contingency %</option>
+                  <option value="price_per_ff_base">Lot Price / FF ($/FF)</option>
+                  <option value="lot_sizes.yield_per_ac">Yield / Acre (all active)</option>
+                  <option value="lot_sizes.dev_cost_per_lot">Dev Cost / Lot (WSD+Paving)</option>
                 </select>
               </div>
               <div class="sens-field">
@@ -1321,14 +1317,12 @@ async function openChangelog() {
 
 // ── SENSITIVITY ANALYSIS ──────────────────────────────────────────
 const SENS_AXES = [
-  {key:'purchase_price_per_acre', label:'Purchase Price / Acre', fmt:'dollar'},
-  {key:'gross_acreage',           label:'Gross Acreage',          fmt:'num'},
-  {key:'lot_sizes.home_price',    label:'Home Price (all active lots)', fmt:'dollar'},
-  {key:'lot_sizes.pace',          label:'Absorption Pace (lots/mo)',    fmt:'num1'},
-  {key:'lot_sizes.yield_per_ac',  label:'Yield / Acre (all active)',    fmt:'num2'},
-  {key:'lot_sizes.wsd_per_ff',    label:'WSD per FF',             fmt:'dollar'},
-  {key:'contingency',             label:'Contingency',            fmt:'pct'},
-  {key:'land_escalator',          label:'Land Escalator',         fmt:'pct'},
+  {key:'contingency',              label:'Contingency %',                fmt:'pct'},
+  {key:'price_per_ff_base',        label:'Lot Price / FF ($/FF)',         fmt:'dollar'},
+  {key:'lot_sizes.home_price',     label:'Home Price (all active lots)',  fmt:'dollar'},
+  {key:'lot_sizes.pace',           label:'Home Sales Pace (lots/mo)',     fmt:'num1'},
+  {key:'lot_sizes.yield_per_ac',   label:'Yield / Acre (all active)',     fmt:'num2'},
+  {key:'lot_sizes.dev_cost_per_lot',label:'Dev Cost / Lot (WSD+Paving)', fmt:'dollar'},
 ];
 
 function buildSensRange(center, steps, stepSize, isPercent) {
@@ -1342,6 +1336,14 @@ function buildSensRange(center, steps, stepSize, isPercent) {
 function sensCenter(fieldKey) {
   if (!window._lastInputs) return 0;
   const inp = window._lastInputs;
+  if (fieldKey === 'price_per_ff_base') {
+    return inp.price_per_ff?.[0] ?? inp.price_per_ff?.['0'] ?? 1800;
+  }
+  if (fieldKey === 'lot_sizes.dev_cost_per_lot') {
+    const activeLots = (inp.lot_sizes || []).filter(ls => ls.on);
+    if (!activeLots.length) return 0;
+    return activeLots.reduce((s, ls) => s + ((ls.wsd_per_ff || 0) + (ls.paving_per_ff || 0)) * (ls.ff || 0), 0) / activeLots.length;
+  }
   if (fieldKey.startsWith('lot_sizes.')) {
     const sub = fieldKey.slice(10);
     const activeLots = (inp.lot_sizes || []).filter(ls => ls.on);
@@ -2646,7 +2648,7 @@ async function loadInputs(override = null) {
       <td><input type="number" id="ci-ls-hp-${i}" value="${sv2(ls.home_price)}" data-saved="${ds(ls.home_price)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.wsd_per_ff?fmtC(ls.wsd_per_ff):'—'}</span></td>
       <td class="calc-col"><span class="calc-cell">${isOn&&ls.paving_per_ff?fmtC(ls.paving_per_ff):'—'}</span></td>
-      <td class="calc-col"><span class="calc-cell">${isOn&&ls.dev_cost_per_lot?fmtC(ls.dev_cost_per_lot):'—'}</span></td>
+      <td class="calc-col"><span class="calc-cell">${isOn&&ls.ff?fmtC(((ls.wsd_per_ff||0)+(ls.paving_per_ff||0))*ls.ff):'—'}</span></td>
       <td><input type="number" id="ci-ls-dsm-${i}" value="${sv2(ls.dev_start_month)}" data-saved="${ds(ls.dev_start_month)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td><input type="number" id="ci-ls-lpl-${i}" value="${sv2(ls.landscaping_per_lot)}" data-saved="${ds(ls.landscaping_per_lot)}" class="mono" oninput="markDirty()" ${dis}></td>
       <td><input type="number" id="ci-ls-urd-${i}" value="${sv2(ls.urd_per_lot)}" data-saved="${ds(ls.urd_per_lot)}" class="mono" oninput="markDirty()" ${dis}></td>

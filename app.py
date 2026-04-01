@@ -743,7 +743,25 @@ def _apply_sensitivity_override(inp, field, value):
     """Deep-copy inp, apply sensitivity override, return modified copy."""
     import copy
     inp2 = copy.deepcopy(inp)
-    if field.startswith("lot_sizes."):
+    if field == "price_per_ff_base":
+        # Scale all per-FF price years proportionally to the new base (year-0) value
+        ppff = inp2.get("price_per_ff", {})
+        ref = float(ppff.get("0", ppff.get(0, 1800)) or 1800)
+        scale = float(value) / ref if ref else 1.0
+        inp2["price_per_ff"] = {k: float(v or 0) * scale for k, v in ppff.items()}
+    elif field == "lot_sizes.dev_cost_per_lot":
+        # Scale wsd_per_ff and paving_per_ff proportionally across all active lots
+        active = [r for r in inp2.get("lot_sizes", []) if r.get("on")]
+        if active:
+            costs = [(r.get("wsd_per_ff", 0) + r.get("paving_per_ff", 0)) * r.get("ff", 0)
+                     for r in active]
+            ref_avg = sum(costs) / len(costs) if costs else 0
+            scale = float(value) / ref_avg if ref_avg else 1.0
+            for row in inp2.get("lot_sizes", []):
+                if row.get("on"):
+                    row["wsd_per_ff"] = row.get("wsd_per_ff", 0) * scale
+                    row["paving_per_ff"] = row.get("paving_per_ff", 0) * scale
+    elif field.startswith("lot_sizes."):
         sub = field[len("lot_sizes."):]
         for row in inp2.get("lot_sizes", []):
             if row.get("on"):
