@@ -464,14 +464,15 @@ def default_inputs(name="New Project"):
         "det_storage_rate": 1.1,            # Excel B31 = 1.1
         "det_depth": 9,                     # Excel B33 = 9
         "det_num_projects": 6,              # Excel B34 = 6
+        "det_cost_per_cy": 10.0,            # Excel A37 = $10/CY
         "parks_pct": 0.03,                  # Excel B51 = 3%
         "drill_site_acres": 0,
         "commercial_pod_acres": 0,
         "residential_pod_acres": 0,
         "plants": [{"type":"None","notes":""} for _ in range(8)],
-        "amenities": [{"type":"None","acres":0} for _ in range(6)],
-        "other_netouts": [{"desc":"","acres":0} for _ in range(6)],
-        "roads": [{"type":"","lf":0,"width":0,"road_setback":0,"landscaping_setback":0} for _ in range(6)],
+        "amenities": [{"type":"None","acres":0,"notes":""} for _ in range(6)],
+        "other_netouts": [{"desc":"","acres":0,"notes":""} for _ in range(6)],
+        "roads": [{"type":"","lf":0,"width":0,"road_setback":0,"landscaping_setback":0,"notes":""} for _ in range(6)],
         "takedowns": [{"period":0,"pct":0.5},{"period":36,"pct":0.5},{"period":0,"pct":0.0}],
         "plant_costs": [{"base_cost":0,"other_pct":0.17,"start_month":1,"ph2_base_cost":0,"ph2_other_pct":0.17,"ph2_start_month":37} for _ in range(8)],
         "amenity_costs": [{"base_cost":0,"other_pct":0.17,"start_month":1} for _ in range(6)],

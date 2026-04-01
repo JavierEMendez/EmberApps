@@ -336,7 +336,7 @@ def calculate(inp: dict) -> dict:
     # Excel: Per-project acres = footprint / num_projects       (B45=B32/B34)
     # Excel: Per-project base cost = B37 / num_projects
     # Excel: Landscaping = lpf * 43560 * acres * (1+landscaping_other_pct) * 0.30
-    DET_COST_PER_CY = 10.0  # hardcoded in Excel cell A37
+    DET_COST_PER_CY = safe(inp.get("det_cost_per_cy", 10.0))  # Excel cell A37, now user-editable
     det_volume_cy = safe(inp.get("det_storage_rate", 0)) * gross_ac * 43560 / 27 if gross_ac else 0
     det_total_base = det_volume_cy * DET_COST_PER_CY
     det_base_per_proj = det_total_base / det_num if det_num else 0

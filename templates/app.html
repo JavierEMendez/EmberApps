@@ -549,12 +549,13 @@ tr.pod-inactive input { pointer-events: none; }
             <div class="field"><label>Storage Rate</label><input type="number" step="0.1" id="ti-det_storage_rate" class="mono" oninput="markDirty()"></div>
             <div class="field"><label>Depth (ft)</label><input type="number" id="ti-det_depth" class="mono" oninput="markDirty()"></div>
             <div class="field"><label>Number of Projects</label><input type="number" id="ti-det_num_projects" class="mono" oninput="markDirty()"></div>
+            <div class="field"><label>Cost per CY ($)</label><input type="number" step="0.5" id="ti-det_cost_per_cy" class="mono" oninput="markDirty()"></div>
           </div>
 
           <div class="section-header">Amenities (up to 6)</div>
           <div class="overflow-x">
           <table class="data-table">
-            <thead><tr><th>#</th><th>Amenity Type</th><th>Acres</th></tr></thead>
+            <thead><tr><th>#</th><th>Amenity Type</th><th>Acres</th><th>Notes</th></tr></thead>
             <tbody id="ti-amenities-body"></tbody>
           </table>
           </div>
@@ -566,7 +567,7 @@ tr.pod-inactive input { pointer-events: none; }
           </div>
           <div class="overflow-x" style="margin-top:12px">
           <table class="data-table">
-            <thead><tr><th>#</th><th>Description</th><th>Acres</th></tr></thead>
+            <thead><tr><th>#</th><th>Description</th><th>Acres</th><th>Notes</th></tr></thead>
             <tbody id="ti-other-body"></tbody>
           </table>
           </div>
@@ -574,7 +575,7 @@ tr.pod-inactive input { pointer-events: none; }
           <div class="section-header">Roads (up to 6 segments)</div>
           <div class="overflow-x">
           <table class="data-table">
-            <thead><tr><th>#</th><th>Type</th><th>Linear Feet</th><th>Width (ft)</th><th>Road Setback (ft)</th><th>Landscaping Setback (ft)</th></tr></thead>
+            <thead><tr><th>#</th><th>Type</th><th>Linear Feet</th><th>Width (ft)</th><th>Road Setback (ft)</th><th>Landscaping Setback (ft)</th><th>Notes</th></tr></thead>
             <tbody id="ti-roads-body"></tbody>
           </table>
           </div>
@@ -1970,6 +1971,7 @@ async function loadInputs() {
   sv('ti-det_storage_rate', t.det_storage_rate);
   sv('ti-det_depth', t.det_depth);
   sv('ti-det_num_projects', t.det_num_projects);
+  sv('ti-det_cost_per_cy', t.det_cost_per_cy ?? 10);
   svp('ti-parks_pct', t.parks_pct);
   sv('ti-drill_site_acres', t.drill_site_acres);
   sv('ti-commercial_pod_acres', t.commercial_pod_acres);
@@ -1993,6 +1995,7 @@ async function loadInputs() {
       <td class="row-num">${a.num||i+1}</td>
       <td><select id="ti-am-type-${i}" onchange="markDirty(); syncAmenityTypeToCosts(${i}, this.value)">${amenityTypes.map(at=>`<option value="${at}" ${a.type===at?'selected':''}>${at}</option>`).join('')}</select></td>
       <td><input type="number" id="ti-am-acres-${i}" value="${a.acres}" class="mono" oninput="markDirty()"></td>
+      <td><input type="text" id="ti-am-notes-${i}" value="${a.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // Other netouts
@@ -2002,10 +2005,10 @@ async function loadInputs() {
       <td class="row-num">${o.num||i+1}</td>
       <td><input type="text" id="ti-ot-desc-${i}" value="${o.desc||o.description||''}" oninput="markDirty()"></td>
       <td><input type="number" id="ti-ot-acres-${i}" value="${o.acres||0}" class="mono" oninput="markDirty()"></td>
+      <td><input type="text" id="ti-ot-notes-${i}" value="${o.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // Roads
-  const roadTypes = ['2 Lane','4 Lane',''];
   const rb = document.getElementById('ti-roads-body');
   rb.innerHTML = (t.roads||[]).map((rd,i) => `
     <tr>
@@ -2018,6 +2021,7 @@ async function loadInputs() {
       <td><input type="number" id="ti-rd-w-${i}" value="${rd.width}" class="mono" oninput="markDirty()"></td>
       <td><input type="number" id="ti-rd-rs-${i}" value="${rd.road_setback}" class="mono" oninput="markDirty()"></td>
       <td><input type="number" id="ti-rd-ls-${i}" value="${rd.landscaping_setback}" class="mono" oninput="markDirty()"></td>
+      <td><input type="text" id="ti-rd-notes-${i}" value="${rd.notes||''}" oninput="markDirty()"></td>
     </tr>`).join('');
 
   // ── COST INPUTS ─────────────────────────────────────────────────────
@@ -2566,6 +2570,7 @@ function collectInputs() {
     det_storage_rate: gn('ti-det_storage_rate'),
     det_depth: gn('ti-det_depth'),
     det_num_projects: gi('ti-det_num_projects'),
+    det_cost_per_cy: gn('ti-det_cost_per_cy') ?? 10,
     parks_pct: gnp('ti-parks_pct'),
     drill_site_acres: gn('ti-drill_site_acres'),
     commercial_pod_acres: gn('ti-commercial_pod_acres'),
@@ -2578,12 +2583,14 @@ function collectInputs() {
     amenities: Array.from({length:6}, (_,i) => ({
       num: i+1,
       type: gv(`ti-am-type-${i}`) || 'None',
-      acres: gn(`ti-am-acres-${i}`) || 0
+      acres: gn(`ti-am-acres-${i}`) || 0,
+      notes: gv(`ti-am-notes-${i}`) || ''
     })),
     other_netouts: Array.from({length:6}, (_,i) => ({
       num: i+1,
       desc: gv(`ti-ot-desc-${i}`) || '',
-      acres: gn(`ti-ot-acres-${i}`) || 0
+      acres: gn(`ti-ot-acres-${i}`) || 0,
+      notes: gv(`ti-ot-notes-${i}`) || ''
     })),
     roads: Array.from({length:6}, (_,i) => ({
       num: i+1,
@@ -2591,7 +2598,8 @@ function collectInputs() {
       linear_feet: gn(`ti-rd-lf-${i}`) || 0,
       width: gn(`ti-rd-w-${i}`) || 0,
       road_setback: gn(`ti-rd-rs-${i}`) || 0,
-      landscaping_setback: gn(`ti-rd-ls-${i}`) || 0
+      landscaping_setback: gn(`ti-rd-ls-${i}`) || 0,
+      notes: gv(`ti-rd-notes-${i}`) || ''
     })),
   };
 
