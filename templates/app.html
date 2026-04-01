@@ -86,6 +86,18 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 .tab{padding:14px 18px 13px;cursor:pointer;font-size:13px;color:var(--text-muted);border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap}
 .tab:hover{color:var(--text)}
 .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+/* Scenario bar */
+#scenario-bar{display:none;align-items:center;gap:8px;padding:8px 20px;background:var(--bg);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.scen-tab{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:var(--surface);font-size:12px;color:var(--text-muted);cursor:pointer;transition:all .15s;white-space:nowrap}
+.scen-tab:hover{border-color:var(--accent);color:var(--accent)}
+.scen-tab.active{border-color:var(--accent);background:rgba(200,169,110,.12);color:var(--accent);font-weight:600}
+.scen-tab .scen-name{outline:none;background:none;border:none;color:inherit;font:inherit;cursor:pointer;max-width:140px}
+.scen-tab .scen-del{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:14px;line-height:1;padding:0 0 0 2px;transition:color .15s}
+.scen-tab .scen-del:hover{color:#e05555}
+.scen-add{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:20px;border:1px dashed var(--border);font-size:12px;color:var(--text-dim);cursor:pointer;transition:all .15s;background:none;font-family:inherit}
+.scen-add:hover{border-color:var(--accent2);color:var(--accent2)}
+.scen-promote{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:20px;border:1px solid var(--border);font-size:12px;color:var(--text-muted);cursor:pointer;transition:all .15s;background:none;font-family:inherit;margin-left:auto}
+.scen-promote:hover{border-color:var(--accent2);color:var(--accent2)}
 
 /* ── PANELS ── */
 .panel{padding:28px 32px;display:none;animation:fadein .2s ease}
@@ -439,6 +451,16 @@ tr.pod-inactive input { pointer-events: none; }
       <input type="file" id="import-project-input" accept=".xlsx,.xls" style="display:none" onchange="importIntoProject(this.files[0]); this.value=''">
     </div>
 
+    <!-- SCENARIO BAR (hidden until project selected) -->
+    <div id="scenario-bar">
+      <div id="scenario-tabs" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"></div>
+      <button class="scen-add" onclick="addScenario()">+ Add Scenario</button>
+      <button class="scen-promote" id="btn-promote" onclick="promoteScenario()" title="Set active scenario as the main project version">
+        <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Set as Main
+      </button>
+    </div>
+
     <!-- TAB BAR (hidden until project selected) -->
     <div class="tab-bar" id="tab-bar" style="display:none">
       <div class="tab active" onclick="showTab('tab-outputs')" id="t-tab-outputs">📊 Project Performance</div>
@@ -509,6 +531,7 @@ tr.pod-inactive input { pointer-events: none; }
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01" stroke-width="2" stroke-linecap="round"/></svg>
             Outputs are recalculated automatically when you save inputs. Use <strong>Recalculate &amp; Refresh</strong> to force a recalculation at any time.
           </div>
+          <div id="scenario-comparison" style="display:none;margin-bottom:20px"></div>
           <div id="outputs-content"><div class="full-loading"><div class="loading"></div> Loading outputs…</div></div>
         </div>
 
@@ -1029,6 +1052,8 @@ tr.pod-inactive input { pointer-events: none; }
 <script>
 // ── STATE ──────────────────────────────────────────────────────────
 let currentProject = null;
+let _scenarios = [];
+let _currentScenarioId = null;
 let inputs = {};
 let dirty = false;
 let charts = {};
@@ -1099,6 +1124,8 @@ async function loadProjectList() {
 
 async function selectProject(id) {
   currentProject = id;
+  _currentScenarioId = null;
+  _scenarios = [];
   document.querySelectorAll('.proj-item').forEach(e => e.classList.remove('selected'));
   const el = document.getElementById('proj-' + id);
   if (el) el.classList.add('selected');
@@ -1106,6 +1133,7 @@ async function selectProject(id) {
   document.getElementById('view-dashboard').style.display = 'none';
   document.getElementById('view-project').style.display = 'block';
   document.getElementById('tab-bar').style.display = 'flex';
+  document.getElementById('scenario-bar').style.display = 'flex';
   document.getElementById('btn-save').style.display = 'flex';
   document.getElementById('btn-download').style.display = 'flex';
   document.getElementById('btn-pdf').style.display = 'flex';
@@ -1113,10 +1141,8 @@ async function selectProject(id) {
   document.getElementById('btn-backup').style.display = 'flex';
   document.getElementById('btn-refresh-outputs').style.display = 'flex';
   document.getElementById('save-indicator').style.display = 'flex';
-  await loadInputs();
   showTab('tab-outputs');
-  await loadOutputs();
-  recalcAllLiveFields();
+  await loadScenarios();
 }
 
 function navTo(view) {
@@ -1126,6 +1152,7 @@ function navTo(view) {
     document.getElementById('view-welcome').style.display = 'none';
     document.getElementById('view-project').style.display = 'none';
     document.getElementById('tab-bar').style.display = 'none';
+    document.getElementById('scenario-bar').style.display = 'none';
     document.getElementById('view-dashboard').style.display = 'block';
     document.getElementById('header-title').innerHTML = '<span>All Projects</span>';
     document.getElementById('btn-save').style.display = 'none';
@@ -1388,6 +1415,7 @@ async function deleteProject(id, e) {
     currentProject = null;
     document.getElementById('view-project').style.display = 'none';
     document.getElementById('tab-bar').style.display = 'none';
+    document.getElementById('scenario-bar').style.display = 'none';
     document.getElementById('view-welcome').style.display = 'flex';
     document.getElementById('btn-save').style.display = 'none';
     document.getElementById('btn-download').style.display = 'none';
@@ -1825,12 +1853,18 @@ function applyCommaDisplay() {
 
 
 // ── LOAD INPUTS ───────────────────────────────────────────────────
-async function loadInputs() {
+async function loadInputs(override = null) {
   if (!currentProject) return;
-  const res = await fetch(`/api/projects/${currentProject}`);
-  const proj = await res.json();
-  inputs = proj.inputs || {};  // flat inputs dict
-  const c = proj.outputs || {};  // calc outputs (for derived/computed fields in cost tab)
+  let c;
+  if (override) {
+    inputs = override.inputs || {};
+    c = override.outputs || {};
+  } else {
+    const res = await fetch(`/api/projects/${currentProject}`);
+    const proj = await res.json();
+    inputs = proj.inputs || {};
+    c = proj.outputs || {};
+  }
   window._lastOutputs = c;
   window._lastInputs = inputs;
   // Backfill arrays missing from older projects
@@ -2858,20 +2892,27 @@ async function saveAll() {
   const saveText = document.getElementById('save-text');
   saveText.textContent = 'Saving…';
   try {
-    const res = await fetch(`/api/projects/${currentProject}`, {
-      method: 'PUT',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({inputs: data})
-    });
+    let url, body;
+    if (_currentScenarioId) {
+      url = `/api/projects/${currentProject}/scenarios/${_currentScenarioId}`;
+      body = JSON.stringify({inputs: data});
+    } else {
+      url = `/api/projects/${currentProject}`;
+      body = JSON.stringify({inputs: data});
+    }
+    const res = await fetch(url, {method:'PUT', headers:{'Content-Type':'application/json'}, body});
     const result = await res.json();
     if (res.ok && result.ok) {
       markClean();
       window._lastOutputs = result.outputs;
+      // Update in-memory scenario
+      const idx = _scenarios.findIndex(s => s.id === _currentScenarioId);
+      if (idx >= 0) { _scenarios[idx].inputs = data; _scenarios[idx].outputs = result.outputs; }
       document.getElementById('header-title').innerHTML = `<em>${data.project_name || 'Untitled'}</em><span>${data.address || ''}</span>`;
-      await loadProjectList();
       renderOutputsFromFlat(result.outputs);
-      await loadInputs();
+      await loadInputs({inputs: data, outputs: result.outputs});
       recalcAllLiveFields();
+      renderComparisonPanel();
       saveText.textContent = 'Saved';
       toast('Saved & recalculated', 'success');
     } else {
@@ -2882,6 +2923,146 @@ async function saveAll() {
     toast('Save failed: ' + e.message, 'error');
     saveText.textContent = 'Save';
   }
+}
+
+// ── SCENARIOS ─────────────────────────────────────────────────────
+async function loadScenarios() {
+  if (!currentProject) return;
+  const res = await fetch(`/api/projects/${currentProject}/scenarios`);
+  _scenarios = await res.json();
+  renderScenarioTabs();
+  // Switch to first scenario
+  if (_scenarios.length > 0) await switchScenario(_scenarios[0].id, true);
+}
+
+function renderScenarioTabs() {
+  const container = document.getElementById('scenario-tabs');
+  container.innerHTML = _scenarios.map(s => `
+    <div class="scen-tab ${s.id === _currentScenarioId ? 'active' : ''}" id="stab-${s.id}" onclick="switchScenario('${s.id}')">
+      <span class="scen-name" title="Double-click to rename" ondblclick="event.stopPropagation(); renameScenario('${s.id}')">${s.name}</span>
+      ${_scenarios.length > 1 ? `<button class="scen-del" title="Delete scenario" onclick="event.stopPropagation(); deleteScenario('${s.id}')">&times;</button>` : ''}
+    </div>`).join('');
+}
+
+async function switchScenario(sid, force = false) {
+  if (sid === _currentScenarioId && !force) return;
+  if (_currentScenarioId && !force) {
+    // Auto-save if dirty before switching
+    const saveText = document.getElementById('save-text');
+    if (saveText && saveText.textContent === 'Unsaved') await saveAll();
+  }
+  _currentScenarioId = sid;
+  renderScenarioTabs();
+  const scen = _scenarios.find(s => s.id === sid);
+  if (!scen) return;
+  await loadInputs({inputs: scen.inputs, outputs: scen.outputs});
+  window._lastOutputs = scen.outputs;
+  recalcAllLiveFields();
+  renderOutputsFromFlat(scen.outputs);
+  renderComparisonPanel();
+  markClean();
+}
+
+async function addScenario() {
+  const name = prompt('Scenario name:', 'New Scenario');
+  if (!name) return;
+  const cloneChoice = _scenarios.length > 0
+    ? confirm(`Clone inputs from "${_scenarios.find(s=>s.id===_currentScenarioId)?.name || 'current'}"?\n\nOK = clone current inputs\nCancel = start from project defaults`)
+    : false;
+  const body = {name: name.trim()};
+  if (cloneChoice && _currentScenarioId) body.clone_from = _currentScenarioId;
+  const res = await fetch(`/api/projects/${currentProject}/scenarios`, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+  });
+  const scen = await res.json();
+  _scenarios.push(scen);
+  await switchScenario(scen.id);
+  renderScenarioTabs();
+  toast(`Scenario "${scen.name}" created`, 'success');
+}
+
+async function deleteScenario(sid) {
+  const scen = _scenarios.find(s => s.id === sid);
+  if (!scen || !confirm(`Delete scenario "${scen.name}"? This cannot be undone.`)) return;
+  await fetch(`/api/projects/${currentProject}/scenarios/${sid}`, {method:'DELETE'});
+  _scenarios = _scenarios.filter(s => s.id !== sid);
+  if (_currentScenarioId === sid) {
+    _currentScenarioId = null;
+    if (_scenarios.length > 0) await switchScenario(_scenarios[0].id, true);
+  } else {
+    renderScenarioTabs();
+    renderComparisonPanel();
+  }
+  toast(`Scenario deleted`, 'success');
+}
+
+async function renameScenario(sid) {
+  const scen = _scenarios.find(s => s.id === sid);
+  if (!scen) return;
+  const name = prompt('Rename scenario:', scen.name);
+  if (!name || name.trim() === scen.name) return;
+  await fetch(`/api/projects/${currentProject}/scenarios/${sid}/name`, {
+    method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: name.trim()})
+  });
+  scen.name = name.trim();
+  renderScenarioTabs();
+  renderComparisonPanel();
+}
+
+async function promoteScenario() {
+  const scen = _scenarios.find(s => s.id === _currentScenarioId);
+  if (!scen) return;
+  if (!confirm(`Set "${scen.name}" as the main project version?\n\nThis updates the project record and portfolio view.`)) return;
+  const res = await fetch(`/api/projects/${currentProject}/scenarios/${_currentScenarioId}/promote`, {method:'POST'});
+  const d = await res.json();
+  if (d.ok) {
+    await loadProjectList();
+    toast(`"${scen.name}" is now the main version`, 'success');
+  }
+}
+
+function renderComparisonPanel() {
+  const panel = document.getElementById('scenario-comparison');
+  if (!panel) return;
+  if (_scenarios.length < 2) { panel.style.display = 'none'; return; }
+  const fmt = v => (v == null || v === '' || v === 0) ? '—' : '$' + Math.round(parseFloat(v)||0).toLocaleString('en-US');
+  const fmtPct = v => (v == null || v === '') ? '—' : ((parseFloat(v)||0)*100).toFixed(1) + '%';
+  const fmtYr = v => (v == null || v === '') ? '—' : (parseFloat(v)||0).toFixed(1) + ' yrs';
+  const fmtN = v => (v == null || v === '') ? '—' : Math.round(parseFloat(v)||0).toLocaleString('en-US');
+  const metrics = [
+    ['Total Revenue',      s => fmt(s.outputs?.total_revenue)],
+    ['Gross Costs',        s => fmt(s.outputs?.gross_costs)],
+    ['Gross Margin ($)',   s => fmt(s.outputs?.gross_margin_amt)],
+    ['Gross Margin (%)',   s => fmtPct(s.outputs?.gross_margin_of_rev)],
+    ['Net Margin ($)',     s => fmt(s.outputs?.net_margin_amt)],
+    ['Net Margin (%)',     s => fmtPct(s.outputs?.net_margin_of_rev)],
+    ['Unlevered IRR',      s => fmtPct(s.outputs?.unlevered_irr)],
+    ['Total Lots',         s => fmtN(s.outputs?.total_lots)],
+    ['Project Length',     s => fmtYr(s.outputs?.project_length_years)],
+  ];
+  const isActive = sid => sid === _currentScenarioId;
+  panel.style.display = 'block';
+  panel.innerHTML = `
+    <div class="fin-card" style="margin-bottom:0">
+      <div class="fin-card-title" style="margin-bottom:12px">Scenario Comparison</div>
+      <div class="overflow-x">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr>
+            <th style="text-align:left;padding:6px 10px;color:var(--text-muted);font-weight:500;border-bottom:1px solid var(--border)">Metric</th>
+            ${_scenarios.map(s => `<th style="text-align:right;padding:6px 10px;color:${isActive(s.id)?'var(--accent)':'var(--text-muted)'};font-weight:${isActive(s.id)?700:500};border-bottom:1px solid var(--border);cursor:pointer" onclick="switchScenario('${s.id}')">${s.name}${isActive(s.id)?' ✦':''}</th>`).join('')}
+          </tr>
+        </thead>
+        <tbody>
+          ${metrics.map(([label, fn], ri) => `
+          <tr style="background:${ri%2===0?'rgba(255,255,255,.02)':'transparent'}">
+            <td style="padding:5px 10px;color:var(--text-muted)">${label}</td>
+            ${_scenarios.map(s => `<td style="text-align:right;padding:5px 10px;font-weight:${isActive(s.id)?600:400};color:${isActive(s.id)?'var(--text)':'var(--text-muted)'}">${fn(s)}</td>`).join('')}
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      </div>
+    </div>`;
 }
 
 async function recalcAndRefresh() {

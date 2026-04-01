@@ -58,6 +58,7 @@ def init_db():
             period TEXT UNIQUE NOT NULL,
             sent_at TIMESTAMP DEFAULT NOW()
         );
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS scenarios JSONB DEFAULT '[]'::jsonb;
         CREATE TABLE IF NOT EXISTS projects (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
@@ -246,6 +247,120 @@ def delete_project(pid):
     conn = get_db()
     cur = conn.cursor()
     cur.execute("UPDATE projects SET archived = TRUE WHERE id = %s", (pid,))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+# ─── SCENARIO API ─────────────────────────────────────────────────────────────
+@app.route("/api/projects/<int:pid>/scenarios", methods=["GET"])
+@login_required
+def list_scenarios(pid):
+    import uuid
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT inputs, outputs, scenarios FROM projects WHERE id = %s", (pid,))
+    row = cur.fetchone()
+    if not row: cur.close(); conn.close(); return jsonify({"error": "Not found"}), 404
+    scenarios = list(row["scenarios"] or [])
+    if not scenarios:
+        sid = str(uuid.uuid4())[:8]
+        scenarios = [{"id": sid, "name": "Base Case",
+                      "inputs": row["inputs"] or {}, "outputs": row["outputs"] or {}}]
+        cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
+        conn.commit()
+    cur.close(); conn.close()
+    return jsonify(scenarios)
+
+@app.route("/api/projects/<int:pid>/scenarios", methods=["POST"])
+@login_required
+def create_scenario(pid):
+    import uuid
+    data = request.json or {}
+    name = data.get("name", "New Scenario").strip() or "New Scenario"
+    clone_id = data.get("clone_from")
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT inputs, outputs, scenarios FROM projects WHERE id = %s", (pid,))
+    row = cur.fetchone()
+    if not row: cur.close(); conn.close(); return jsonify({"error": "Not found"}), 404
+    scenarios = list(row["scenarios"] or [])
+    sid = str(uuid.uuid4())[:8]
+    if clone_id:
+        src = next((s for s in scenarios if s["id"] == clone_id), None)
+        inp = dict(src["inputs"]) if src else dict(row["inputs"] or {})
+        out = dict(src["outputs"]) if src else dict(row["outputs"] or {})
+    else:
+        inp = dict(row["inputs"] or {})
+        out = dict(row["outputs"] or {})
+    new_scen = {"id": sid, "name": name, "inputs": inp, "outputs": out}
+    scenarios.append(new_scen)
+    cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify(new_scen)
+
+@app.route("/api/projects/<int:pid>/scenarios/<sid>", methods=["PUT"])
+@login_required
+def save_scenario(pid, sid):
+    data = request.json or {}
+    inp = data.get("inputs", {})
+    try:
+        out = calculate(inp)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT scenarios FROM projects WHERE id = %s", (pid,))
+    row = cur.fetchone()
+    if not row: cur.close(); conn.close(); return jsonify({"error": "Not found"}), 404
+    scenarios = list(row["scenarios"] or [])
+    idx = next((i for i, s in enumerate(scenarios) if s["id"] == sid), None)
+    if idx is None: cur.close(); conn.close(); return jsonify({"error": "Scenario not found"}), 404
+    scenarios[idx]["inputs"] = inp
+    scenarios[idx]["outputs"] = out
+    cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "outputs": out})
+
+@app.route("/api/projects/<int:pid>/scenarios/<sid>", methods=["DELETE"])
+@login_required
+def delete_scenario(pid, sid):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT scenarios FROM projects WHERE id = %s", (pid,))
+    row = cur.fetchone()
+    if not row: cur.close(); conn.close(); return jsonify({"error": "Not found"}), 404
+    scenarios = [s for s in (row["scenarios"] or []) if s["id"] != sid]
+    cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/projects/<int:pid>/scenarios/<sid>/promote", methods=["POST"])
+@login_required
+def promote_scenario(pid, sid):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT scenarios FROM projects WHERE id = %s", (pid,))
+    row = cur.fetchone()
+    if not row: cur.close(); conn.close(); return jsonify({"error": "Not found"}), 404
+    scen = next((s for s in (row["scenarios"] or []) if s["id"] == sid), None)
+    if not scen: cur.close(); conn.close(); return jsonify({"error": "Scenario not found"}), 404
+    inp = scen["inputs"]; out = scen["outputs"]
+    cur.execute("""UPDATE projects SET inputs=%s, outputs=%s, name=%s, address=%s, updated_at=NOW()
+                   WHERE id=%s""",
+                (json.dumps(inp), json.dumps(out),
+                 inp.get("project_name", "Unnamed"), inp.get("address", ""), pid))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True, "outputs": out})
+
+@app.route("/api/projects/<int:pid>/scenarios/<sid>/name", methods=["PATCH"])
+@login_required
+def rename_scenario(pid, sid):
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    if not name: return jsonify({"error": "Name required"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT scenarios FROM projects WHERE id = %s", (pid,))
+    row = cur.fetchone()
+    if not row: cur.close(); conn.close(); return jsonify({"error": "Not found"}), 404
+    scenarios = list(row["scenarios"] or [])
+    idx = next((i for i, s in enumerate(scenarios) if s["id"] == sid), None)
+    if idx is None: cur.close(); conn.close(); return jsonify({"error": "Scenario not found"}), 404
+    scenarios[idx]["name"] = name
+    cur.execute("UPDATE projects SET scenarios = %s WHERE id = %s", (json.dumps(scenarios), pid))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
 
