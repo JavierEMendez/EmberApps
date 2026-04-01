@@ -3073,16 +3073,39 @@ async function recalcAndRefresh() {
     container.innerHTML = '<div class="full-loading"><div class="loading"></div> Running calculations…</div>';
   }
   try {
-    const rr = await fetch(`/api/projects/${currentProject}/calculate`, {method:'POST'});
-    const rd = await rr.json();
-    if (rd.ok) {
-      window._lastOutputs = rd.outputs;
-      renderOutputsFromFlat(rd.outputs);
-      await loadInputs();
-      recalcAllLiveFields();
-      toast('Model recalculated', 'success');
+    if (_currentScenarioId) {
+      // Scenario mode: recalc by re-PUTting the active scenario's in-memory inputs
+      const sc = _scenarios.find(s => s.id === _currentScenarioId);
+      if (!sc) throw new Error('Active scenario not found');
+      const rr = await fetch(`/api/projects/${currentProject}/scenarios/${_currentScenarioId}`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({inputs: sc.inputs})
+      });
+      const rd = await rr.json();
+      if (rd.ok) {
+        sc.outputs = rd.outputs;
+        window._lastOutputs = rd.outputs;
+        renderOutputsFromFlat(rd.outputs);
+        await loadInputs({inputs: sc.inputs, outputs: rd.outputs});
+        recalcAllLiveFields();
+        renderComparisonPanel();
+        toast('Model recalculated', 'success');
+      } else {
+        toast('Calculation error: ' + (rd.error || 'Unknown'), 'error');
+      }
     } else {
-      toast('Calculation error: ' + (rd.error || 'Unknown'), 'error');
+      const rr = await fetch(`/api/projects/${currentProject}/calculate`, {method:'POST'});
+      const rd = await rr.json();
+      if (rd.ok) {
+        window._lastOutputs = rd.outputs;
+        renderOutputsFromFlat(rd.outputs);
+        await loadInputs();
+        recalcAllLiveFields();
+        toast('Model recalculated', 'success');
+      } else {
+        toast('Calculation error: ' + (rd.error || 'Unknown'), 'error');
+      }
     }
   } catch(e) {
     toast('Recalc failed: ' + e.message, 'error');
