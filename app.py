@@ -2,7 +2,11 @@
 Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
-import os, json, datetime
+import os, json, datetime, smtplib, io
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
 import psycopg2
@@ -10,7 +14,6 @@ import psycopg2.extras
 from werkzeug.security import generate_password_hash, check_password_hash
 from calc import calculate
 from report_parser import parse_dashboard
-import io
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ember-dev-secret-change-in-production")
@@ -48,6 +51,13 @@ def init_db():
         -- Add columns if upgrading from older schema
         ALTER TABLE users ADD COLUMN IF NOT EXISTS page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true,"operations":true}'::jsonb;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS report_opt_in BOOLEAN DEFAULT FALSE;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS report_format TEXT DEFAULT 'pdf';
+        CREATE TABLE IF NOT EXISTS report_sends (
+            id SERIAL PRIMARY KEY,
+            period TEXT UNIQUE NOT NULL,
+            sent_at TIMESTAMP DEFAULT NOW()
+        );
         CREATE TABLE IF NOT EXISTS projects (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
@@ -332,10 +342,15 @@ def reset_password(uid):
 def get_account():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT username, email FROM users WHERE id = %s", (session["user_id"],))
+    cur.execute("SELECT username, email, report_opt_in, report_format FROM users WHERE id = %s", (session["user_id"],))
     row = cur.fetchone()
     cur.close(); conn.close()
-    return jsonify({"username": row["username"], "email": row["email"] or ""})
+    return jsonify({
+        "username": row["username"],
+        "email": row["email"] or "",
+        "report_opt_in": bool(row["report_opt_in"]),
+        "report_format": row["report_format"] or "pdf"
+    })
 
 @app.route("/api/admin/users/<int:uid>/email", methods=["PUT"])
 @login_required
@@ -381,6 +396,31 @@ def update_page_access(uid):
                 (json.dumps(page_access), uid))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
+
+@app.route("/api/account/report-settings", methods=["PUT"])
+@login_required
+def update_report_settings():
+    data = request.json or {}
+    opt_in = bool(data.get("report_opt_in", False))
+    fmt = data.get("report_format", "pdf")
+    if fmt not in ("pdf", "excel"):
+        fmt = "pdf"
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET report_opt_in = %s, report_format = %s WHERE id = %s",
+                (opt_in, fmt, session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/admin/send-reports-now", methods=["POST"])
+@login_required
+@admin_required
+def send_reports_now():
+    try:
+        count = _send_monthly_emails(force=True)
+        return jsonify({"ok": True, "sent": count})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # ─── DEFAULT INPUTS TEMPLATE ──────────────────────────────────────────────────
 def default_inputs(name="New Project"):
@@ -1062,6 +1102,558 @@ def operations_report():
     if session.get("is_admin"):
         pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
     return render_template("operations.html", data=data, uploaded_at=uploaded_at, is_admin=session.get("is_admin"), page_access=pa)
+
+# ─── REPORT GENERATORS ────────────────────────────────────────────────────────
+
+def _gen_excel_loans(data):
+    """Generate loans Excel workbook bytes from report data."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Loan Capacities"
+
+    NAVY = "1A3A5C"
+    GOLD = "C8A96E"
+    HDR_FILL = PatternFill("solid", fgColor="1E2535")
+    ALT_FILL = PatternFill("solid", fgColor="F7F8FA")
+    thin = Side(style="thin", color="D0D5DD")
+    bdr = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    def hf(bold=False, size=9): return Font(name="Calibri", size=size, bold=bold, color="8B95A8")
+    def vf(bold=False, color="1A1A1A"): return Font(name="Calibri", size=9, bold=bold, color=color)
+    def gf(size=12): return Font(name="Calibri", size=size, bold=True, color=GOLD)
+
+    r = 1
+    ws.cell(row=r, column=1, value="Loan Capacities & Debt Schedules").font = gf()
+    r += 2
+
+    def write_table(title, headers, rows, totals=None):
+        nonlocal r
+        ws.cell(row=r, column=1, value=title).font = Font(name="Calibri", size=11, bold=True, color=NAVY)
+        r += 1
+        for ci, h in enumerate(headers, 1):
+            c = ws.cell(row=r, column=ci, value=h)
+            c.font = hf(bold=True)
+            c.fill = HDR_FILL
+            c.border = bdr
+            c.alignment = Alignment(horizontal="center" if ci > 1 else "left")
+        r += 1
+        for ri, row_data in enumerate(rows):
+            fill = ALT_FILL if ri % 2 == 0 else PatternFill()
+            for ci, val in enumerate(row_data, 1):
+                c = ws.cell(row=r, column=ci, value=val)
+                c.font = vf()
+                c.fill = fill
+                c.border = bdr
+                c.alignment = Alignment(horizontal="left" if ci == 1 else "right")
+                if ci > 1 and isinstance(val, (int, float)):
+                    c.number_format = "#,##0"
+            r += 1
+        if totals:
+            tot_fill = PatternFill("solid", fgColor="E8EEF5")
+            ws.cell(row=r, column=1, value="Total").font = vf(bold=True, color=NAVY)
+            ws.cell(row=r, column=1).fill = tot_fill
+            ws.cell(row=r, column=1).border = bdr
+            for ci, val in enumerate(totals, 2):
+                c = ws.cell(row=r, column=ci, value=val if val else None)
+                c.font = vf(bold=True, color=NAVY)
+                c.fill = tot_fill
+                c.border = bdr
+                c.alignment = Alignment(horizontal="right")
+                if isinstance(val, (int, float)):
+                    c.number_format = "#,##0"
+            r += 1
+        r += 1
+
+    # MPC Loans table
+    mpc = data.get("mpc_loans", {})
+    if mpc.get("headers") and mpc.get("rows"):
+        totals_row = [mpc["totals"].get(h, "") for h in mpc["headers"][1:]] if mpc.get("totals") else None
+        write_table("MPC Loan Capacities", mpc["headers"],
+                    [[row_d.get(h, "") for h in mpc["headers"]] for row_d in mpc["rows"]], totals_row)
+
+    # Vertical Loans table
+    vl = data.get("vertical_loans", {})
+    if vl.get("headers") and vl.get("rows"):
+        totals_row = [vl["totals"].get(h, "") for h in vl["headers"][1:]] if vl.get("totals") else None
+        write_table("Vertical Loan Capacities", vl["headers"],
+                    [[row_d.get(h, "") for h in vl["headers"]] for row_d in vl["rows"]], totals_row)
+
+    # Debt Schedules — one mini-table per project
+    for sched in data.get("debt_schedules", []):
+        proj_name = sched.get("project", "Project")
+        months = sched.get("months", [])
+        if not months:
+            continue
+        headers = [""] + [str(m) for m in months]
+        rows_data = [
+            ["Scheduled Payments"] + [v for v in sched.get("payments", [])],
+            ["Cumulative Payments"] + [v for v in sched.get("cumulative_payments", [])],
+            ["Lot Revenues"] + [v for v in sched.get("revenues", [])],
+            ["Cumulative Revenues"] + [v for v in sched.get("cumulative_revenues", [])],
+        ]
+        write_table(f"Debt Schedule — {proj_name}", headers, rows_data)
+
+    ws.column_dimensions["A"].width = 30
+    for ci in range(2, 30):
+        ws.column_dimensions[get_column_letter(ci)].width = 12
+
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    return out.read()
+
+
+def _gen_pdf_report(report_type, data):
+    """Generate a simple PDF for the given report type. Returns bytes."""
+    from fpdf import FPDF
+
+    class PDF(FPDF):
+        def header(self):
+            self.set_font("Helvetica", "B", 14)
+            titles = {
+                "returns": "Active Project Returns",
+                "loans": "Loan Capacities & Debt Schedules",
+                "operations": "Ember Operating Revenues",
+            }
+            self.set_text_color(26, 58, 92)
+            self.cell(0, 10, titles.get(report_type, "Ember Report"), ln=True)
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(120, 120, 120)
+            self.cell(0, 5, f"Generated {datetime.datetime.now().strftime('%B %d, %Y')}", ln=True)
+            self.ln(3)
+
+        def footer(self):
+            self.set_y(-15)
+            self.set_font("Helvetica", "", 7)
+            self.set_text_color(150, 150, 150)
+            self.cell(0, 10, f"Page {self.page_no()}", align="C")
+
+    pdf = PDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    def draw_section(title):
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(26, 58, 92)
+        pdf.cell(0, 7, title, ln=True)
+        pdf.set_text_color(30, 30, 30)
+
+    def draw_table(headers, rows, col_widths=None):
+        if not headers:
+            return
+        n = len(headers)
+        usable = pdf.w - pdf.l_margin - pdf.r_margin
+        if col_widths is None:
+            first = min(70, usable * 0.35)
+            rest = (usable - first) / max(n - 1, 1)
+            col_widths = [first] + [rest] * (n - 1)
+
+        # Header row
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.set_fill_color(30, 37, 53)
+        pdf.set_text_color(139, 149, 168)
+        for i, h in enumerate(headers):
+            pdf.cell(col_widths[i], 5, str(h)[:30], border=0, fill=True,
+                     align="L" if i == 0 else "R")
+        pdf.ln()
+
+        # Data rows
+        pdf.set_font("Helvetica", "", 7)
+        for ri, row_data in enumerate(rows):
+            if pdf.get_y() > pdf.h - 25:
+                pdf.add_page()
+            fill = ri % 2 == 0
+            pdf.set_fill_color(247, 248, 250) if fill else pdf.set_fill_color(255, 255, 255)
+            pdf.set_text_color(30, 30, 30)
+            for i, val in enumerate(row_data[:n]):
+                txt = ""
+                if isinstance(val, float):
+                    txt = f"{val:,.0f}" if abs(val) >= 1 else f"{val:.1%}"
+                elif isinstance(val, int):
+                    txt = f"{val:,}"
+                elif val is not None:
+                    txt = str(val)[:30]
+                pdf.cell(col_widths[i], 4.5, txt, border=0, fill=True,
+                         align="L" if i == 0 else "R")
+            pdf.ln()
+        pdf.ln(3)
+
+    if report_type == "returns":
+        summary_cols = ["Project", "LP IRR", "Equity Multiple", "Total LP Profit", "Promote"]
+        sum_rows = []
+        for proj in data.get("projects", []):
+            m = {m["label"]: m for m in proj.get("metrics", [])}
+            sum_rows.append([
+                proj["name"],
+                f"{m.get('LP IRR',{}).get('total',0):.1%}" if m.get('LP IRR',{}).get('total') else "",
+                f"{m.get('LP Equity Multiple',{}).get('total',0):.2f}x" if m.get('LP Equity Multiple',{}).get('total') else "",
+                m.get('Total LP Profit',{}).get('total', ""),
+                m.get('Promote',{}).get('total', ""),
+            ])
+        draw_section("Portfolio Summary")
+        draw_table(summary_cols, sum_rows, [70, 22, 28, 30, 25])
+        years = data.get("years", [])
+        for proj in data.get("projects", []):
+            draw_section(proj["name"])
+            hdrs = ["Metric", "Total"] + [str(y) for y in years[:10]]
+            rows_data = []
+            for m in proj.get("metrics", []):
+                row_vals = [m["label"], m.get("total", "")] + (m.get("yearly", [])[:10])
+                rows_data.append(row_vals)
+            draw_table(hdrs, rows_data)
+
+    elif report_type == "loans":
+        mpc = data.get("mpc_loans", {})
+        if mpc.get("headers") and mpc.get("rows"):
+            draw_section("MPC Loan Capacities")
+            rows_data = [[r.get(h, "") for h in mpc["headers"]] for r in mpc["rows"]]
+            draw_table(mpc["headers"], rows_data)
+        vl = data.get("vertical_loans", {})
+        if vl.get("headers") and vl.get("rows"):
+            draw_section("Vertical Loan Capacities")
+            rows_data = [[r.get(h, "") for h in vl["headers"]] for r in vl["rows"]]
+            draw_table(vl["headers"], rows_data)
+        for sched in data.get("debt_schedules", []):
+            months = sched.get("months", [])
+            if not months:
+                continue
+            draw_section(f"Debt Schedule — {sched.get('project','')}")
+            hdrs = [""] + [str(m) for m in months[:12]]
+            rows_data = [
+                ["Scheduled Payments"] + sched.get("payments", [])[:12],
+                ["Cumulative Payments"] + sched.get("cumulative_payments", [])[:12],
+                ["Lot Revenues"] + sched.get("revenues", [])[:12],
+                ["Cumulative Revenues"] + sched.get("cumulative_revenues", [])[:12],
+            ]
+            draw_table(hdrs, rows_data)
+
+    elif report_type == "operations":
+        for kpi in data.get("kpis", []):
+            pdf.set_font("Helvetica", "", 9)
+            pdf.set_text_color(30, 30, 30)
+            pdf.cell(80, 5, kpi.get("label", ""), ln=False)
+            pdf.set_font("Helvetica", "B", 9)
+            val = kpi.get("value", "")
+            txt = f"{val:,}" if isinstance(val, (int, float)) else str(val)
+            pdf.cell(0, 5, txt, ln=True)
+        pdf.ln(3)
+        yr = data.get("yearly_rollup", {})
+        if yr.get("years"):
+            draw_section("Annual Revenue Forecast")
+            hdrs = ["Revenue Source"] + [str(y) for y in yr["years"]]
+            rows_data = [[row["label"]] + row.get("values", []) for row in yr.get("rows", [])]
+            draw_table(hdrs, rows_data)
+        mo = data.get("monthly", {})
+        if mo.get("dates"):
+            draw_section("Monthly Fee Revenue")
+            dates = mo["dates"][:12]
+            hdrs = ["Project / Category"] + [f"{d[5:7]}/{d[2:4]}" for d in dates]
+            rows_data = [[f"{r['project']} — {r['category']}"] + r.get("values", [])[:12]
+                         for r in mo.get("rows", [])]
+            draw_table(hdrs, rows_data)
+
+    return pdf.output()
+
+
+def _send_monthly_emails(force=False):
+    """Send monthly reports to all opted-in users. Returns count of emails sent."""
+    now = datetime.datetime.utcnow()
+    period = now.strftime("%Y-%m")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    if not force:
+        cur.execute("SELECT id FROM report_sends WHERE period = %s", (period,))
+        if cur.fetchone():
+            cur.close(); conn.close()
+            return 0  # already sent this month
+
+    # Fetch opted-in users with emails
+    cur.execute("SELECT id, username, email, report_format FROM users WHERE report_opt_in = TRUE AND email IS NOT NULL AND email != ''")
+    recipients = cur.fetchall()
+
+    # Fetch latest report data for all three types
+    report_data = {}
+    for rt in ("returns", "loans", "operations"):
+        cur.execute("SELECT data FROM reports WHERE report_type = %s ORDER BY uploaded_at DESC LIMIT 1", (rt,))
+        row = cur.fetchone()
+        report_data[rt] = row["data"] if row else None
+
+    cur.close(); conn.close()
+
+    if not recipients:
+        return 0
+
+    smtp_host = os.environ.get("SMTP_HOST", "")
+    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+    smtp_user = os.environ.get("SMTP_USER", "")
+    smtp_pass = os.environ.get("SMTP_PASSWORD", "")
+    from_addr = os.environ.get("SMTP_FROM", smtp_user)
+
+    if not smtp_host or not smtp_user:
+        raise ValueError("SMTP_HOST and SMTP_USER environment variables must be set")
+
+    subject = now.strftime("%B %Y") + " Ember Reports"
+
+    report_labels = {
+        "returns": "Active Project Returns",
+        "loans": "Loan Capacities & Debt Schedules",
+        "operations": "Ember Operating Revenues",
+    }
+
+    sent_count = 0
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(smtp_user, smtp_pass)
+
+        for user in recipients:
+            fmt = user["report_format"] or "pdf"
+            email_addr = user["email"]
+
+            msg = MIMEMultipart()
+            msg["From"] = from_addr
+            msg["To"] = email_addr
+            msg["Subject"] = subject
+
+            body_lines = [
+                f"Hello {user['username']},",
+                "",
+                f"Please find your {now.strftime('%B %Y')} Ember reports attached below.",
+                "",
+                "The following reports are included:",
+            ]
+            for rt, label in report_labels.items():
+                if report_data.get(rt):
+                    body_lines.append(f"  • {label} ({fmt.upper()} format)")
+            body_lines += [
+                "",
+                "These reports are generated automatically on the 1st of each month.",
+                "",
+                "— Ember Acquisitions",
+            ]
+            msg.attach(MIMEText("\n".join(body_lines), "plain"))
+
+            for rt, label in report_labels.items():
+                if not report_data.get(rt):
+                    continue
+                data = report_data[rt]
+                try:
+                    if fmt == "excel":
+                        if rt == "returns":
+                            # Reuse the export_returns logic by calling the generator inline
+                            file_bytes = _gen_excel_returns(data)
+                            filename = f"{label.replace(' ','_')}.xlsx"
+                            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        elif rt == "loans":
+                            file_bytes = _gen_excel_loans(data)
+                            filename = "Loan_Capacities.xlsx"
+                            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        else:  # operations
+                            file_bytes = _gen_excel_operations(data)
+                            filename = "Ember_Operating_Revenues.xlsx"
+                            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    else:
+                        file_bytes = bytes(_gen_pdf_report(rt, data))
+                        filename = f"{label.replace(' ','_')}.pdf"
+                        mime_type = "application/pdf"
+
+                    part = MIMEBase("application", "octet-stream")
+                    part.set_payload(file_bytes)
+                    encoders.encode_base64(part)
+                    part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
+                    part.add_header("Content-Type", mime_type)
+                    msg.attach(part)
+                except Exception as e:
+                    print(f"Error generating {rt} {fmt}: {e}")
+
+            server.sendmail(from_addr, email_addr, msg.as_string())
+            sent_count += 1
+
+    # Record successful send (skip if forced to allow re-testing)
+    if not force:
+        conn2 = get_db()
+        cur2 = conn2.cursor()
+        cur2.execute("INSERT INTO report_sends (period) VALUES (%s) ON CONFLICT DO NOTHING", (period,))
+        conn2.commit(); cur2.close(); conn2.close()
+
+    return sent_count
+
+
+def _gen_excel_returns(data):
+    """Extract the returns Excel generation logic for reuse in email sending."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    LABEL_MAP = {"LP IRR": "Net Cashflow", "LP Equity Multiple": "Cumulative Net Cashflow"}
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Project Returns"
+
+    PROJ_FILL   = PatternFill("solid", fgColor="F2EFE8")
+    SUMM_FILL   = PatternFill("solid", fgColor="E8F0EE")
+    HEADER_FILL = PatternFill("solid", fgColor="F7F6F3")
+    thin = Side(style="thin", color="CCCCCC")
+    cell_border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    TEXT="1A1A1A"; HDR_TEXT="555555"; PROJ_TEXT="6B4E1E"; SUMM_TEXT="2D6B5A"; ACCENT="7A5C1E"
+
+    def _f(bold=False, color=TEXT, size=9):
+        return Font(name="Calibri", size=size, bold=bold, color=color)
+    def _set_num(cell, val):
+        if isinstance(val, (int, float)) and val != 0:
+            cell.value = val; cell.number_format = "#,##0"
+        else:
+            cell.value = None
+
+    years = data.get("years", [])
+    all_idxs = list(range(len(years)))
+    num_cols = 2 + len(years)
+    r = 1
+    ws.cell(row=r, column=1, value="Consolidated Ember Project Returns").font = Font(name="Calibri", bold=True, size=14, color=PROJ_TEXT)
+    r += 1
+    ws.cell(row=r, column=1, value="($ in 000s)").font = _f(color="888888")
+    r += 2
+
+    SUMMARY_HDR_FILL = PatternFill("solid", fgColor="EDE8DF")
+    summary_cols = ["Project", "LP IRR", "Equity Multiple", "Total LP Profit", "Promote"]
+    for ci, h in enumerate(summary_cols, 1):
+        c = ws.cell(row=r, column=ci, value=h)
+        c.font = _f(bold=True, color=HDR_TEXT); c.fill = SUMMARY_HDR_FILL; c.border = cell_border
+        c.alignment = Alignment(horizontal="left" if ci==1 else "center")
+    r += 1
+    for proj in data.get("projects", []):
+        metrics_by_label = {m["label"]: m for m in proj.get("metrics", [])}
+        irr_val = metrics_by_label.get("LP IRR", {}).get("total"); em_val = metrics_by_label.get("LP Equity Multiple", {}).get("total")
+        pft_val = metrics_by_label.get("Total LP Profit", {}).get("total"); prom_val = metrics_by_label.get("Promote", {}).get("total")
+        nc = ws.cell(row=r, column=1, value=proj["name"]); nc.font = _f(bold=True, color=PROJ_TEXT); nc.border = cell_border
+        ic = ws.cell(row=r, column=2); ic.font = _f(bold=True, color=ACCENT); ic.alignment = Alignment(horizontal="right"); ic.border = cell_border
+        if isinstance(irr_val, (int, float)) and irr_val: ic.value = irr_val; ic.number_format = "0.0%"
+        ec = ws.cell(row=r, column=3); ec.font = _f(bold=True, color=ACCENT); ec.alignment = Alignment(horizontal="right"); ec.border = cell_border
+        if isinstance(em_val, (int, float)) and em_val: ec.value = em_val; ec.number_format = '0.00"x"'
+        pc = ws.cell(row=r, column=4); pc.font = _f(); pc.alignment = Alignment(horizontal="right"); pc.border = cell_border; _set_num(pc, pft_val)
+        prc = ws.cell(row=r, column=5); prc.font = _f(); prc.alignment = Alignment(horizontal="right"); prc.border = cell_border; _set_num(prc, prom_val)
+        r += 1
+    r += 1
+
+    def write_section_header(r, title, fill, color):
+        c = ws.cell(row=r, column=1, value=title); c.font = Font(name="Calibri", bold=True, size=10, color=color); c.fill = fill; c.border = cell_border
+        for ci in range(2, num_cols+1): cell=ws.cell(row=r, column=ci); cell.fill=fill; cell.border=cell_border
+        return r+1
+    def write_col_headers(r, col_labels):
+        ws.cell(row=r, column=1, value="Metric").font = _f(bold=True, color=HDR_TEXT); ws.cell(row=r, column=1).fill=HEADER_FILL; ws.cell(row=r, column=1).border=cell_border
+        ws.cell(row=r, column=2, value="Total").font = _f(bold=True, color=HDR_TEXT); ws.cell(row=r, column=2).fill=HEADER_FILL; ws.cell(row=r, column=2).alignment=Alignment(horizontal="center"); ws.cell(row=r, column=2).border=cell_border
+        for ci, lbl in enumerate(col_labels, 3):
+            c=ws.cell(row=r, column=ci, value=lbl); c.font=_f(bold=True, color=HDR_TEXT); c.fill=HEADER_FILL; c.alignment=Alignment(horizontal="center"); c.border=cell_border
+        return r+1
+    def write_project(r, proj):
+        r=write_section_header(r, proj["name"], PROJ_FILL, PROJ_TEXT); r=write_col_headers(r, years)
+        for m in proj.get("metrics", []):
+            label=m["label"]; display=LABEL_MAP.get(label, label); is_accent=label in ("LP IRR","LP Equity Multiple"); txt_color=ACCENT if is_accent else TEXT
+            total = sum(v for v in m.get("yearly",[]) if isinstance(v,(int,float))) if label=="LP IRR" else ([v for v in m.get("yearly",[]) if isinstance(v,(int,float)) and v!=0] or [0])[-1] if label=="LP Equity Multiple" else m.get("total",0)
+            lc=ws.cell(row=r, column=1, value=display); lc.font=_f(bold=is_accent, color=txt_color); lc.border=cell_border
+            tc=ws.cell(row=r, column=2); tc.font=_f(bold=is_accent, color=txt_color); tc.alignment=Alignment(horizontal="right"); tc.border=cell_border; _set_num(tc, total)
+            for ci, i in enumerate(all_idxs, 3):
+                yc=ws.cell(row=r, column=ci); val=m["yearly"][i] if i<len(m.get("yearly",[])) else 0; yc.font=_f(color=txt_color); yc.alignment=Alignment(horizontal="right"); yc.border=cell_border; _set_num(yc, val)
+            r+=1
+        return r+1
+
+    for proj in data.get("projects", []):
+        r = write_project(r, proj)
+    summary = data.get("summary", [])
+    if summary:
+        r=write_section_header(r, "Portfolio Summary", SUMM_FILL, SUMM_TEXT); r=write_col_headers(r, years)
+        for s in summary:
+            lc=ws.cell(row=r, column=1, value=s["label"]); lc.font=_f(); lc.border=cell_border
+            tc=ws.cell(row=r, column=2); tc.font=_f(); tc.alignment=Alignment(horizontal="right"); tc.border=cell_border; _set_num(tc, s.get("total",0))
+            for ci, i in enumerate(all_idxs, 3):
+                yc=ws.cell(row=r, column=ci); val=s["yearly"][i] if i<len(s.get("yearly",[])) else 0; yc.font=_f(); yc.alignment=Alignment(horizontal="right"); yc.border=cell_border; _set_num(yc, val)
+            r+=1
+
+    ws.column_dimensions["A"].width=32; ws.column_dimensions["B"].width=13
+    ws.column_dimensions["C"].width=14; ws.column_dimensions["D"].width=14; ws.column_dimensions["E"].width=13
+    for ci in range(6, 3+len(years)): ws.column_dimensions[get_column_letter(ci)].width=11
+
+    out = io.BytesIO(); wb.save(out); out.seek(0)
+    return out.read()
+
+
+def _gen_excel_operations(data):
+    """Extract the operations Excel generation logic for reuse in email sending."""
+    import openpyxl
+    from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    wb = openpyxl.Workbook(); ws = wb.active; ws.title = "Operating Revenues"
+    GOLD="C8A96E"; HEADER_FILL=PatternFill("solid", fgColor="1E2535"); TOTALS_FILL=PatternFill("solid", fgColor="161B24")
+    thin=Side(style="thin", color="2E3750"); cell_border=Border(left=thin, right=thin, top=thin, bottom=thin)
+    def _hdr_font(bold=False): return Font(name="Calibri", size=9, bold=bold, color="8B95A8")
+    def _val_font(bold=False): return Font(name="Calibri", size=9, bold=bold)
+    def write_section(r, title):
+        c=ws.cell(row=r, column=1, value=title); c.font=Font(name="Calibri", size=11, bold=True, color=GOLD); return r+1
+    def write_table(r, col_headers, data_rows, totals):
+        for ci, h in enumerate(col_headers, 1):
+            c=ws.cell(row=r, column=ci, value=h); c.font=_hdr_font(bold=True); c.fill=HEADER_FILL; c.border=cell_border; c.alignment=Alignment(horizontal="left" if ci==1 else "center")
+        r+=1
+        for ri, row_data in enumerate(data_rows):
+            for ci, val in enumerate(row_data, 1):
+                c=ws.cell(row=r, column=ci, value=val if val else None); c.font=_val_font(); c.border=cell_border; c.alignment=Alignment(horizontal="left" if ci==1 else "right")
+                if ci>1 and isinstance(val, (int,float)): c.number_format="#,##0"
+            r+=1
+        ws.cell(row=r, column=1, value="Total").font=_val_font(bold=True); ws.cell(row=r, column=1).border=cell_border; ws.cell(row=r, column=1).fill=TOTALS_FILL; ws.cell(row=r, column=1).alignment=Alignment(horizontal="left")
+        for ci, v in enumerate(totals, 2):
+            cell=ws.cell(row=r, column=ci, value=v if v else None); cell.font=_val_font(bold=True); cell.fill=TOTALS_FILL; cell.border=cell_border; cell.alignment=Alignment(horizontal="right")
+            if isinstance(v, (int,float)): cell.number_format="#,##0"
+        return r+2
+
+    r=1; ws.cell(row=r, column=1, value="Ember Operating Revenues").font=Font(name="Calibri", bold=True, size=14, color=GOLD); r+=2
+    r=write_section(r, "KPI Summary")
+    for kpi in data.get("kpis", []):
+        ws.cell(row=r, column=1, value=kpi["label"]).font=_val_font()
+        vc=ws.cell(row=r, column=2, value=kpi["value"]); vc.font=_val_font(bold=True); vc.number_format="#,##0"; vc.alignment=Alignment(horizontal="right"); r+=1
+    r+=1
+    yr=data.get("yearly_rollup",{})
+    if yr.get("years"):
+        r=write_section(r, "Annual Revenue Forecast (Next 5 Years)")
+        r=write_table(r, ["Revenue Source"]+[str(y) for y in yr["years"]], [[row["label"]]+row["values"] for row in yr.get("rows",[])], yr.get("totals",[]))
+    mo=data.get("monthly",{})
+    if mo.get("dates"):
+        r=write_section(r, "Monthly Fee Revenue")
+        r=write_table(r, ["Project / Category"]+[f"{d[5:7]}/{d[2:4]}" for d in mo["dates"]], [[f"{row['project']} — {row['category']}"]+row["values"] for row in mo.get("rows",[])], mo.get("totals",[]))
+    n12=data.get("next_12_months",{})
+    if n12.get("dates"):
+        r=write_section(r, "Next 12 Months")
+        r=write_table(r, ["Revenue Source"]+[f"{d[5:7]}/{d[2:4]}" for d in n12["dates"]], [[row["label"]]+row["values"] for row in n12.get("rows",[])], n12.get("totals",[]))
+    qr=data.get("quarterly_rollup",{})
+    if qr.get("quarters"):
+        r=write_section(r, "Next 12 Quarters")
+        r=write_table(r, ["Revenue Source"]+qr["quarters"], [[row["label"]]+row["values"] for row in qr.get("rows",[])], qr.get("totals",[]))
+
+    ws.column_dimensions["A"].width=36
+    for ci in range(2, 50): ws.column_dimensions[get_column_letter(ci)].width=11
+    out=io.BytesIO(); wb.save(out); out.seek(0)
+    return out.read()
+
+
+# ─── SCHEDULER ────────────────────────────────────────────────────────────────
+def _start_scheduler():
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        scheduler = BackgroundScheduler()
+        # Run on the 1st of every month at 8:00 AM UTC
+        scheduler.add_job(_send_monthly_emails, "cron", day=1, hour=8, minute=0)
+        scheduler.start()
+        print("APScheduler started — monthly report job scheduled for 1st of each month at 08:00 UTC")
+    except Exception as e:
+        print(f"Scheduler failed to start: {e}")
+
+_start_scheduler()
+
 
 if __name__ == "__main__":
     init_db()

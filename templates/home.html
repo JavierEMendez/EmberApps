@@ -184,7 +184,7 @@
 
 <!-- ACCOUNT SETTINGS MODAL -->
 <div id="acct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
-  <div style="background:#151921;border:1px solid #1e2535;border-radius:10px;padding:28px;width:340px;max-width:90vw">
+  <div style="background:#151921;border:1px solid #1e2535;border-radius:10px;padding:28px;width:360px;max-width:90vw;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <h3 style="margin:0;font-size:15px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif">Account Settings</h3>
       <button onclick="closeAcct()" style="background:none;border:none;color:#4a5568;font-size:20px;cursor:pointer;line-height:1">&times;</button>
@@ -197,7 +197,31 @@
     <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
     <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
     <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
-    <button onclick="saveAcctPw()" style="width:100%;background:#c8a96e;border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">Save Password</button>
+    <button onclick="saveAcctPw()" style="width:100%;background:#c8a96e;border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
+    <div style="border-top:1px solid #1e2535;padding-top:18px">
+      <div style="font-size:11px;color:#4a5568;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
+        <input type="checkbox" id="acct-report-optin" style="accent-color:#5e9e8c;width:15px;height:15px">
+        <div>
+          <div style="font-size:13px;color:#e8eaf0">Receive monthly reports</div>
+          <div style="font-size:11px;color:#4a5568;margin-top:2px">Sent on the 1st of each month to your email</div>
+        </div>
+      </label>
+      <div id="acct-format-row" style="display:none;margin-bottom:14px">
+        <div style="font-size:11px;color:#4a5568;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Format</div>
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#e8eaf0">
+            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:#5e9e8c"> PDF
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#e8eaf0">
+            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:#5e9e8c"> Excel
+          </label>
+        </div>
+        <div style="font-size:11px;color:#4a5568;margin-top:8px">Includes: Active Project Returns, Loan Capacities & Debt Schedules, Ember Operating Revenues</div>
+      </div>
+      <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
+      <button onclick="saveReportSettings()" style="width:100%;background:#1e2535;border:1px solid #2e3750;color:#e8eaf0;padding:9px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='#5e9e8c';this.style.color='#5e9e8c'" onmouseout="this.style.borderColor='#2e3750';this.style.color='#e8eaf0'">Save Report Preferences</button>
+    </div>
   </div>
 </div>
 
@@ -211,6 +235,13 @@
     </div>
     <div class="admin-body">
       <div id="user-list">Loading...</div>
+      <div style="margin-top:8px;padding-top:16px;border-top:1px solid rgba(37,44,61,.4)">
+        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Report Testing</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <button onclick="sendReportsNow()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:7px 14px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Send Reports Now</button>
+          <span id="send-reports-status" style="font-size:11px;color:var(--teal)"></span>
+        </div>
+      </div>
       <div class="add-user-form">
         <h4>Add Team Member</h4>
         <div class="form-row">
@@ -364,10 +395,14 @@ async function openAcct() {
   document.getElementById('acct-new-pw').value = '';
   document.getElementById('acct-conf-pw').value = '';
   document.getElementById('acct-msg').style.display = 'none';
+  document.getElementById('acct-report-msg').style.display = 'none';
   try {
     const res = await fetch('/api/account');
     const d = await res.json();
     document.getElementById('acct-email').textContent = d.email || '—';
+    document.getElementById('acct-report-optin').checked = d.report_opt_in || false;
+    document.getElementById(d.report_format === 'excel' ? 'acct-fmt-excel' : 'acct-fmt-pdf').checked = true;
+    document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
   } catch(e) {}
 }
 function closeAcct() {
@@ -375,6 +410,9 @@ function closeAcct() {
 }
 document.getElementById('acct-modal').addEventListener('click', function(e) {
   if (e.target === this) closeAcct();
+});
+document.getElementById('acct-report-optin').addEventListener('change', function() {
+  document.getElementById('acct-format-row').style.display = this.checked ? 'block' : 'none';
 });
 async function saveAcctPw() {
   const cur  = document.getElementById('acct-cur-pw').value;
@@ -396,6 +434,39 @@ async function saveAcctPw() {
   const data = await res.json();
   if (data.ok) { showMsg('Password updated.', true); setTimeout(closeAcct, 1500); }
   else         { showMsg(data.error || 'Failed to update password.', false); }
+}
+async function saveReportSettings() {
+  const opt_in = document.getElementById('acct-report-optin').checked;
+  const fmt = document.querySelector('input[name="acct-report-fmt"]:checked')?.value || 'pdf';
+  const msg = document.getElementById('acct-report-msg');
+  const res = await fetch('/api/account/report-settings', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({report_opt_in: opt_in, report_format: fmt})
+  });
+  const d = await res.json();
+  msg.style.display = 'block';
+  if (d.ok) { msg.textContent = 'Preferences saved.'; msg.style.color = '#5e9e8c'; }
+  else      { msg.textContent = d.error || 'Failed to save.'; msg.style.color = '#e07a3e'; }
+}
+async function sendReportsNow() {
+  const status = document.getElementById('send-reports-status');
+  status.textContent = 'Sending…';
+  status.style.color = 'var(--text-muted)';
+  try {
+    const res = await fetch('/api/admin/send-reports-now', {method:'POST'});
+    const d = await res.json();
+    if (d.ok) {
+      status.textContent = `Sent to ${d.sent} recipient${d.sent !== 1 ? 's' : ''}.`;
+      status.style.color = 'var(--teal)';
+    } else {
+      status.textContent = d.error || 'Error';
+      status.style.color = '#e07a3e';
+    }
+  } catch(e) {
+    status.textContent = 'Request failed';
+    status.style.color = '#e07a3e';
+  }
 }
 </script>
 </body>

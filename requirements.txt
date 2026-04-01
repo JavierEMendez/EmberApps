@@ -3,3 +3,5 @@ psycopg2-binary==2.9.10
 werkzeug==3.0.3
 gunicorn==22.0.0
 openpyxl==3.1.5
+APScheduler==3.10.4
+fpdf2==2.7.9

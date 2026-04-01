@@ -632,7 +632,7 @@ async function downloadPDF(){
 
 <!-- ACCOUNT SETTINGS MODAL -->
 <div id="acct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
-  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;width:340px;max-width:90vw">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;width:360px;max-width:90vw;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
       <h3 style="margin:0;font-size:15px;font-weight:600">Account Settings</h3>
       <button onclick="closeAcct()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1">&times;</button>
@@ -645,7 +645,31 @@ async function downloadPDF(){
     <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
     <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
     <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
-    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">Save Password</button>
+    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:20px">Save Password</button>
+    <div style="border-top:1px solid var(--border);padding-top:18px">
+      <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px">Monthly Report Emails</div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:14px">
+        <input type="checkbox" id="acct-report-optin" style="accent-color:#5e9e8c;width:15px;height:15px">
+        <div>
+          <div style="font-size:13px;color:var(--text)">Receive monthly reports</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:2px">Sent on the 1st of each month to your email</div>
+        </div>
+      </label>
+      <div id="acct-format-row" style="display:none;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Format</div>
+        <div style="display:flex;gap:16px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
+            <input type="radio" name="acct-report-fmt" value="pdf" id="acct-fmt-pdf" style="accent-color:#5e9e8c"> PDF
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--text)">
+            <input type="radio" name="acct-report-fmt" value="excel" id="acct-fmt-excel" style="accent-color:#5e9e8c"> Excel
+          </label>
+        </div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:8px">Includes: Active Project Returns, Loan Capacities & Debt Schedules, Ember Operating Revenues</div>
+      </div>
+      <div id="acct-report-msg" style="font-size:12px;margin-bottom:8px;display:none"></div>
+      <button onclick="saveReportSettings()" style="width:100%;background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='#5e9e8c';this.style.color='#5e9e8c'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text)'">Save Report Preferences</button>
+    </div>
   </div>
 </div>
 <script>
@@ -656,10 +680,14 @@ async function openAcct() {
   document.getElementById('acct-new-pw').value = '';
   document.getElementById('acct-conf-pw').value = '';
   document.getElementById('acct-msg').style.display = 'none';
+  document.getElementById('acct-report-msg').style.display = 'none';
   try {
     const res = await fetch('/api/account');
     const d = await res.json();
     document.getElementById('acct-email').textContent = d.email || '—';
+    document.getElementById('acct-report-optin').checked = d.report_opt_in || false;
+    document.getElementById(d.report_format === 'excel' ? 'acct-fmt-excel' : 'acct-fmt-pdf').checked = true;
+    document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
   } catch(e) {}
 }
 function closeAcct() {
@@ -667,6 +695,9 @@ function closeAcct() {
 }
 document.getElementById('acct-modal').addEventListener('click', function(e) {
   if (e.target === this) closeAcct();
+});
+document.getElementById('acct-report-optin').addEventListener('change', function() {
+  document.getElementById('acct-format-row').style.display = this.checked ? 'block' : 'none';
 });
 async function saveAcctPw() {
   const cur  = document.getElementById('acct-cur-pw').value;
@@ -688,6 +719,20 @@ async function saveAcctPw() {
   const data = await res.json();
   if (data.ok) { showMsg('Password updated.', true); setTimeout(closeAcct, 1500); }
   else         { showMsg(data.error || 'Failed to update password.', false); }
+}
+async function saveReportSettings() {
+  const opt_in = document.getElementById('acct-report-optin').checked;
+  const fmt = document.querySelector('input[name="acct-report-fmt"]:checked')?.value || 'pdf';
+  const msg = document.getElementById('acct-report-msg');
+  const res = await fetch('/api/account/report-settings', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({report_opt_in: opt_in, report_format: fmt})
+  });
+  const d = await res.json();
+  msg.style.display = 'block';
+  if (d.ok) { msg.textContent = 'Preferences saved.'; msg.style.color = '#5e9e8c'; }
+  else      { msg.textContent = d.error || 'Failed to save.'; msg.style.color = '#e07a3e'; }
 }
 </script>
 </body>
