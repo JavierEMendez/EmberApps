@@ -192,7 +192,13 @@
     {% endif %}
 
     <div style="flex:1"></div>
-    <div style="padding:8px 10px 14px">
+    <div style="padding:8px 10px 4px">
+      <button onclick="openAcct()" style="width:100%;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);background:none;color:var(--text-dim);font-size:12px;cursor:pointer;transition:all .15s;justify-content:center;font-family:'DM Sans',sans-serif" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.8" stroke-linecap="round"/></svg>
+        Account Settings
+      </button>
+    </div>
+    <div style="padding:4px 10px 14px">
       <a href="/home" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);font-size:12px;text-decoration:none;transition:all .15s;justify-content:center" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1m-2 0h2" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Back to Home
@@ -478,5 +484,59 @@ async function downloadOperationsPDF(){
 }
 </script>
 </div></div>
+
+<!-- ACCOUNT SETTINGS MODAL -->
+<div id="acct-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:2000;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:28px;width:340px;max-width:90vw">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+      <h3 style="margin:0;font-size:15px;font-weight:600">Account Settings</h3>
+      <button onclick="closeAcct()" style="background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);margin-bottom:20px">Logged in as <strong style="color:var(--text-muted)">{{ username }}</strong></div>
+    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Change Password</div>
+    <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
+    <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
+    <input id="acct-conf-pw" type="password" placeholder="Confirm new password" style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:14px;outline:none">
+    <div id="acct-msg" style="font-size:12px;margin-bottom:12px;display:none"></div>
+    <button onclick="saveAcctPw()" style="width:100%;background:var(--accent);border:none;color:#0d0f13;padding:10px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif">Save Password</button>
+  </div>
+</div>
+<script>
+function openAcct() {
+  const m = document.getElementById('acct-modal');
+  m.style.display = 'flex';
+  document.getElementById('acct-cur-pw').value = '';
+  document.getElementById('acct-new-pw').value = '';
+  document.getElementById('acct-conf-pw').value = '';
+  document.getElementById('acct-msg').style.display = 'none';
+}
+function closeAcct() {
+  document.getElementById('acct-modal').style.display = 'none';
+}
+document.getElementById('acct-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeAcct();
+});
+async function saveAcctPw() {
+  const cur  = document.getElementById('acct-cur-pw').value;
+  const nw   = document.getElementById('acct-new-pw').value;
+  const conf = document.getElementById('acct-conf-pw').value;
+  const msg  = document.getElementById('acct-msg');
+  function showMsg(txt, ok) {
+    msg.textContent = txt;
+    msg.style.color = ok ? '#5e9e8c' : '#e07a3e';
+    msg.style.display = 'block';
+  }
+  if (!cur || !nw || !conf) { showMsg('All fields are required.', false); return; }
+  if (nw !== conf)           { showMsg('New passwords do not match.', false); return; }
+  const res  = await fetch('/api/account/password', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({current_password: cur, new_password: nw})
+  });
+  const data = await res.json();
+  if (data.ok) { showMsg('Password updated.', true); setTimeout(closeAcct, 1500); }
+  else         { showMsg(data.error || 'Failed to update password.', false); }
+}
+</script>
 </body>
 </html>

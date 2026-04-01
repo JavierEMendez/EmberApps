@@ -325,6 +325,26 @@ def reset_password(uid):
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
 
+@app.route("/api/account/password", methods=["PUT"])
+@login_required
+def change_own_password():
+    data = request.json or {}
+    current_pw = data.get("current_password", "")
+    new_pw = data.get("new_password", "")
+    if not current_pw or not new_pw:
+        return jsonify({"error": "All fields are required"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT password_hash FROM users WHERE id = %s", (session["user_id"],))
+    user = cur.fetchone()
+    if not user or not check_password_hash(user["password_hash"], current_pw):
+        cur.close(); conn.close()
+        return jsonify({"error": "Current password is incorrect"}), 400
+    cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
+                (generate_password_hash(new_pw), session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
 @app.route("/api/admin/users/<int:uid>/access", methods=["PUT"])
 @login_required
 @admin_required
