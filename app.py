@@ -45,8 +45,9 @@ def init_db():
             page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true,"operations":true}'::jsonb,
             created_at TIMESTAMP DEFAULT NOW()
         );
-        -- Add page_access column if upgrading from older schema
+        -- Add columns if upgrading from older schema
         ALTER TABLE users ADD COLUMN IF NOT EXISTS page_access JSONB NOT NULL DEFAULT '{"mpc_underwriting":true,"returns":true,"loans":true,"operations":true}'::jsonb;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
         CREATE TABLE IF NOT EXISTS projects (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
@@ -266,7 +267,7 @@ def recalculate(pid):
 def list_users():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, username, is_admin, page_access, created_at FROM users ORDER BY id")
+    cur.execute("SELECT id, username, email, is_admin, page_access, created_at FROM users ORDER BY id")
     rows = cur.fetchall()
     cur.close(); conn.close()
     return jsonify([dict(r) for r in rows])
@@ -278,6 +279,7 @@ def create_user():
     data = request.json or {}
     username = data.get("username", "").strip()
     password = data.get("password", "")
+    email = data.get("email", "").strip() or None
     is_admin = data.get("is_admin", False)
     page_access = data.get("page_access", {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True})
     if not username or not password:
@@ -286,8 +288,8 @@ def create_user():
     cur = conn.cursor()
     try:
         cur.execute(
-            "INSERT INTO users (username, password_hash, is_admin, page_access) VALUES (%s, %s, %s, %s) RETURNING id",
-            (username, generate_password_hash(password), is_admin, json.dumps(page_access))
+            "INSERT INTO users (username, password_hash, email, is_admin, page_access) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (username, generate_password_hash(password), email, is_admin, json.dumps(page_access))
         )
         uid = cur.fetchone()["id"]
         conn.commit()
@@ -322,6 +324,28 @@ def reset_password(uid):
     cur = conn.cursor()
     cur.execute("UPDATE users SET password_hash = %s WHERE id = %s",
                 (generate_password_hash(password), uid))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/account", methods=["GET"])
+@login_required
+def get_account():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username, email FROM users WHERE id = %s", (session["user_id"],))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    return jsonify({"username": row["username"], "email": row["email"] or ""})
+
+@app.route("/api/admin/users/<int:uid>/email", methods=["PUT"])
+@login_required
+@admin_required
+def set_user_email(uid):
+    data = request.json or {}
+    email = data.get("email", "").strip() or None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET email = %s WHERE id = %s", (email, uid))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
 

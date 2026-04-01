@@ -153,14 +153,18 @@
     {% endif %}
   </div>
 
-  {% if is_admin %}
-  <div style="margin-top:16px;text-align:center">
+  <div style="margin-top:16px;text-align:center;display:flex;align-items:center;justify-content:center;gap:10px">
+    <button onclick="openAcct()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 18px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s" onmouseover="this.style.borderColor='rgba(200,169,110,.4)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
+      <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.8" stroke-linecap="round"/></svg>
+      Account Settings
+    </button>
+    {% if is_admin %}
     <button onclick="openAdmin()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 18px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s" onmouseover="this.style.borderColor='rgba(123,143,212,.4)';this.style.color='#7b8fd4'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
       <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4-4v2m22-4l-4.5 4.5M18 13l4.5-4.5M15 3a4 4 0 110 8 4 4 0 010-8z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
       Admin / Users
     </button>
+    {% endif %}
   </div>
-  {% endif %}
 
   <div class="footer">
     <div class="upload-area">
@@ -174,10 +178,7 @@
       <span id="uploadStatus" class="upload-status"></span>
       {% endif %}
     </div>
-    <div style="display:flex;align-items:center;gap:14px">
-      <button onclick="openAcct()" style="background:none;border:none;color:var(--text-dim);font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;padding:0;transition:color .15s" onmouseover="this.style.color='var(--text-muted)'" onmouseout="this.style.color='var(--text-dim)'">Account Settings</button>
-      <a href="/logout">Sign Out</a>
-    </div>
+    <a href="/logout">Sign Out</a>
   </div>
 </div>
 
@@ -188,7 +189,9 @@
       <h3 style="margin:0;font-size:15px;font-weight:600;font-family:'Plus Jakarta Sans',sans-serif">Account Settings</h3>
       <button onclick="closeAcct()" style="background:none;border:none;color:#4a5568;font-size:20px;cursor:pointer;line-height:1">&times;</button>
     </div>
-    <div style="font-size:12px;color:#4a5568;margin-bottom:20px">Logged in as <strong style="color:#8b95a8">{{ username }}</strong></div>
+    <div style="font-size:12px;color:#4a5568;margin-bottom:16px">Logged in as <strong style="color:#8b95a8">{{ username }}</strong></div>
+    <div style="font-size:11px;color:#4a5568;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Email</div>
+    <div id="acct-email" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#4a5568;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:16px;min-height:36px">—</div>
     <div style="font-size:11px;color:#4a5568;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Change Password</div>
     <input id="acct-cur-pw" type="password" placeholder="Current password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
     <input id="acct-new-pw" type="password" placeholder="New password" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:8px;outline:none">
@@ -214,6 +217,7 @@
           <input type="text" id="new-username" placeholder="Username">
           <input type="password" id="new-password" placeholder="Password">
         </div>
+        <input type="email" id="new-email" placeholder="Email address (optional)" style="width:100%;margin-bottom:8px">
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted);margin-bottom:8px;cursor:pointer">
           <input type="checkbox" id="new-is-admin"> Grant admin access
         </label>
@@ -254,6 +258,11 @@ async function refreshUserList() {
       return `<div class="user-row">
         <div class="uname" style="flex:1">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''}</div>
         <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
+        <div style="display:flex;gap:6px;margin:6px 0 4px;width:100%">
+          <input type="email" id="email-${u.id}" value="${u.email || ''}" placeholder="Email address"
+            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 9px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
+          <button onclick="saveEmail(${u.id})" style="background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Save</button>
+        </div>
         ${u.is_admin ? '' : `<div class="user-access">${checks}</div>`}
       </div>`;
     }).join('');
@@ -282,16 +291,18 @@ async function addUser() {
     loans: document.getElementById('new-pa-loans').checked,
     operations: document.getElementById('new-pa-operations').checked
   };
+  const email = document.getElementById('new-email').value.trim();
   if (!username || !password) { alert('Username and password required'); return; }
   const res = await fetch('/api/admin/users', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({username, password, is_admin, page_access})
+    body: JSON.stringify({username, password, email, is_admin, page_access})
   });
   const d = await res.json();
   if (res.ok) {
     document.getElementById('new-username').value = '';
     document.getElementById('new-password').value = '';
+    document.getElementById('new-email').value = '';
     document.getElementById('new-is-admin').checked = false;
     document.getElementById('new-pa-mpc').checked = true;
     document.getElementById('new-pa-returns').checked = true;
@@ -301,6 +312,14 @@ async function addUser() {
   } else {
     alert(d.error || 'Error creating user');
   }
+}
+async function saveEmail(uid) {
+  const email = document.getElementById('email-' + uid).value.trim();
+  await fetch('/api/admin/users/' + uid + '/email', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({email})
+  });
 }
 async function deleteUser(id, name) {
   if (!confirm('Remove user "' + name + '"?')) return;
@@ -338,13 +357,18 @@ document.getElementById('dashUpload').addEventListener('change', async function(
 </script>
 {% endif %}
 <script>
-function openAcct() {
+async function openAcct() {
   const m = document.getElementById('acct-modal');
   m.style.display = 'flex';
   document.getElementById('acct-cur-pw').value = '';
   document.getElementById('acct-new-pw').value = '';
   document.getElementById('acct-conf-pw').value = '';
   document.getElementById('acct-msg').style.display = 'none';
+  try {
+    const res = await fetch('/api/account');
+    const d = await res.json();
+    document.getElementById('acct-email').textContent = d.email || '—';
+  } catch(e) {}
 }
 function closeAcct() {
   document.getElementById('acct-modal').style.display = 'none';
