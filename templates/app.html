@@ -3049,15 +3049,15 @@ function renderOutputsFromFlat(o) {
           </thead>
           <tbody>
             <tr style="background:rgba(94,158,140,0.06)"><td colspan="4" style="font-weight:600;font-size:11px;letter-spacing:.05em;padding:8px 8px 4px">REVENUES</td></tr>
-            <tr><td>Lot Sale Revenues</td><td style="text-align:right">${fmt(o.rev_lot_sales)}</td><td></td><td style="text-align:right">${pctR(o.rev_lot_sales)}</td></tr>
-            <tr><td>MUD Proceeds</td><td style="text-align:right">${fmt(o.rev_mud)}</td><td></td><td style="text-align:right">${pctR(o.rev_mud)}</td></tr>
-            <tr><td>WCID Proceeds</td><td style="text-align:right">${fmt(o.rev_wcid)}</td><td></td><td style="text-align:right">${pctR(o.rev_wcid)}</td></tr>
-            <tr><td>Lot Premiums</td><td style="text-align:right">${fmt(o.rev_premiums)}</td><td></td><td style="text-align:right">${pctR(o.rev_premiums)}</td></tr>
-            <tr><td>Fence Fees</td><td style="text-align:right">${fmt(o.rev_fence_fees)}</td><td></td><td style="text-align:right">${pctR(o.rev_fence_fees)}</td></tr>
-            <tr><td>Escalations</td><td style="text-align:right">${fmt(o.rev_escalations)}</td><td></td><td style="text-align:right">${pctR(o.rev_escalations)}</td></tr>
-            <tr><td>Marketing Fees</td><td style="text-align:right">${fmt(o.rev_mktg_fees)}</td><td></td><td style="text-align:right">${pctR(o.rev_mktg_fees)}</td></tr>
-            <tr><td>Residential Pod Sales</td><td style="text-align:right">${fmt(o.rev_res_pods)}</td><td></td><td style="text-align:right">${pctR(o.rev_res_pods)}</td></tr>
-            <tr><td>Commercial Pod Sales</td><td style="text-align:right">${fmt(o.rev_comm_pods)}</td><td></td><td style="text-align:right">${pctR(o.rev_comm_pods)}</td></tr>
+            <tr><td>Lot Sale Revenues</td><td style="text-align:right">${fmt(o.rev_lot_sales)}</td><td style="text-align:right">${pctC(o.rev_lot_sales)}</td><td style="text-align:right">${pctR(o.rev_lot_sales)}</td></tr>
+            <tr><td>MUD Proceeds</td><td style="text-align:right">${fmt(o.rev_mud)}</td><td style="text-align:right">${pctC(o.rev_mud)}</td><td style="text-align:right">${pctR(o.rev_mud)}</td></tr>
+            <tr><td>WCID Proceeds</td><td style="text-align:right">${fmt(o.rev_wcid)}</td><td style="text-align:right">${pctC(o.rev_wcid)}</td><td style="text-align:right">${pctR(o.rev_wcid)}</td></tr>
+            <tr><td>Lot Premiums</td><td style="text-align:right">${fmt(o.rev_premiums)}</td><td style="text-align:right">${pctC(o.rev_premiums)}</td><td style="text-align:right">${pctR(o.rev_premiums)}</td></tr>
+            <tr><td>Fence Fees</td><td style="text-align:right">${fmt(o.rev_fence_fees)}</td><td style="text-align:right">${pctC(o.rev_fence_fees)}</td><td style="text-align:right">${pctR(o.rev_fence_fees)}</td></tr>
+            <tr><td>Escalations</td><td style="text-align:right">${fmt(o.rev_escalations)}</td><td style="text-align:right">${pctC(o.rev_escalations)}</td><td style="text-align:right">${pctR(o.rev_escalations)}</td></tr>
+            <tr><td>Marketing Fees</td><td style="text-align:right">${fmt(o.rev_mktg_fees)}</td><td style="text-align:right">${pctC(o.rev_mktg_fees)}</td><td style="text-align:right">${pctR(o.rev_mktg_fees)}</td></tr>
+            <tr><td>Residential Pod Sales</td><td style="text-align:right">${fmt(o.rev_res_pods)}</td><td style="text-align:right">${pctC(o.rev_res_pods)}</td><td style="text-align:right">${pctR(o.rev_res_pods)}</td></tr>
+            <tr><td>Commercial Pod Sales</td><td style="text-align:right">${fmt(o.rev_comm_pods)}</td><td style="text-align:right">${pctC(o.rev_comm_pods)}</td><td style="text-align:right">${pctR(o.rev_comm_pods)}</td></tr>
             <tr style="border-top:2px solid var(--accent2);font-weight:700;color:var(--accent2)">
               <td>Total Revenue</td><td style="text-align:right">${fmt(o.total_revenue)}</td><td></td><td style="text-align:right">100.0%</td>
             </tr>
