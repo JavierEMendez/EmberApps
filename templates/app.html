@@ -2960,6 +2960,12 @@ async function switchScenario(sid, force = false) {
   recalcAllLiveFields();
   renderOutputsFromFlat(scen.outputs);
   renderComparisonPanel();
+  // Re-render cashflow tab if it's currently open
+  const cfTab = document.getElementById('tab-cashflow');
+  if (cfTab && cfTab.classList.contains('active')) {
+    const cfContainer = document.getElementById('cashflow-content');
+    if (cfContainer) renderCashflow(scen.outputs, cfContainer);
+  }
   markClean();
 }
 
@@ -3868,11 +3874,17 @@ function renderOutputs(d, container) {
 async function loadCashflow() {
   const container = document.getElementById('cashflow-content');
   if (!container || !currentProject) return;
+  // Use in-memory outputs if available — keeps in sync with the active scenario
+  if (window._lastOutputs && Object.keys(window._lastOutputs).length > 0) {
+    renderCashflow(window._lastOutputs, container);
+    return;
+  }
   container.innerHTML = '<div class="full-loading"><div class="loading"></div> Loading…</div>';
   try {
     const res = await fetch(`/api/projects/${currentProject}`);
     const proj = await res.json();
     const o = proj.outputs || {};
+    window._lastOutputs = o;
     renderCashflow(o, container);
   } catch(e) {
     container.innerHTML = `<div class="full-loading" style="color:var(--danger)">Failed to load cashflows</div>`;
