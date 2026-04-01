@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portfolio Dashboard — Ember</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --bg:#0d0f13;--card:#151921;--border:#1e2535;--border-light:#2e3750;
+    --accent:#c8a96e;--text:#e8eaf0;--text-muted:#8b95a8;--text-dim:#4a5568;
+    --teal:#5e9e8c;--green:#4ade80;--red:#f87171;--success:#5e9e8c;
+  }
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;overflow:hidden}
+  #app{display:flex;height:100vh;overflow:hidden}
+  #sidebar{width:240px;background:#141820;border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+  #main-content{flex:1;overflow-y:auto;padding:28px 32px}
+  .sidebar-logo{padding:16px 18px 14px;border-bottom:1px solid var(--border)}
+  .logo-img{width:100%;max-width:160px;height:auto;display:block;margin:0 auto}
+  .logo-sub{font-size:10px;color:var(--text-dim);letter-spacing:0.12em;text-transform:uppercase;margin-top:8px;text-align:center}
+  .sidebar-section{padding:8px 10px 4px;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-top:8px}
+  .sidebar-item{display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;border-radius:6px;margin:1px 6px;transition:all .15s;color:var(--text-muted);font-size:13px;text-decoration:none}
+  .sidebar-item:hover{background:rgba(200,169,110,.06);color:var(--text);text-decoration:none}
+  .sidebar-item.active{background:rgba(200,169,110,.12);color:var(--accent)}
+  .sidebar-item .icon{width:16px;height:16px;opacity:.7;flex-shrink:0}
+  .sidebar-item.active .icon{opacity:1}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  .page-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:24px;color:var(--text);margin-bottom:4px}
+  .page-sub{font-size:12px;color:var(--text-muted);margin-bottom:24px}
+
+  /* Aggregate Cards */
+  .agg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:28px}
+  .agg-card{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:8px;padding:14px 16px}
+  .agg-label{font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+  .agg-value{font-size:22px;font-weight:600;color:var(--accent);font-family:'Plus Jakarta Sans',sans-serif}
+  .agg-sub{font-size:11px;color:var(--text-muted);margin-top:2px}
+
+  /* Filter pills */
+  .filter-bar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .filter-bar label{font-size:11px;color:var(--text-muted)}
+  .fp{font-size:11px;padding:3px 10px;border-radius:12px;border:1px solid var(--border);background:none;color:var(--text-dim);cursor:pointer;transition:all .12s;font-family:'DM Sans',sans-serif}
+  .fp.active{background:rgba(200,169,110,.12);border-color:rgba(200,169,110,.4);color:var(--accent)}
+
+  /* Status badges */
+  .sbadge{font-size:9px;border-radius:3px;padding:1px 6px;font-weight:600}
+  .s-active{background:rgba(94,158,140,.15);color:#5e9e8c}
+  .s-under-contract{background:rgba(200,169,110,.15);color:#c8a96e}
+  .s-closed{background:rgba(123,143,212,.15);color:#7b8fd4}
+  .s-dead{background:rgba(224,82,82,.12);color:#e05252}
+
+  /* Table */
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px}
+  table{border-collapse:collapse;width:100%;min-width:800px;font-size:12px}
+  th{padding:8px 12px;background:#141820;color:var(--text-muted);font-weight:600;text-align:right;white-space:nowrap;position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border);cursor:pointer;user-select:none}
+  th:first-child{text-align:left}
+  th:hover{color:var(--text)}
+  th.sort-asc::after{content:' ↑';color:var(--accent)}
+  th.sort-desc::after{content:' ↓';color:var(--accent)}
+  td{padding:8px 12px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+  td:first-child{text-align:left;color:var(--text);font-weight:500}
+  tr:last-child td{border-bottom:none}
+  tr:hover td{background:rgba(200,169,110,.03)}
+  tr.total-row td{font-weight:700;border-top:2px solid var(--border-light);color:var(--accent)}
+  .proj-link{color:var(--accent);cursor:pointer;text-decoration:none}
+  .proj-link:hover{text-decoration:underline}
+  .empty{text-align:center;padding:60px 20px;color:var(--text-dim)}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <img src="/static/img/ember_logo.png" alt="Ember" class="logo-img">
+      <div class="logo-sub">Portfolio Dashboard</div>
+    </div>
+
+    <div class="sidebar-section">Ember Apps</div>
+    {% if page_access.get('mpc_underwriting', true) %}
+    <a href="/" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+      MPC Underwriting
+    </a>
+    {% endif %}
+    {% if page_access.get('returns', true) %}
+    <a href="/returns" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Project Returns
+    </a>
+    {% endif %}
+    {% if page_access.get('loans', true) %}
+    <a href="/loans" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Loans & Debt
+    </a>
+    {% endif %}
+    {% if page_access.get('operations', true) %}
+    <a href="/operations" class="sidebar-item">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Operating Revenues
+    </a>
+    {% endif %}
+    {% if page_access.get('portfolio', true) %}
+    <a href="/portfolio" class="sidebar-item active">
+      <svg class="icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 3.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Portfolio Dashboard
+    </a>
+    {% endif %}
+
+    <div style="flex:1"></div>
+    <div style="padding:8px 10px 4px">
+      <a href="/home" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:6px;border:1px solid var(--border);color:var(--text-dim);font-size:12px;text-decoration:none;transition:all .15s;justify-content:center" onmouseover="this.style.borderColor='var(--border-light)';this.style.color='var(--text-muted)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-dim)'">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Home
+      </a>
+    </div>
+    <div style="padding:4px 10px 14px;font-size:12px;color:var(--text-dim);text-align:center">
+      Signed in as <strong>{{ username }}</strong>
+    </div>
+  </nav>
+
+  <div id="main-content">
+    <div class="page-title">Portfolio Dashboard</div>
+    <div class="page-sub">Aggregate view of all MPC underwriting projects.</div>
+
+    <!-- Aggregate KPI cards -->
+    <div class="agg-grid" id="agg-cards">
+      <div class="agg-card"><div class="agg-label">Total Projects</div><div class="agg-value" id="agg-count">—</div></div>
+      <div class="agg-card"><div class="agg-label">Total Lots</div><div class="agg-value" id="agg-lots">—</div></div>
+      <div class="agg-card"><div class="agg-label">Total Revenue</div><div class="agg-value" id="agg-rev">—</div><div class="agg-sub">combined</div></div>
+      <div class="agg-card"><div class="agg-label">Avg Gross Margin</div><div class="agg-value" id="agg-gm">—</div><div class="agg-sub">simple avg</div></div>
+      <div class="agg-card"><div class="agg-label">Avg Unlevered IRR</div><div class="agg-value" id="agg-irr">—</div><div class="agg-sub">simple avg</div></div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <label>Status:</label>
+      <button class="fp active" onclick="setFilter('All',this)">All</button>
+      <button class="fp" onclick="setFilter('Active',this)">Active</button>
+      <button class="fp" onclick="setFilter('Under Contract',this)">Under Contract</button>
+      <button class="fp" onclick="setFilter('Closed',this)">Closed</button>
+      <button class="fp" onclick="setFilter('Dead',this)">Dead</button>
+      <span style="margin-left:auto;font-size:11px;color:var(--text-dim)" id="row-count"></span>
+    </div>
+
+    <!-- Project table -->
+    <div class="tbl-wrap">
+      <table id="port-table">
+        <thead>
+          <tr>
+            <th data-col="name" onclick="sortBy('name')">Project</th>
+            <th data-col="status" onclick="sortBy('status')">Status</th>
+            <th data-col="total_lots" onclick="sortBy('total_lots')">Total Lots</th>
+            <th data-col="total_revenue" onclick="sortBy('total_revenue')">Total Revenue</th>
+            <th data-col="gross_costs" onclick="sortBy('gross_costs')">Gross Costs</th>
+            <th data-col="gross_margin_amt" onclick="sortBy('gross_margin_amt')">Gross Margin $</th>
+            <th data-col="gross_margin_pct" onclick="sortBy('gross_margin_pct')">Gross Margin %</th>
+            <th data-col="unlevered_irr" onclick="sortBy('unlevered_irr')">Unlevered IRR</th>
+            <th data-col="project_length_months" onclick="sortBy('project_length_months')">Length (mo)</th>
+          </tr>
+        </thead>
+        <tbody id="port-tbody"></tbody>
+        <tfoot id="port-tfoot"></tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+let _allData = [];
+let _filter  = 'All';
+let _sort    = {col: 'unlevered_irr', dir: -1};
+
+async function load() {
+  const res = await fetch('/api/portfolio?include_archived=false');
+  _allData = await res.json();
+  renderAll();
+}
+
+function setFilter(f, btn) {
+  _filter = f;
+  document.querySelectorAll('.fp').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderTable();
+}
+
+function sortBy(col) {
+  if (_sort.col === col) _sort.dir *= -1;
+  else _sort = {col, dir: -1};
+  document.querySelectorAll('th').forEach(th => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (th.dataset.col === col) th.classList.add(_sort.dir === 1 ? 'sort-asc' : 'sort-desc');
+  });
+  renderTable();
+}
+
+function fmtM(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = parseFloat(v);
+  if (Math.abs(n) >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+  if (Math.abs(n) >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+  return '$' + Math.round(n).toLocaleString();
+}
+function fmtPct(v) { return v == null ? '—' : (parseFloat(v)*100).toFixed(1)+'%'; }
+function fmtInt(v) { return v == null ? '—' : Math.round(parseFloat(v)).toLocaleString(); }
+function fmtMo(v)  { return v == null ? '—' : Math.round(parseFloat(v)) + ' mo'; }
+
+function statusBadge(s) {
+  const cls = 's-' + (s||'Active').toLowerCase().replace(/ /g,'-');
+  return `<span class="sbadge ${cls}">${s||'Active'}</span>`;
+}
+
+function renderAll() {
+  renderAggCards();
+  renderTable();
+}
+
+function renderAggCards() {
+  const data = _allData;
+  document.getElementById('agg-count').textContent = data.length;
+  const lots = data.reduce((s,p) => s + (parseFloat(p.outputs?.total_lots)||0), 0);
+  const rev  = data.reduce((s,p) => s + (parseFloat(p.outputs?.total_revenue)||0), 0);
+  const irrs = data.map(p => parseFloat(p.outputs?.unlevered_irr)).filter(v => !isNaN(v));
+  const gms  = data.map(p => parseFloat(p.outputs?.gross_margin_pct)).filter(v => !isNaN(v));
+  document.getElementById('agg-lots').textContent = fmtInt(lots);
+  document.getElementById('agg-rev').textContent  = fmtM(rev);
+  document.getElementById('agg-irr').textContent  = irrs.length ? fmtPct(irrs.reduce((a,b)=>a+b,0)/irrs.length) : '—';
+  document.getElementById('agg-gm').textContent   = gms.length  ? fmtPct(gms.reduce((a,b)=>a+b,0)/gms.length)  : '—';
+}
+
+function renderTable() {
+  const filtered = _filter === 'All' ? _allData : _allData.filter(p => (p.status||'Active') === _filter);
+  document.getElementById('row-count').textContent = filtered.length + ' project' + (filtered.length === 1 ? '' : 's');
+
+  const col = _sort.col;
+  const sorted = [...filtered].sort((a, b) => {
+    let av = col === 'name' ? a.name : col === 'status' ? (a.status||'Active')
+           : (a.outputs?.[col] != null ? parseFloat(a.outputs[col]) : -Infinity);
+    let bv = col === 'name' ? b.name : col === 'status' ? (b.status||'Active')
+           : (b.outputs?.[col] != null ? parseFloat(b.outputs[col]) : -Infinity);
+    if (typeof av === 'string') return _sort.dir * av.localeCompare(bv);
+    return _sort.dir * (av - bv);
+  });
+
+  const tbody = document.getElementById('port-tbody');
+  if (!sorted.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">No projects found</td></tr>`;
+    document.getElementById('port-tfoot').innerHTML = '';
+    return;
+  }
+
+  tbody.innerHTML = sorted.map(p => {
+    const o = p.outputs || {};
+    return `<tr>
+      <td><a class="proj-link" href="/?project=${p.id}">${p.name || 'Unnamed'}</a></td>
+      <td style="text-align:left">${statusBadge(p.status)}</td>
+      <td>${fmtInt(o.total_lots)}</td>
+      <td>${fmtM(o.total_revenue)}</td>
+      <td>${fmtM(o.gross_costs)}</td>
+      <td>${fmtM(o.gross_margin_amt)}</td>
+      <td>${fmtPct(o.gross_margin_pct)}</td>
+      <td style="color:var(--success)">${fmtPct(o.unlevered_irr)}</td>
+      <td>${fmtMo(o.project_length_months)}</td>
+    </tr>`;
+  }).join('');
+
+  // Totals row
+  const totLots = filtered.reduce((s,p)=>s+(parseFloat(p.outputs?.total_lots)||0),0);
+  const totRev  = filtered.reduce((s,p)=>s+(parseFloat(p.outputs?.total_revenue)||0),0);
+  const totCosts= filtered.reduce((s,p)=>s+(parseFloat(p.outputs?.gross_costs)||0),0);
+  const totGmAmt= filtered.reduce((s,p)=>s+(parseFloat(p.outputs?.gross_margin_amt)||0),0);
+  const avgGm   = totRev > 0 ? totGmAmt / totRev : null;
+  const irrs    = filtered.map(p=>parseFloat(p.outputs?.unlevered_irr)).filter(v=>!isNaN(v));
+  const avgIrr  = irrs.length ? irrs.reduce((a,b)=>a+b,0)/irrs.length : null;
+  document.getElementById('port-tfoot').innerHTML = `
+    <tr class="total-row">
+      <td>Totals / Avg (${filtered.length})</td>
+      <td></td>
+      <td>${fmtInt(totLots)}</td>
+      <td>${fmtM(totRev)}</td>
+      <td>${fmtM(totCosts)}</td>
+      <td>${fmtM(totGmAmt)}</td>
+      <td>${fmtPct(avgGm)}</td>
+      <td>${fmtPct(avgIrr)}</td>
+      <td>—</td>
+    </tr>`;
+}
+
+// Set default sort indicator
+document.querySelector('th[data-col="unlevered_irr"]')?.classList.add('sort-desc');
+load();
+</script>
+</body>
+</html>

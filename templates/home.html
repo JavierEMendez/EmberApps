@@ -16,7 +16,7 @@
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;
     min-height:100vh;display:flex;align-items:center;justify-content:center;}
   .home-wrap{width:100%;max-width:960px;padding:24px;text-align:center;}
-  .app-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  .app-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;grid-auto-rows:1fr;}
   .app-grid .bottom-row{display:contents;}
   @media(max-width:700px){.app-grid{grid-template-columns:1fr;}}
   .logo-area{margin-bottom:48px;}
@@ -144,6 +144,19 @@
       <div class="app-card" style="height:100%">
         <div class="app-title">Ember Operating Revenues</div>
         <div class="app-desc">See forecasted Ember operating revenues from projects.</div>
+        <div class="app-arrow">
+          Open
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+      </div>
+    </a>
+    {% endif %}
+
+    {% if page_access.get('portfolio', true) %}
+    <a href="/portfolio" style="text-decoration:none">
+      <div class="app-card" style="height:100%">
+        <div class="app-title">Portfolio Dashboard</div>
+        <div class="app-desc">Aggregate view of all active projects: total lots, IRR, margins, and status at a glance.</div>
         <div class="app-arrow">
           Open
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>

@@ -59,6 +59,8 @@ def init_db():
             sent_at TIMESTAMP DEFAULT NOW()
         );
         ALTER TABLE projects ADD COLUMN IF NOT EXISTS scenarios JSONB DEFAULT '[]'::jsonb;
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
+        ALTER TABLE projects ADD COLUMN IF NOT EXISTS change_log JSONB DEFAULT '[]'::jsonb;
         CREATE TABLE IF NOT EXISTS projects (
             id SERIAL PRIMARY KEY,
             name TEXT NOT NULL,
@@ -78,6 +80,8 @@ def init_db():
             uploaded_at TIMESTAMP DEFAULT NOW()
         );
     """)
+    # Backfill portfolio access for existing users
+    cur.execute("UPDATE users SET page_access = page_access || '{\"portfolio\": true}'::jsonb WHERE page_access->>'portfolio' IS NULL")
     # Create default admin if no users exist
     cur.execute("SELECT COUNT(*) as cnt FROM users")
     row = cur.fetchone()
@@ -174,7 +178,8 @@ def list_projects():
                p.outputs->>'total_lots' as total_lots,
                p.outputs->>'unlevered_irr' as unlevered_irr,
                p.outputs->>'project_length_years' as project_length_years,
-               p.archived
+               p.archived,
+               COALESCE(p.status, 'Active') as status
         FROM projects p
         LEFT JOIN users u ON p.created_by = u.id
         WHERE p.archived = FALSE
@@ -227,15 +232,29 @@ def save_project(pid):
         return jsonify({"error": f"Calculation error: {e}"}), 500
     conn = get_db()
     cur = conn.cursor()
+    # Build change log entry
+    cur.execute("SELECT inputs, change_log FROM projects WHERE id = %s", (pid,))
+    row = cur.fetchone()
+    old_log = list(row["change_log"] or []) if row else []
+    changes = _compare_inputs(row["inputs"] or {} if row else {}, inputs)
+    if changes:
+        old_log.append({
+            "ts": datetime.datetime.utcnow().isoformat() + "Z",
+            "user": session.get("username", "unknown"),
+            "changes": changes
+        })
+        old_log = old_log[-200:]
     cur.execute("""
         UPDATE projects
-        SET inputs = %s, outputs = %s, name = %s, address = %s, updated_at = NOW()
+        SET inputs = %s, outputs = %s, name = %s, address = %s,
+            change_log = %s, updated_at = NOW()
         WHERE id = %s
     """, (
         json.dumps(inputs),
         json.dumps(outputs),
         inputs.get("project_name", "Unnamed"),
         inputs.get("address", ""),
+        json.dumps(old_log),
         pid
     ))
     conn.commit(); cur.close(); conn.close()
@@ -249,6 +268,59 @@ def delete_project(pid):
     cur.execute("UPDATE projects SET archived = TRUE WHERE id = %s", (pid,))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
+
+@app.route("/api/projects/<int:pid>/status", methods=["PATCH"])
+@login_required
+def set_project_status(pid):
+    data = request.json or {}
+    status = data.get("status", "Active")
+    if status not in {"Active", "Under Contract", "Closed", "Dead"}:
+        return jsonify({"error": "Invalid status"}), 400
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("UPDATE projects SET status = %s WHERE id = %s", (status, pid))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/projects/<int:pid>/changelog", methods=["GET"])
+@login_required
+def get_changelog(pid):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT change_log FROM projects WHERE id = %s", (pid,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row: return jsonify({"error": "Not found"}), 404
+    return jsonify(list(reversed(row["change_log"] or [])))
+
+@app.route("/api/projects/<int:pid>/sensitivity", methods=["POST"])
+@login_required
+def sensitivity(pid):
+    data = request.json or {}
+    axis_x = data.get("axis_x", {})
+    axis_y = data.get("axis_y", {})
+    base_inputs = data.get("base_inputs", {})
+    x_field, x_vals = axis_x.get("field"), axis_x.get("values", [])
+    y_field, y_vals = axis_y.get("field"), axis_y.get("values", [])
+    if not x_field or not y_field or not x_vals or not y_vals:
+        return jsonify({"error": "Missing axis config"}), 400
+    # Cap grid size for performance
+    x_vals = x_vals[:7]
+    y_vals = y_vals[:7]
+    matrix = []
+    for yv in y_vals:
+        row_results = []
+        for xv in x_vals:
+            inp = _apply_sensitivity_override(base_inputs, x_field, xv)
+            inp = _apply_sensitivity_override(inp, y_field, yv)
+            try:
+                out = calculate(inp)
+                row_results.append({
+                    "irr": out.get("unlevered_irr"),
+                    "gm_pct": out.get("gross_margin_pct"),
+                })
+            except Exception:
+                row_results.append({"irr": None, "gm_pct": None})
+        matrix.append(row_results)
+    return jsonify({"ok": True, "matrix": matrix, "x_values": x_vals, "y_values": y_vals})
 
 # ─── SCENARIO API ─────────────────────────────────────────────────────────────
 @app.route("/api/projects/<int:pid>/scenarios", methods=["GET"])
@@ -624,15 +696,86 @@ def default_inputs(name="New Project"):
         "bookkeeping_monthly": 10000,       # Excel C120 = 10,000
     }
 
+# ─── CHANGE LOG HELPERS ───────────────────────────────────────────────────────
+_CHANGE_LOG_FIELDS = [
+    ("purchase_price_per_acre", "Purchase Price / Acre"),
+    ("gross_acreage",           "Gross Acreage"),
+    ("land_escalator",          "Land Escalator"),
+    ("contingency",             "Contingency"),
+    ("closing_costs_pct",       "Closing Costs %"),
+    ("net_dev_acres",           "Net Dev Acres"),
+    ("dmf_rate",                "DMF Rate"),
+    ("personnel_cost",          "Personnel Cost"),
+]
+_CHANGE_LOG_LOT_FIELDS = [
+    ("home_price",   "Home Price"),
+    ("pace",         "Pace (lots/mo)"),
+    ("yield_per_ac", "Yield / Acre"),
+    ("pct_mix",      "Mix %"),
+]
+
+def _compare_inputs(old_inp, new_inp):
+    """Return list of {field, label, old, new} dicts for tracked changes."""
+    changes = []
+    for key, label in _CHANGE_LOG_FIELDS:
+        ov, nv = old_inp.get(key), new_inp.get(key)
+        if ov != nv and not (ov is None and nv is None):
+            changes.append({"field": key, "label": label,
+                            "old": ov, "new": nv})
+    # Per-lot changes for active lots
+    old_lots = old_inp.get("lot_sizes", [])
+    new_lots = new_inp.get("lot_sizes", [])
+    for i, new_lot in enumerate(new_lots):
+        if not new_lot.get("on"):
+            continue
+        old_lot = old_lots[i] if i < len(old_lots) else {}
+        ff = new_lot.get("ff", (i+1)*5+20)
+        for key, label in _CHANGE_LOG_LOT_FIELDS:
+            ov, nv = old_lot.get(key), new_lot.get(key)
+            if ov != nv and not (ov is None and nv is None):
+                changes.append({"field": f"lot_sizes[{i}].{key}",
+                                "label": f"{label} ({ff}' lot)",
+                                "old": ov, "new": nv})
+    return changes
+
+
+def _apply_sensitivity_override(inp, field, value):
+    """Deep-copy inp, apply sensitivity override, return modified copy."""
+    import copy
+    inp2 = copy.deepcopy(inp)
+    if field.startswith("lot_sizes."):
+        sub = field[len("lot_sizes."):]
+        for row in inp2.get("lot_sizes", []):
+            if row.get("on"):
+                row[sub] = value
+    else:
+        inp2[field] = value
+    return inp2
+
+
+@app.route("/portfolio")
+@login_required
+def portfolio_page():
+    pa = session.get("page_access") or {}
+    if not session.get("is_admin") and not pa.get("portfolio", True):
+        return redirect(url_for("home"))
+    pa2 = dict(pa)
+    if session.get("is_admin"):
+        pa2 = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True, "portfolio": True}
+    return render_template("portfolio.html", username=session.get("username"),
+                           is_admin=session.get("is_admin"), page_access=pa2)
+
 @app.route("/api/portfolio", methods=["GET"])
 @login_required
 def portfolio():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("""
-        SELECT p.id, p.name, p.address, p.outputs
+    include_archived = request.args.get("include_archived") == "true"
+    where = "" if include_archived else "WHERE p.archived = FALSE"
+    cur.execute(f"""
+        SELECT p.id, p.name, p.address, p.outputs, COALESCE(p.status, 'Active') as status
         FROM projects p
-        WHERE p.archived = FALSE
+        {where}
         ORDER BY p.name
     """)
     rows = cur.fetchall()
@@ -640,7 +783,8 @@ def portfolio():
     result = []
     for r in rows:
         o = r["outputs"] or {}
-        result.append({"id": r["id"], "name": r["name"], "address": r["address"], "outputs": o})
+        result.append({"id": r["id"], "name": r["name"], "address": r["address"],
+                       "status": r["status"], "outputs": o})
     return jsonify(result)
 
 @app.route("/api/projects/<int:pid>/export_excel", methods=["GET"])

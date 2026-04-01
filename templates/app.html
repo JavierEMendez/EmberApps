@@ -65,6 +65,38 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:'DM San
 .proj-del{opacity:0;padding:2px 5px;border-radius:3px;cursor:pointer;color:var(--danger);transition:opacity .12s}
 .proj-item:hover .proj-del{opacity:.6}
 .proj-del:hover{opacity:1!important;background:rgba(224,82,82,.1)}
+/* Status badges */
+.status-badge{font-size:9px;border-radius:3px;padding:1px 5px;font-weight:600;flex-shrink:0;letter-spacing:.02em}
+.status-active{background:rgba(94,158,140,.15);color:#5e9e8c}
+.status-under-contract{background:rgba(200,169,110,.15);color:#c8a96e}
+.status-closed{background:rgba(123,143,212,.15);color:#7b8fd4}
+.status-dead{background:rgba(224,82,82,.12);color:#e05252}
+/* Status filter bar */
+.status-filter-bar{display:flex;flex-wrap:wrap;gap:4px;padding:4px 8px 6px}
+.sf-pill{font-size:10px;padding:2px 8px;border-radius:12px;border:1px solid var(--border);background:none;color:var(--text-dim);cursor:pointer;transition:all .12s;font-family:'DM Sans',sans-serif}
+.sf-pill.active{background:rgba(200,169,110,.12);border-color:rgba(200,169,110,.4);color:var(--accent)}
+/* Context menu */
+#ctx-menu{position:fixed;background:var(--card);border:1px solid var(--border-light);border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.4);z-index:9999;min-width:160px;padding:4px 0;display:none}
+.ctx-item{padding:7px 14px;font-size:12px;cursor:pointer;color:var(--text-muted);transition:background .1s}
+.ctx-item:hover{background:rgba(200,169,110,.08);color:var(--text)}
+.ctx-sep{height:1px;background:var(--border);margin:4px 0}
+/* Sensitivity section */
+.sens-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px}
+.sens-field{display:flex;flex-direction:column;gap:4px}
+.sens-field label{font-size:11px;color:var(--text-muted)}
+.sens-field select,.sens-field input{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:12px;font-family:'DM Sans',sans-serif}
+.sens-table{border-collapse:collapse;font-size:11px}
+.sens-table th,.sens-table td{padding:5px 10px;border:1px solid var(--border);text-align:center}
+.sens-table th{color:var(--text-muted);background:var(--card);font-weight:600}
+.sens-table td.axis-label{color:var(--text-muted);font-weight:500;background:var(--card)}
+/* Changelog modal */
+.cl-entry{margin-bottom:16px;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.cl-header{padding:8px 12px;background:rgba(255,255,255,.03);font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--border)}
+.cl-table{width:100%;border-collapse:collapse;font-size:11px}
+.cl-table td{padding:4px 10px;border-bottom:1px solid var(--border)}
+.cl-table td:first-child{color:var(--text-muted);width:40%}
+.cl-old{color:var(--danger)}
+.cl-new{color:var(--success)}
 .new-proj-btn{margin:6px 8px 12px;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;border:1px dashed var(--border-light);border-radius:6px;cursor:pointer;color:var(--text-dim);font-size:12px;transition:all .15s}
 .new-proj-btn:hover{border-color:var(--accent);color:var(--accent)}
 
@@ -394,6 +426,13 @@ tr.pod-inactive input { pointer-events: none; }
     </div>
 
     <div class="sidebar-section">Projects</div>
+    <div class="status-filter-bar" id="status-filter-bar">
+      <button class="sf-pill active" onclick="setStatusFilter('Active',this)">Active</button>
+      <button class="sf-pill" onclick="setStatusFilter('Under Contract',this)">Under Contract</button>
+      <button class="sf-pill" onclick="setStatusFilter('Closed',this)">Closed</button>
+      <button class="sf-pill" onclick="setStatusFilter('Dead',this)">Dead</button>
+      <button class="sf-pill" onclick="setStatusFilter('All',this)">All</button>
+    </div>
     <div class="proj-list" id="proj-list"></div>
     <div class="new-proj-btn" onclick="openNewProject()">
       <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" stroke-width="2" stroke-linecap="round"/></svg>
@@ -443,6 +482,10 @@ tr.pod-inactive input { pointer-events: none; }
       <button class="header-btn" id="btn-pdf" onclick="downloadPerformancePDF()" style="display:none">
         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Download PDF
+      </button>
+      <button class="header-btn" id="btn-changelog" onclick="openChangelog()" style="display:none">
+        <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Change Log
       </button>
       <button class="header-btn" id="btn-import" onclick="document.getElementById('import-project-input').click()" style="display:none">
         <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -533,6 +576,59 @@ tr.pod-inactive input { pointer-events: none; }
           </div>
           <div id="scenario-comparison" style="display:none;margin-bottom:20px"></div>
           <div id="outputs-content"><div class="full-loading"><div class="loading"></div> Loading outputs…</div></div>
+
+          <!-- SENSITIVITY ANALYSIS -->
+          <div id="sensitivity-section" style="display:none;padding:0 32px 32px;border-top:1px solid var(--border);margin-top:8px">
+            <div class="panel-title" style="margin-top:24px">Sensitivity Analysis</div>
+            <div class="panel-sub">Select two input variables and a ±% step to generate an IRR / Gross Margin heat map.</div>
+            <div class="sens-grid">
+              <div class="sens-field">
+                <label>X Axis (columns)</label>
+                <select id="sens-x-field">
+                  <option value="purchase_price_per_acre">Purchase Price / Acre</option>
+                  <option value="lot_sizes.home_price">Home Price (all active lots)</option>
+                  <option value="lot_sizes.pace">Absorption Pace (lots/mo)</option>
+                  <option value="gross_acreage">Gross Acreage</option>
+                  <option value="lot_sizes.yield_per_ac">Yield / Acre</option>
+                  <option value="lot_sizes.wsd_per_ff">WSD per FF</option>
+                  <option value="contingency">Contingency</option>
+                  <option value="land_escalator">Land Escalator</option>
+                </select>
+              </div>
+              <div class="sens-field">
+                <label>Y Axis (rows)</label>
+                <select id="sens-y-field">
+                  <option value="lot_sizes.home_price">Home Price (all active lots)</option>
+                  <option value="lot_sizes.pace">Absorption Pace (lots/mo)</option>
+                  <option value="purchase_price_per_acre">Purchase Price / Acre</option>
+                  <option value="gross_acreage">Gross Acreage</option>
+                  <option value="lot_sizes.yield_per_ac">Yield / Acre</option>
+                  <option value="lot_sizes.wsd_per_ff">WSD per FF</option>
+                  <option value="contingency">Contingency</option>
+                  <option value="land_escalator">Land Escalator</option>
+                </select>
+              </div>
+              <div class="sens-field">
+                <label>Steps each side (max 3)</label>
+                <input type="number" id="sens-steps" value="3" min="1" max="3">
+              </div>
+              <div class="sens-field">
+                <label>Step Size (%)</label>
+                <input type="number" id="sens-step-pct" value="10" min="1" max="50">
+              </div>
+              <div class="sens-field">
+                <label>Metric</label>
+                <select id="sens-metric">
+                  <option value="irr">Unlevered IRR</option>
+                  <option value="gm">Gross Margin %</option>
+                </select>
+              </div>
+              <div class="sens-field" style="justify-content:flex-end">
+                <button id="sens-run-btn" class="header-btn primary" style="margin-top:auto" onclick="runSensitivity()">Run Sensitivity</button>
+              </div>
+            </div>
+            <div id="sens-results"></div>
+          </div>
         </div>
 
         <!-- TRACT INPUTS TAB -->
@@ -1047,6 +1143,26 @@ tr.pod-inactive input { pointer-events: none; }
   </div>
 </div>
 
+<!-- Context menu for project status -->
+<div id="ctx-menu">
+  <div style="padding:5px 14px 3px;font-size:10px;color:var(--text-dim);letter-spacing:.08em;text-transform:uppercase">Set Status</div>
+  <div class="ctx-item" onclick="setProjectStatus(_ctxPid,'Active')">● Active</div>
+  <div class="ctx-item" onclick="setProjectStatus(_ctxPid,'Under Contract')">● Under Contract</div>
+  <div class="ctx-item" onclick="setProjectStatus(_ctxPid,'Closed')">● Closed</div>
+  <div class="ctx-item" onclick="setProjectStatus(_ctxPid,'Dead')">● Dead</div>
+</div>
+
+<!-- Change Log modal -->
+<div class="modal-overlay" id="changelog-modal">
+  <div class="modal" style="max-width:640px;max-height:80vh;display:flex;flex-direction:column">
+    <div class="modal-title">Change Log</div>
+    <div id="changelog-body" style="overflow-y:auto;flex:1;margin-top:12px"></div>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn" onclick="document.getElementById('changelog-modal').classList.remove('open')">Close</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -1058,40 +1174,32 @@ let inputs = {};
 let dirty = false;
 let charts = {};
 const isAdmin = {{ 'true' if is_admin else 'false' }};
+let _allProjects = [];
+let _statusFilter = 'Active';
+let _ctxPid = null;
 
 // ── INIT ──────────────────────────────────────────────────────────
 window.onload = async () => {
   await loadProjectList();
   loadPortfolio();
+  // Auto-open project from ?project=<id> query param (e.g. from portfolio page)
+  const autoId = new URLSearchParams(location.search).get('project');
+  if (autoId) {
+    const pid = parseInt(autoId);
+    if (pid) selectProject(pid);
+  }
 };
 
 // ── PROJECTS ──────────────────────────────────────────────────────
 async function loadProjectList() {
   const res = await fetch('/api/projects');
-  const projects = await res.json();
-  const list = document.getElementById('proj-list');
-  list.innerHTML = '';
-  if (projects.length === 0) {
-    list.innerHTML = '<div style="padding:8px 14px;font-size:12px;color:var(--text-dim)">No projects yet</div>';
-  }
-  projects.forEach(p => {
-    const el = document.createElement('div');
-    el.className = 'proj-item' + (currentProject === p.id ? ' selected' : '');
-    el.id = 'proj-' + p.id;
-    const irrDisp = p.unlevered_irr ? (p.unlevered_irr*100).toFixed(1)+'% Project IRR' : '';
-    el.innerHTML = `
-      <div style="flex:1;min-width:0">
-        <div class="proj-item-name">${p.name || 'Unnamed'}</div>
-        <div class="proj-item-sub">${p.address ? p.address.substring(0,28)+' · ' : ''}${irrDisp}</div>
-      </div>
-      ${isAdmin ? `<div class="proj-del" title="Delete" onclick="deleteProject(${p.id},event)">✕</div>` : ''}`;
-    el.onclick = (e) => { if (!e.target.classList.contains('proj-del')) selectProject(p.id); };
-    list.appendChild(el);
-  });
+  _allProjects = await res.json();
+  renderProjectList();
 
   // dashboard cards
   const dc = document.getElementById('dashboard-cards');
   if(dc) {
+    const projects = _allProjects;
     dc.innerHTML = projects.length === 0
       ? '<div style="color:var(--text-dim);font-size:13px">No projects yet. Create one to get started.</div>'
       : projects.map(p => {
@@ -1122,6 +1230,200 @@ async function loadProjectList() {
   }
 }
 
+function renderProjectList() {
+  const list = document.getElementById('proj-list');
+  list.innerHTML = '';
+  const filtered = _statusFilter === 'All'
+    ? _allProjects
+    : _allProjects.filter(p => (p.status || 'Active') === _statusFilter);
+  if (filtered.length === 0) {
+    list.innerHTML = `<div style="padding:8px 14px;font-size:12px;color:var(--text-dim)">No ${_statusFilter === 'All' ? '' : _statusFilter+' '}projects</div>`;
+    return;
+  }
+  filtered.forEach(p => {
+    const el = document.createElement('div');
+    el.className = 'proj-item' + (currentProject === p.id ? ' selected' : '');
+    el.id = 'proj-' + p.id;
+    const irrDisp = p.unlevered_irr ? (parseFloat(p.unlevered_irr)*100).toFixed(1)+'% IRR' : '';
+    const statusClass = 'status-' + (p.status || 'Active').toLowerCase().replace(/ /g,'-');
+    el.innerHTML = `
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="proj-item-name">${p.name || 'Unnamed'}</div>
+          <span class="status-badge ${statusClass}">${p.status || 'Active'}</span>
+        </div>
+        <div class="proj-item-sub">${p.address ? p.address.substring(0,22)+' · ' : ''}${irrDisp}</div>
+      </div>
+      ${isAdmin ? `<div class="proj-del" title="Delete" onclick="deleteProject(${p.id},event)">✕</div>` : ''}`;
+    el.onclick = (e) => { if (!e.target.classList.contains('proj-del')) selectProject(p.id); };
+    el.oncontextmenu = (e) => { e.preventDefault(); openCtxMenu(p.id, e.clientX, e.clientY); };
+    list.appendChild(el);
+  });
+}
+
+function setStatusFilter(status, btn) {
+  _statusFilter = status;
+  document.querySelectorAll('.sf-pill').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  renderProjectList();
+}
+
+function openCtxMenu(pid, x, y) {
+  _ctxPid = pid;
+  const m = document.getElementById('ctx-menu');
+  m.style.display = 'block';
+  m.style.left = Math.min(x, window.innerWidth - 180) + 'px';
+  m.style.top = Math.min(y, window.innerHeight - 180) + 'px';
+}
+document.addEventListener('click', () => { document.getElementById('ctx-menu').style.display = 'none'; });
+
+async function setProjectStatus(pid, status) {
+  document.getElementById('ctx-menu').style.display = 'none';
+  await fetch(`/api/projects/${pid}/status`, {
+    method: 'PATCH', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({status})
+  });
+  const proj = _allProjects.find(p => p.id === pid);
+  if (proj) proj.status = status;
+  renderProjectList();
+  toast(`Status set to "${status}"`, 'success');
+}
+
+// ── CHANGE LOG ────────────────────────────────────────────────────
+async function openChangelog() {
+  if (!currentProject) return;
+  const body = document.getElementById('changelog-body');
+  body.innerHTML = '<div style="color:var(--text-dim);font-size:12px">Loading…</div>';
+  document.getElementById('changelog-modal').classList.add('open');
+  const res = await fetch(`/api/projects/${currentProject}/changelog`);
+  const entries = await res.json();
+  if (!entries.length) {
+    body.innerHTML = '<div style="color:var(--text-dim);font-size:12px;padding:8px 0">No changes recorded yet. Changes are tracked from this point forward.</div>';
+    return;
+  }
+  body.innerHTML = entries.map(e => {
+    const d = new Date(e.ts);
+    const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) +
+                    ' ' + d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+    const rows = e.changes.map(c => {
+      const fmtVal = v => v == null ? '—' : (typeof v === 'number' ? v.toLocaleString() : String(v));
+      return `<tr><td>${c.label}</td><td class="cl-old">${fmtVal(c.old)}</td><td class="cl-new">${fmtVal(c.new)}</td></tr>`;
+    }).join('');
+    return `<div class="cl-entry">
+      <div class="cl-header">${dateStr} &nbsp;·&nbsp; <strong>${e.user}</strong></div>
+      <table class="cl-table">
+        <tr><td style="color:var(--text-dim);font-weight:600">Field</td><td style="color:var(--danger);font-weight:600">Before</td><td style="color:var(--success);font-weight:600">After</td></tr>
+        ${rows}
+      </table>
+    </div>`;
+  }).join('');
+}
+
+// ── SENSITIVITY ANALYSIS ──────────────────────────────────────────
+const SENS_AXES = [
+  {key:'purchase_price_per_acre', label:'Purchase Price / Acre', fmt:'dollar'},
+  {key:'gross_acreage',           label:'Gross Acreage',          fmt:'num'},
+  {key:'lot_sizes.home_price',    label:'Home Price (all active lots)', fmt:'dollar'},
+  {key:'lot_sizes.pace',          label:'Absorption Pace (lots/mo)',    fmt:'num1'},
+  {key:'lot_sizes.yield_per_ac',  label:'Yield / Acre (all active)',    fmt:'num2'},
+  {key:'lot_sizes.wsd_per_ff',    label:'WSD per FF',             fmt:'dollar'},
+  {key:'contingency',             label:'Contingency',            fmt:'pct'},
+  {key:'land_escalator',          label:'Land Escalator',         fmt:'pct'},
+];
+
+function buildSensRange(center, steps, stepSize, isPercent) {
+  const vals = [];
+  for (let i = -steps; i <= steps; i++) {
+    vals.push(isPercent ? center * (1 + i * stepSize / 100) : center + i * stepSize);
+  }
+  return vals;
+}
+
+function sensCenter(fieldKey) {
+  if (!window._lastInputs) return 0;
+  const inp = window._lastInputs;
+  if (fieldKey.startsWith('lot_sizes.')) {
+    const sub = fieldKey.slice(10);
+    const activeLots = (inp.lot_sizes || []).filter(ls => ls.on);
+    if (!activeLots.length) return 0;
+    return activeLots.reduce((s, ls) => s + (ls[sub] || 0), 0) / activeLots.length;
+  }
+  return inp[fieldKey] || 0;
+}
+
+function fmtSensVal(val, fmt) {
+  if (fmt === 'dollar') return '$' + Math.round(val).toLocaleString();
+  if (fmt === 'num')    return val.toLocaleString();
+  if (fmt === 'num1')   return val.toFixed(1);
+  if (fmt === 'num2')   return val.toFixed(2);
+  if (fmt === 'pct')    return (val * 100).toFixed(1) + '%';
+  return String(val);
+}
+
+async function runSensitivity() {
+  if (!currentProject) return;
+  const xKey  = document.getElementById('sens-x-field').value;
+  const yKey  = document.getElementById('sens-y-field').value;
+  const steps = parseInt(document.getElementById('sens-steps').value) || 3;
+  const stepPct = parseFloat(document.getElementById('sens-step-pct').value) || 10;
+  const metric  = document.getElementById('sens-metric').value;
+  const sc = _scenarios.find(s => s.id === _currentScenarioId);
+  const baseInputs = sc?.inputs || window._lastInputs || {};
+  const xCenter = sensCenter(xKey);
+  const yCenter = sensCenter(yKey);
+  const xVals = buildSensRange(xCenter, steps, stepPct, true);
+  const yVals = buildSensRange(yCenter, steps, stepPct, true);
+  const xAxis = SENS_AXES.find(a => a.key === xKey);
+  const yAxis = SENS_AXES.find(a => a.key === yKey);
+  const btn = document.getElementById('sens-run-btn');
+  btn.disabled = true; btn.textContent = 'Running…';
+  const res = await fetch(`/api/projects/${currentProject}/sensitivity`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({axis_x:{field:xKey,values:xVals}, axis_y:{field:yKey,values:yVals}, base_inputs:baseInputs})
+  });
+  btn.disabled = false; btn.textContent = 'Run Sensitivity';
+  const data = await res.json();
+  if (!data.ok) { toast('Sensitivity error: ' + (data.error||'Unknown'), 'error'); return; }
+  renderSensitivityTable(data.matrix, xAxis, yAxis, data.x_values, data.y_values, metric);
+}
+
+function renderSensitivityTable(matrix, xAxis, yAxis, xVals, yVals, metric) {
+  const container = document.getElementById('sens-results');
+  const isIrr = metric === 'irr';
+  // Collect all values for color scaling
+  const allVals = matrix.flat().map(c => isIrr ? c.irr : c.gm_pct).filter(v => v != null);
+  const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+  const colScale = v => {
+    if (v == null || maxV === minV) return 'background:rgba(255,255,255,.05)';
+    const t = (v - minV) / (maxV - minV); // 0=red, 1=green
+    const h = Math.round(t * 120); // hue 0=red,120=green
+    return `background:hsla(${h},60%,35%,.45)`;
+  };
+  const fmtCell = v => v == null ? '—' : isIrr
+    ? (v * 100).toFixed(1) + '%'
+    : (v * 100).toFixed(1) + '%';
+  const xFmt = xAxis?.fmt || 'num';
+  const yFmt = yAxis?.fmt || 'num';
+  let html = `<div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">
+    <strong>${isIrr ? 'Unlevered IRR' : 'Gross Margin %'}</strong> &nbsp;·&nbsp;
+    X axis: ${xAxis?.label} &nbsp;·&nbsp; Y axis: ${yAxis?.label}
+  </div>
+  <div style="overflow-x:auto"><table class="sens-table"><thead><tr>
+    <th class="axis-label">${yAxis?.label.split(' ')[0] || 'Y'} \\ ${xAxis?.label.split(' ')[0] || 'X'}</th>
+    ${xVals.map(v => `<th>${fmtSensVal(v, xFmt)}</th>`).join('')}
+  </tr></thead><tbody>`;
+  matrix.forEach((row, ri) => {
+    html += `<tr><td class="axis-label">${fmtSensVal(yVals[ri], yFmt)}</td>`;
+    row.forEach(cell => {
+      const v = isIrr ? cell.irr : cell.gm_pct;
+      html += `<td style="${colScale(v)}">${fmtCell(v)}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  container.innerHTML = html;
+}
+
 async function selectProject(id) {
   currentProject = id;
   _currentScenarioId = null;
@@ -1140,7 +1442,9 @@ async function selectProject(id) {
   document.getElementById('btn-import').style.display = 'flex';
   document.getElementById('btn-backup').style.display = 'flex';
   document.getElementById('btn-refresh-outputs').style.display = 'flex';
+  document.getElementById('btn-changelog').style.display = 'flex';
   document.getElementById('save-indicator').style.display = 'flex';
+  document.getElementById('sensitivity-section').style.display = 'block';
   showTab('tab-outputs');
   await loadScenarios();
 }
@@ -1161,7 +1465,9 @@ function navTo(view) {
     document.getElementById('btn-import').style.display = 'none';
     document.getElementById('btn-backup').style.display = 'none';
     document.getElementById('btn-refresh-outputs').style.display = 'none';
+    document.getElementById('btn-changelog').style.display = 'none';
     document.getElementById('save-indicator').style.display = 'none';
+    document.getElementById('sensitivity-section').style.display = 'none';
     loadPortfolio();
   }
 }
@@ -1423,7 +1729,9 @@ async function deleteProject(id, e) {
     document.getElementById('btn-import').style.display = 'none';
     document.getElementById('btn-backup').style.display = 'none';
     document.getElementById('btn-refresh-outputs').style.display = 'none';
+    document.getElementById('btn-changelog').style.display = 'none';
     document.getElementById('save-indicator').style.display = 'none';
+    document.getElementById('sensitivity-section').style.display = 'none';
   }
   await loadProjectList();
   toast('Project deleted', 'success');
