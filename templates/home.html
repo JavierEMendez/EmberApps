@@ -15,30 +15,65 @@
   }
   body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;
     min-height:100vh;display:flex;align-items:center;justify-content:center;}
-  .home-wrap{width:100%;max-width:960px;padding:24px;text-align:center;}
-  .app-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;grid-auto-rows:1fr;}
-  .app-grid .bottom-row{display:contents;}
-  @media(max-width:700px){.app-grid{grid-template-columns:1fr;}}
-  .logo-area{margin-bottom:48px;}
+  .home-wrap{width:100%;max-width:960px;padding:24px;}
+  .logo-area{margin-bottom:44px;text-align:center;}
   .logo-area img{height:40px;margin-bottom:16px;}
   .logo-area .tagline{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:15px;
     color:var(--text-muted);font-style:italic;}
-  .welcome{font-size:13px;color:var(--text-muted);margin-bottom:36px;}
+  .welcome{font-size:13px;color:var(--text-muted);margin-bottom:36px;text-align:center;}
   .welcome strong{color:var(--text);font-weight:500;}
-  .app-card{
+
+  /* Section labels */
+  .section-label{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+  .section-label .sl-text{font-size:10px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim);white-space:nowrap;}
+  .section-label .sl-line{flex:1;height:1px;background:var(--border);}
+  .section-divider{height:28px;}
+
+  /* Type pill tags */
+  .type-pill{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;border-radius:3px;padding:2px 7px;margin-bottom:10px;}
+  .pill-app{background:rgba(200,169,110,.12);color:var(--accent);border:1px solid rgba(200,169,110,.25);}
+  .pill-dash{background:rgba(94,158,140,.1);color:var(--teal);border:1px solid rgba(94,158,140,.2);}
+  .pill-soon{background:rgba(74,85,104,.1);color:var(--text-dim);border:1px solid rgba(74,85,104,.2);}
+
+  /* Featured app card (full-width horizontal) */
+  .app-featured{
     background:var(--card);border:1px solid var(--border);border-radius:12px;
-    padding:28px 32px;cursor:pointer;transition:all .2s;text-align:left;
-    border-left:3px solid var(--accent);
+    border-left:3px solid var(--accent);padding:28px 32px;
+    display:flex;align-items:center;gap:32px;
+    cursor:pointer;transition:all .2s;text-decoration:none;
   }
-  .app-card:hover{border-color:rgba(200,169,110,.4);background:#191e28;transform:translateY(-2px);}
-  .app-card .app-title{
-    font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:18px;color:var(--text);margin-bottom:6px;
+  .app-featured:hover{border-color:rgba(200,169,110,.35);background:#191e28;transform:translateY(-2px);}
+  .app-featured-body{flex:1;text-align:left;}
+  .app-featured .app-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:20px;color:var(--text);margin-bottom:6px;}
+  .app-featured .app-desc{font-size:13px;color:var(--text-muted);line-height:1.6;}
+  .app-featured-cta{
+    flex-shrink:0;display:flex;flex-direction:column;align-items:center;gap:6px;
+    background:rgba(200,169,110,.08);border:1px solid rgba(200,169,110,.2);
+    border-radius:10px;padding:18px 28px;transition:all .2s;
   }
-  .app-card .app-desc{font-size:13px;color:var(--text-muted);line-height:1.6;}
-  .app-card .app-arrow{
-    display:flex;align-items:center;gap:6px;margin-top:14px;
-    font-size:12px;font-weight:600;color:var(--accent);letter-spacing:.04em;
+  .app-featured:hover .app-featured-cta{background:rgba(200,169,110,.14);border-color:rgba(200,169,110,.35);}
+  .app-featured-cta svg{color:var(--accent);}
+  .app-featured-cta span{font-size:11px;font-weight:600;color:var(--accent);letter-spacing:.05em;margin-top:2px;}
+
+  /* Dashboard grid */
+  .dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  @media(max-width:700px){
+    .dash-grid{grid-template-columns:1fr;}
+    .app-featured{flex-direction:column;}
+    .app-featured-cta{width:100%;flex-direction:row;justify-content:center;padding:14px 20px;}
   }
+  .dash-card{
+    background:var(--card);border:1px solid var(--border);border-radius:12px;
+    padding:24px 26px;transition:all .2s;text-align:left;
+    border-left:3px solid var(--teal);
+  }
+  .dash-card.clickable{cursor:pointer;}
+  .dash-card.clickable:hover{border-color:rgba(94,158,140,.35);background:#191e28;transform:translateY(-2px);}
+  .dash-card.disabled{opacity:.5;cursor:default;}
+  .dash-card .app-title{font-family:'Plus Jakarta Sans',sans-serif;font-weight:400;font-size:16px;color:var(--text);margin-bottom:6px;}
+  .dash-card .app-desc{font-size:12px;color:var(--text-muted);line-height:1.6;}
+  .dash-card .app-arrow{display:flex;align-items:center;gap:5px;margin-top:12px;font-size:11px;font-weight:600;color:var(--teal);letter-spacing:.04em;}
+  .dash-card.disabled .app-arrow{color:var(--text-dim);}
   .footer{display:flex;align-items:center;justify-content:space-between;margin-top:36px;font-size:12px;color:var(--text-dim);}
   .footer a{color:var(--text-muted);text-decoration:none;transition:color .15s;}
   .footer a:hover{color:var(--accent);}
@@ -89,51 +124,50 @@
   </div>
   <div class="welcome">Welcome back, <strong>{{ username }}</strong></div>
 
-  <div class="app-grid">
-    <!-- Top row: 3 cards -->
-    {% if page_access.get('mpc_underwriting', true) %}
-    <a href="/" style="text-decoration:none">
-      <div class="app-card" style="height:100%">
-        <div class="app-title">MPC Underwriting</div>
-        <div class="app-desc">Database and underwriting tool for master-planned community acquisitions.</div>
-        <div class="app-arrow">
-          Open
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
-      </div>
-    </a>
-    {% endif %}
+  <!-- APPLICATIONS -->
+  {% if page_access.get('mpc_underwriting', true) %}
+  <div class="section-label"><span class="sl-text">Applications</span><span class="sl-line"></span></div>
+  <a href="/" class="app-featured">
+    <div class="app-featured-body">
+      <div class="type-pill pill-app">App</div>
+      <div class="app-title">MPC Underwriting</div>
+      <div class="app-desc">Interactive database and underwriting tool for master-planned community acquisitions. Model lot takedowns, cashflows, IRR, and scenario comparisons.</div>
+    </div>
+    <div class="app-featured-cta">
+      <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>Open</span>
+    </div>
+  </a>
+  <div class="section-divider"></div>
+  {% endif %}
+
+  <!-- DASHBOARDS -->
+  <div class="section-label"><span class="sl-text">Dashboards</span><span class="sl-line"></span></div>
+  <div class="dash-grid">
 
     {% if page_access.get('returns', true) %}
     <a href="/returns" style="text-decoration:none">
-      <div class="app-card" style="height:100%">
+      <div class="dash-card clickable">
+        <div class="type-pill pill-dash">Dashboard</div>
         <div class="app-title">Active Project Returns</div>
-        <div class="app-desc">See current projected performance of active ember projects.</div>
+        <div class="app-desc">Current projected performance of active Ember projects.</div>
         <div class="app-arrow">
           Open
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
       </div>
     </a>
     {% endif %}
 
-    <div class="app-card" style="opacity:.55;cursor:default;">
-      <div class="app-title">Community Sales Tracker</div>
-      <div class="app-desc">See home and lot sales data for active Ember MPCs.</div>
-      <div class="app-arrow" style="color:var(--text-dim)">
-        Coming Soon
-      </div>
-    </div>
-
-    <!-- Bottom row: 2 cards, centered -->
     {% if page_access.get('loans', true) %}
-    <a href="/loans" style="text-decoration:none;grid-column:1/2">
-      <div class="app-card" style="height:100%">
-        <div class="app-title">Loan Capacities and Debt Schedules</div>
-        <div class="app-desc">See all current active Ember loans and their respective KPIs.</div>
+    <a href="/loans" style="text-decoration:none">
+      <div class="dash-card clickable">
+        <div class="type-pill pill-dash">Dashboard</div>
+        <div class="app-title">Loan Capacities &amp; Debt Schedules</div>
+        <div class="app-desc">All current active Ember loans and their respective KPIs.</div>
         <div class="app-arrow">
           Open
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
       </div>
     </a>
@@ -141,12 +175,13 @@
 
     {% if page_access.get('operations', true) %}
     <a href="/operations" style="text-decoration:none">
-      <div class="app-card" style="height:100%">
+      <div class="dash-card clickable">
+        <div class="type-pill pill-dash">Dashboard</div>
         <div class="app-title">Ember Operating Revenues</div>
-        <div class="app-desc">See forecasted Ember operating revenues from projects.</div>
+        <div class="app-desc">Forecasted Ember operating revenues from active projects.</div>
         <div class="app-arrow">
           Open
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
       </div>
     </a>
@@ -154,25 +189,35 @@
 
     {% if is_admin %}
     <a href="/portfolio" style="text-decoration:none">
-      <div class="app-card" style="height:100%">
+      <div class="dash-card clickable">
+        <div class="type-pill pill-dash">Dashboard</div>
         <div class="app-title">Portfolio Dashboard</div>
         <div class="app-desc">Aggregate view of all active projects: total lots, IRR, margins, and status at a glance.</div>
         <div class="app-arrow">
           Open
-          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 12h14m-7-7l7 7-7 7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </div>
       </div>
     </a>
     {% else %}
-    <div class="app-card" style="opacity:.55;cursor:default;">
+    <div class="dash-card disabled">
+      <div class="type-pill pill-soon">Coming Soon</div>
       <div class="app-title">Portfolio Dashboard</div>
       <div class="app-desc">Aggregate view of all active projects: total lots, IRR, margins, and status at a glance.</div>
-      <div class="app-arrow" style="color:var(--text-dim)">Coming Soon</div>
+      <div class="app-arrow">Coming Soon</div>
     </div>
     {% endif %}
+
+    <div class="dash-card disabled">
+      <div class="type-pill pill-soon">Coming Soon</div>
+      <div class="app-title">Community Sales Tracker</div>
+      <div class="app-desc">Home and lot sales data for active Ember MPCs.</div>
+      <div class="app-arrow">Coming Soon</div>
+    </div>
+
   </div>
 
-  <div style="margin-top:16px;text-align:center;display:flex;align-items:center;justify-content:center;gap:10px">
+  <div style="margin-top:28px;text-align:center;display:flex;align-items:center;justify-content:center;gap:10px">
     <button onclick="openAcct()" style="background:none;border:1px solid var(--border);color:var(--text-muted);padding:8px 18px;border-radius:6px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:all .15s" onmouseover="this.style.borderColor='rgba(200,169,110,.4)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">
       <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" stroke-width="1.8"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" stroke-width="1.8" stroke-linecap="round"/></svg>
       Account Settings
