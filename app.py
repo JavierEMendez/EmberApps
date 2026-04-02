@@ -1467,12 +1467,17 @@ def _gen_excel_loans(data):
         if not months:
             continue
         headers = [""] + [str(m) for m in months]
-        rows_data = [
-            ["Scheduled Payments"] + [v for v in sched.get("payments", [])],
-            ["Cumulative Payments"] + [v for v in sched.get("cumulative_payments", [])],
-            ["Lot Revenues"] + [v for v in sched.get("revenues", [])],
-            ["Cumulative Revenues"] + [v for v in sched.get("cumulative_revenues", [])],
-        ]
+        rows_data = []
+        # Revenue category rows (each has a monthly array)
+        for rev in sched.get("revenues", []):
+            rows_data.append([rev.get("type", "")] + list(rev.get("monthly", [])))
+        # Total revenues monthly
+        total_rev = sched.get("total_revenues", {})
+        if total_rev:
+            rows_data.append(["Total Revenues"] + list(total_rev.get("monthly", [])))
+        # Cumulative revenues and payments are already flat monthly arrays
+        rows_data.append(["Cumulative Revenues"] + list(sched.get("cumulative_revenues", [])))
+        rows_data.append(["Cumulative Payments"] + list(sched.get("cumulative_payments", [])))
         write_table(f"Debt Schedule — {proj_name}", headers, rows_data)
 
     ws.column_dimensions["A"].width = 30
@@ -1686,33 +1691,84 @@ def _send_monthly_emails(force=False):
     sg = SendGridAPIClient(sendgrid_key)
     sent_count = 0
 
+    # Load logo once
+    logo_b64 = ""
+    logo_path = os.path.join(os.path.dirname(__file__), "static", "ember_logo.png")
+    if os.path.exists(logo_path):
+        with open(logo_path, "rb") as f:
+            logo_b64 = base64.b64encode(f.read()).decode()
+
     for user in recipients:
         fmt = user["report_format"] or "pdf"
         email_addr = user["email"]
 
-        body_lines = [
-            f"Hello {user['username']},",
-            "",
-            f"Please find your {now.strftime('%B %Y')} Ember reports attached below.",
-            "",
-            "The following reports are included:",
-        ]
-        for rt, label in report_labels.items():
-            if report_data.get(rt):
-                body_lines.append(f"  • {label} ({fmt.upper()} format)")
-        body_lines += [
-            "",
-            "These reports are generated automatically on the 1st of each month.",
-            "",
-            "— Ember Acquisitions",
-        ]
+        report_list_items = "".join(
+            f'<li style="margin:4px 0">{label} <span style="color:#8b95a8;font-size:12px">({fmt.upper()})</span></li>'
+            for rt, label in report_labels.items() if report_data.get(rt)
+        )
+
+        html_body = f"""<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:'Helvetica Neue',Arial,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:32px 0">
+  <tr><td align="center">
+    <table width="580" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+      <tr><td style="background:#1a2535;padding:28px 36px">
+        <p style="margin:0;font-size:22px;font-weight:700;color:#c8a96e;letter-spacing:.04em">EMBER</p>
+        <p style="margin:4px 0 0;font-size:11px;color:#8b95a8;letter-spacing:.08em;text-transform:uppercase">Finance &amp; Analytics</p>
+      </td></tr>
+      <tr><td style="padding:32px 36px">
+        <p style="margin:0 0 16px;font-size:15px;color:#1a2535">Hello {user['username']},</p>
+        <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.6">
+          Please find your <strong>{now.strftime('%B %Y')}</strong> Ember reports attached below.
+        </p>
+        <p style="margin:0 0 8px;font-size:13px;color:#8b95a8;text-transform:uppercase;letter-spacing:.06em">Reports included</p>
+        <ul style="margin:0 0 24px;padding-left:20px;font-size:14px;color:#1a2535;line-height:1.8">
+          {report_list_items}
+        </ul>
+        <p style="margin:0;font-size:12px;color:#a0aec0;line-height:1.6">
+          These reports are generated automatically on the 1st of each month.
+        </p>
+      </td></tr>
+      <tr><td style="background:#f8f9fb;border-top:1px solid #e8edf3;padding:20px 36px;text-align:center">
+        {'<img src="cid:ember_logo" width="120" style="display:block;margin:0 auto 12px" alt="Ember Logo">' if logo_b64 else ''}
+        <p style="margin:0;font-size:12px;color:#8b95a8">Ember Finance &amp; Analytics Team</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
+
+        plain_body = (
+            f"Hello {user['username']},\n\n"
+            f"Please find your {now.strftime('%B %Y')} Ember reports attached below.\n\n"
+            "Reports included:\n" +
+            "".join(f"  • {label} ({fmt.upper()})\n" for rt, label in report_labels.items() if report_data.get(rt)) +
+            "\nThese reports are generated automatically on the 1st of each month.\n\n"
+            "Ember Finance & Analytics Team"
+        )
 
         message = Mail(
             from_email=from_addr,
             to_emails=email_addr,
             subject=subject,
-            plain_text_content="\n".join(body_lines),
         )
+        message.content = [
+            {"type": "text/plain", "value": plain_body},
+            {"type": "text/html", "value": html_body},
+        ]
+
+        if logo_b64:
+            logo_att = Attachment(
+                FileContent(logo_b64),
+                FileName("ember_logo.png"),
+                FileType("image/png"),
+                Disposition("inline"),
+            )
+            logo_att.content_id = "ember_logo"
+            message.attachment = logo_att
 
         for rt, label in report_labels.items():
             if not report_data.get(rt):
