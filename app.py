@@ -1657,7 +1657,7 @@ def _send_monthly_emails(force=False):
             return 0  # already sent this month
 
     # Fetch opted-in users with emails
-    cur.execute("SELECT id, username, email, report_format FROM users WHERE report_opt_in = TRUE AND email IS NOT NULL AND email != ''")
+    cur.execute("SELECT id, username, email, report_format, page_access FROM users WHERE report_opt_in = TRUE AND email IS NOT NULL AND email != ''")
     recipients = cur.fetchall()
 
     # Fetch latest report data for all three types
@@ -1702,9 +1702,16 @@ def _send_monthly_emails(force=False):
         fmt = user["report_format"] or "pdf"
         email_addr = user["email"]
 
+        pa = user["page_access"] or {}
+        accessible = {rt: label for rt, label in report_labels.items()
+                      if report_data.get(rt) and pa.get(rt, True)}
+
+        if not accessible:
+            continue  # user has no access to any available reports
+
         report_list_items = "".join(
             f'<li style="margin:4px 0">{label} <span style="color:#8b95a8;font-size:12px">({fmt.upper()})</span></li>'
-            for rt, label in report_labels.items() if report_data.get(rt)
+            for rt, label in accessible.items()
         )
 
         html_body = f"""<!DOCTYPE html>
@@ -1745,7 +1752,7 @@ def _send_monthly_emails(force=False):
             f"Hello {user['username']},\n\n"
             f"Please find your {now.strftime('%B %Y')} Ember reports attached below.\n\n"
             "Reports included:\n" +
-            "".join(f"  • {label} ({fmt.upper()})\n" for rt, label in report_labels.items() if report_data.get(rt)) +
+            "".join(f"  • {label} ({fmt.upper()})\n" for rt, label in accessible.items()) +
             "\nThese reports are generated automatically on the 1st of each month.\n\n"
             "Ember Finance & Analytics Team"
         )
@@ -1770,9 +1777,7 @@ def _send_monthly_emails(force=False):
             logo_att.content_id = "ember_logo"
             message.attachment = logo_att
 
-        for rt, label in report_labels.items():
-            if not report_data.get(rt):
-                continue
+        for rt, label in accessible.items():
             data = report_data[rt]
             try:
                 if fmt == "excel":
