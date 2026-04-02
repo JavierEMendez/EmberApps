@@ -603,11 +603,16 @@ def update_report_settings():
 @login_required
 @admin_required
 def send_reports_now():
-    try:
-        count = _send_monthly_emails(force=True)
-        return jsonify({"ok": True, "sent": count})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    import threading
+    def _run():
+        try:
+            count = _send_monthly_emails(force=True)
+            print(f"[Reports] Sent to {count} recipient(s)", flush=True)
+        except Exception as e:
+            print(f"[Reports] Send failed: {e}", flush=True)
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "queued": True})
 
 # ─── DEFAULT INPUTS TEMPLATE ──────────────────────────────────────────────────
 def default_inputs(name="New Project"):

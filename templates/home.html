@@ -476,7 +476,7 @@ async function sendReportsNow() {
     const res = await fetch('/api/admin/send-reports-now', {method:'POST'});
     const d = await res.json();
     if (d.ok) {
-      status.textContent = `Sent to ${d.sent} recipient${d.sent !== 1 ? 's' : ''}.`;
+      status.textContent = d.queued ? 'Queued — check Railway logs for result.' : `Sent to ${d.sent} recipient${d.sent !== 1 ? 's' : ''}.`;
       status.style.color = 'var(--teal)';
     } else {
       status.textContent = d.error || 'Error';
