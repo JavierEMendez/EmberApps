@@ -1682,9 +1682,10 @@ def _send_monthly_emails(force=False):
     }
 
     sent_count = 0
-    with smtplib.SMTP(smtp_host, smtp_port) as server:
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
         server.ehlo()
         server.starttls()
+        server.ehlo()
         server.login(smtp_user, smtp_pass)
 
         for user in recipients:
