@@ -151,10 +151,22 @@ def logout():
 @login_required
 def home():
     pa = session.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    # Admins always have full access
     if session.get("is_admin"):
         pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    return render_template("home.html", username=session.get("username"), display_name=session.get("display_name", session.get("username")), is_admin=session.get("is_admin"), page_access=pa)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT report_type, MAX(uploaded_at) as last_updated
+        FROM reports GROUP BY report_type
+    """)
+    report_dates = {row["report_type"]: row["last_updated"].strftime("%-d %b %Y") for row in cur.fetchall() if row["last_updated"]}
+    cur.close(); conn.close()
+    return render_template("home.html",
+        username=session.get("username"),
+        display_name=session.get("display_name", session.get("username")),
+        is_admin=session.get("is_admin"),
+        page_access=pa,
+        report_dates=report_dates)
 
 @app.route("/")
 @login_required
