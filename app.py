@@ -4,7 +4,7 @@ Flask + PostgreSQL + Flask-Login — no Excel required
 """
 import os, json, datetime, io, base64
 from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
+from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition, Content
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
 import psycopg2
@@ -1756,8 +1756,8 @@ def _send_monthly_emails(force=False):
             subject=subject,
         )
         message.content = [
-            {"type": "text/plain", "value": plain_body},
-            {"type": "text/html", "value": html_body},
+            Content("text/plain", plain_body),
+            Content("text/html", html_body),
         ]
 
         if logo_b64:
