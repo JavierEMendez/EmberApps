@@ -305,8 +305,11 @@ async function refreshUserList() {
         `<label><input type="checkbox" ${pa[k] ? 'checked' : ''} ${u.is_admin ? 'disabled' : ''}
           onchange="toggleAccess(${u.id},'${k}',this.checked)">${label}</label>`
       ).join('');
+      const optInBadge = u.report_opt_in
+        ? `<span class="badge" style="background:rgba(80,180,120,.12);color:#50b478;border-color:rgba(80,180,120,.25)">Reports ${(u.report_format||'pdf').toUpperCase()}</span>`
+        : `<span class="badge" style="background:rgba(150,150,150,.1);color:var(--text-dim);border-color:rgba(150,150,150,.2)">No Reports</span>`;
       return `<div class="user-row">
-        <div class="uname" style="flex:1">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''}</div>
+        <div class="uname" style="flex:1">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''} ${optInBadge}</div>
         <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
         <div style="display:flex;gap:6px;margin:6px 0 4px;width:100%">
           <input type="email" id="email-${u.id}" value="${u.email || ''}" placeholder="Email address"

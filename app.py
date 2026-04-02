@@ -462,7 +462,7 @@ def recalculate(pid):
 def list_users():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, username, email, is_admin, page_access, created_at FROM users ORDER BY id")
+    cur.execute("SELECT id, username, email, is_admin, page_access, created_at, report_opt_in, report_format FROM users ORDER BY id")
     rows = cur.fetchall()
     cur.close(); conn.close()
     return jsonify([dict(r) for r in rows])
