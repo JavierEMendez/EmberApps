@@ -2,11 +2,9 @@
 Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
-import os, json, datetime, smtplib, io
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
-from email.mime.text import MIMEText
-from email import encoders
+import os, json, datetime, io, base64
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail, Attachment, FileContent, FileName, FileType, Disposition
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, send_file
 import psycopg2
@@ -1669,14 +1667,13 @@ def _send_monthly_emails(force=False):
     if not recipients:
         return 0
 
-    smtp_host = os.environ.get("SMTP_HOST", "")
-    smtp_port = int(os.environ.get("SMTP_PORT", "587"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_pass = os.environ.get("SMTP_PASSWORD", "")
-    from_addr = os.environ.get("SMTP_FROM", smtp_user)
+    sendgrid_key = os.environ.get("SENDGRID_API_KEY", "")
+    from_addr = os.environ.get("SMTP_FROM", "")
 
-    if not smtp_host or not smtp_user:
-        raise ValueError("SMTP_HOST and SMTP_USER environment variables must be set")
+    if not sendgrid_key:
+        raise ValueError("SENDGRID_API_KEY environment variable must be set")
+    if not from_addr:
+        raise ValueError("SMTP_FROM environment variable must be set (used as sender address)")
 
     subject = now.strftime("%B %Y") + " Ember Reports"
 
@@ -1686,75 +1683,75 @@ def _send_monthly_emails(force=False):
         "operations": "Ember Operating Revenues",
     }
 
+    sg = SendGridAPIClient(sendgrid_key)
     sent_count = 0
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
-        server.ehlo()
-        server.starttls()
-        server.ehlo()
-        server.login(smtp_user, smtp_pass)
 
-        for user in recipients:
-            fmt = user["report_format"] or "pdf"
-            email_addr = user["email"]
+    for user in recipients:
+        fmt = user["report_format"] or "pdf"
+        email_addr = user["email"]
 
-            msg = MIMEMultipart()
-            msg["From"] = from_addr
-            msg["To"] = email_addr
-            msg["Subject"] = subject
+        body_lines = [
+            f"Hello {user['username']},",
+            "",
+            f"Please find your {now.strftime('%B %Y')} Ember reports attached below.",
+            "",
+            "The following reports are included:",
+        ]
+        for rt, label in report_labels.items():
+            if report_data.get(rt):
+                body_lines.append(f"  • {label} ({fmt.upper()} format)")
+        body_lines += [
+            "",
+            "These reports are generated automatically on the 1st of each month.",
+            "",
+            "— Ember Acquisitions",
+        ]
 
-            body_lines = [
-                f"Hello {user['username']},",
-                "",
-                f"Please find your {now.strftime('%B %Y')} Ember reports attached below.",
-                "",
-                "The following reports are included:",
-            ]
-            for rt, label in report_labels.items():
-                if report_data.get(rt):
-                    body_lines.append(f"  • {label} ({fmt.upper()} format)")
-            body_lines += [
-                "",
-                "These reports are generated automatically on the 1st of each month.",
-                "",
-                "— Ember Acquisitions",
-            ]
-            msg.attach(MIMEText("\n".join(body_lines), "plain"))
+        message = Mail(
+            from_email=from_addr,
+            to_emails=email_addr,
+            subject=subject,
+            plain_text_content="\n".join(body_lines),
+        )
 
-            for rt, label in report_labels.items():
-                if not report_data.get(rt):
-                    continue
-                data = report_data[rt]
-                try:
-                    if fmt == "excel":
-                        if rt == "returns":
-                            # Reuse the export_returns logic by calling the generator inline
-                            file_bytes = _gen_excel_returns(data)
-                            filename = f"{label.replace(' ','_')}.xlsx"
-                            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        elif rt == "loans":
-                            file_bytes = _gen_excel_loans(data)
-                            filename = "Loan_Capacities.xlsx"
-                            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        else:  # operations
-                            file_bytes = _gen_excel_operations(data)
-                            filename = "Ember_Operating_Revenues.xlsx"
-                            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        for rt, label in report_labels.items():
+            if not report_data.get(rt):
+                continue
+            data = report_data[rt]
+            try:
+                if fmt == "excel":
+                    if rt == "returns":
+                        file_bytes = _gen_excel_returns(data)
+                        filename = f"{label.replace(' ','_')}.xlsx"
+                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    elif rt == "loans":
+                        file_bytes = _gen_excel_loans(data)
+                        filename = "Loan_Capacities.xlsx"
+                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     else:
-                        file_bytes = bytes(_gen_pdf_report(rt, data))
-                        filename = f"{label.replace(' ','_')}.pdf"
-                        mime_type = "application/pdf"
+                        file_bytes = _gen_excel_operations(data)
+                        filename = "Ember_Operating_Revenues.xlsx"
+                        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                else:
+                    file_bytes = bytes(_gen_pdf_report(rt, data))
+                    filename = f"{label.replace(' ','_')}.pdf"
+                    mime_type = "application/pdf"
 
-                    part = MIMEBase("application", "octet-stream")
-                    part.set_payload(file_bytes)
-                    encoders.encode_base64(part)
-                    part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
-                    part.add_header("Content-Type", mime_type)
-                    msg.attach(part)
-                except Exception as e:
-                    print(f"Error generating {rt} {fmt}: {e}")
+                attachment = Attachment(
+                    FileContent(base64.b64encode(file_bytes).decode()),
+                    FileName(filename),
+                    FileType(mime_type),
+                    Disposition("attachment"),
+                )
+                message.attachment = attachment
+            except Exception as e:
+                print(f"Error generating {rt} {fmt}: {e}")
 
-            server.sendmail(from_addr, email_addr, msg.as_string())
+        try:
+            sg.send(message)
             sent_count += 1
+        except Exception as e:
+            print(f"SendGrid error sending to {email_addr}: {e}")
 
     # Record successful send (skip if forced to allow re-testing)
     if not force:
