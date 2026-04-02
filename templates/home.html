@@ -56,7 +56,7 @@
   .app-featured-cta span{font-size:11px;font-weight:600;color:var(--accent);letter-spacing:.05em;margin-top:2px;}
 
   /* Dashboard grid */
-  .dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
+  .dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;grid-auto-rows:1fr;}
   @media(max-width:700px){
     .dash-grid{grid-template-columns:1fr;}
     .app-featured{flex-direction:column;}
@@ -122,7 +122,7 @@
     <img src="/static/img/ember_logo.png" alt="Ember">
     <div class="tagline">Welcome to Ember Apps</div>
   </div>
-  <div class="welcome">Welcome back, <strong>{{ username }}</strong></div>
+  <div class="welcome">Welcome back, <strong>{{ display_name }}</strong></div>
 
   <!-- APPLICATIONS -->
   {% if page_access.get('mpc_underwriting', true) %}
@@ -146,8 +146,8 @@
   <div class="dash-grid">
 
     {% if page_access.get('returns', true) %}
-    <a href="/returns" style="text-decoration:none">
-      <div class="dash-card clickable">
+    <a href="/returns" style="text-decoration:none;display:flex;flex-direction:column">
+      <div class="dash-card clickable" style="flex:1">
         <div class="type-pill pill-dash">Dashboard</div>
         <div class="app-title">Active Project Returns</div>
         <div class="app-desc">Current projected performance of active Ember projects.</div>
@@ -160,8 +160,8 @@
     {% endif %}
 
     {% if page_access.get('loans', true) %}
-    <a href="/loans" style="text-decoration:none">
-      <div class="dash-card clickable">
+    <a href="/loans" style="text-decoration:none;display:flex;flex-direction:column">
+      <div class="dash-card clickable" style="flex:1">
         <div class="type-pill pill-dash">Dashboard</div>
         <div class="app-title">Loan Capacities &amp; Debt Schedules</div>
         <div class="app-desc">All current active Ember loans and their respective KPIs.</div>
@@ -174,8 +174,8 @@
     {% endif %}
 
     {% if page_access.get('operations', true) %}
-    <a href="/operations" style="text-decoration:none">
-      <div class="dash-card clickable">
+    <a href="/operations" style="text-decoration:none;display:flex;flex-direction:column">
+      <div class="dash-card clickable" style="flex:1">
         <div class="type-pill pill-dash">Dashboard</div>
         <div class="app-title">Ember Operating Revenues</div>
         <div class="app-desc">Forecasted Ember operating revenues from active projects.</div>
@@ -188,8 +188,8 @@
     {% endif %}
 
     {% if is_admin %}
-    <a href="/portfolio" style="text-decoration:none">
-      <div class="dash-card clickable">
+    <a href="/portfolio" style="text-decoration:none;display:flex;flex-direction:column">
+      <div class="dash-card clickable" style="flex:1">
         <div class="type-pill pill-dash">Dashboard</div>
         <div class="app-title">Portfolio Dashboard</div>
         <div class="app-desc">Aggregate view of all active projects: total lots, IRR, margins, and status at a glance.</div>
@@ -254,6 +254,13 @@
       <button onclick="closeAcct()" style="background:none;border:none;color:#4a5568;font-size:20px;cursor:pointer;line-height:1">&times;</button>
     </div>
     <div style="font-size:12px;color:#4a5568;margin-bottom:16px">Logged in as <strong style="color:#8b95a8">{{ username }}</strong></div>
+    <div style="font-size:11px;color:#4a5568;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Name</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <input id="acct-first-name" type="text" placeholder="First name" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
+      <input id="acct-last-name" type="text" placeholder="Last name" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#e8eaf0;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none">
+    </div>
+    <div id="acct-name-msg" style="font-size:12px;margin-bottom:4px;display:none"></div>
+    <button onclick="saveAcctName()" style="width:100%;background:#1e2535;border:1px solid #2e3750;color:#e8eaf0;padding:8px;border-radius:6px;font-size:13px;font-weight:500;cursor:pointer;font-family:'DM Sans',sans-serif;margin-bottom:16px;transition:all .15s" onmouseover="this.style.borderColor='var(--teal)';this.style.color='var(--teal)'" onmouseout="this.style.borderColor='#2e3750';this.style.color='#e8eaf0'">Save Name</button>
     <div style="font-size:11px;color:#4a5568;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Email</div>
     <div id="acct-email" style="width:100%;background:#0d0f13;border:1px solid #1e2535;color:#4a5568;border-radius:6px;padding:9px 11px;font-size:13px;font-family:'DM Sans',sans-serif;margin-bottom:16px;min-height:36px">—</div>
     <div style="font-size:11px;color:#4a5568;text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px">Change Password</div>
@@ -353,13 +360,21 @@ async function refreshUserList() {
       const optInBadge = u.report_opt_in
         ? `<span class="badge" style="background:rgba(80,180,120,.12);color:#50b478;border-color:rgba(80,180,120,.25)">Reports ${(u.report_format||'pdf').toUpperCase()}</span>`
         : `<span class="badge" style="background:rgba(150,150,150,.1);color:var(--text-dim);border-color:rgba(150,150,150,.2)">No Reports</span>`;
+      const btnStyle = `background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif;transition:all .15s`;
       return `<div class="user-row">
         <div class="uname" style="flex:1">${u.username} ${u.is_admin ? '<span class="badge">Admin</span>' : ''} ${optInBadge}</div>
         <button class="btn-del-user" onclick="deleteUser(${u.id},'${u.username}')" title="Remove">&times;</button>
         <div style="display:flex;gap:6px;margin:6px 0 4px;width:100%">
+          <input type="text" id="fname-${u.id}" value="${u.first_name || ''}" placeholder="First name"
+            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 9px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
+          <input type="text" id="lname-${u.id}" value="${u.last_name || ''}" placeholder="Last name"
+            style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 9px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
+          <button onclick="saveName(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--teal)';this.style.color='var(--teal)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Name</button>
+        </div>
+        <div style="display:flex;gap:6px;margin:0 0 4px;width:100%">
           <input type="email" id="email-${u.id}" value="${u.email || ''}" placeholder="Email address"
             style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:5px;padding:6px 9px;font-size:12px;font-family:'DM Sans',sans-serif;outline:none">
-          <button onclick="saveEmail(${u.id})" style="background:none;border:1px solid var(--border);color:var(--text-muted);border-radius:5px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;font-family:'DM Sans',sans-serif;transition:all .15s" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Save</button>
+          <button onclick="saveEmail(${u.id})" style="${btnStyle}" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text-muted)'">Email</button>
         </div>
         ${u.is_admin ? '' : `<div class="user-access">${checks}</div>`}
       </div>`;
@@ -410,6 +425,15 @@ async function addUser() {
   } else {
     alert(d.error || 'Error creating user');
   }
+}
+async function saveName(uid) {
+  const first_name = document.getElementById('fname-' + uid).value.trim();
+  const last_name = document.getElementById('lname-' + uid).value.trim();
+  await fetch('/api/admin/users/' + uid + '/name', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({first_name, last_name})
+  });
 }
 async function saveEmail(uid) {
   const email = document.getElementById('email-' + uid).value.trim();
@@ -466,11 +490,27 @@ async function openAcct() {
   try {
     const res = await fetch('/api/account');
     const d = await res.json();
+    document.getElementById('acct-first-name').value = d.first_name || '';
+    document.getElementById('acct-last-name').value = d.last_name || '';
     document.getElementById('acct-email').textContent = d.email || '—';
     document.getElementById('acct-report-optin').checked = d.report_opt_in || false;
     document.getElementById(d.report_format === 'excel' ? 'acct-fmt-excel' : 'acct-fmt-pdf').checked = true;
     document.getElementById('acct-format-row').style.display = d.report_opt_in ? 'block' : 'none';
   } catch(e) {}
+}
+async function saveAcctName() {
+  const first_name = document.getElementById('acct-first-name').value.trim();
+  const last_name = document.getElementById('acct-last-name').value.trim();
+  const msg = document.getElementById('acct-name-msg');
+  const res = await fetch('/api/account/name', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({first_name, last_name})
+  });
+  const d = await res.json();
+  msg.style.display = 'block';
+  if (d.ok) { msg.textContent = 'Name saved.'; msg.style.color = '#5e9e8c'; setTimeout(() => msg.style.display='none', 2000); }
+  else { msg.textContent = d.error || 'Failed to save.'; msg.style.color = '#e07a3e'; }
 }
 function closeAcct() {
   document.getElementById('acct-modal').style.display = 'none';

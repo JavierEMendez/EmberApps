@@ -51,6 +51,8 @@ def init_db():
         ALTER TABLE users ADD COLUMN IF NOT EXISTS email TEXT;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS report_opt_in BOOLEAN DEFAULT FALSE;
         ALTER TABLE users ADD COLUMN IF NOT EXISTS report_format TEXT DEFAULT 'pdf';
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name TEXT;
         CREATE TABLE IF NOT EXISTS report_sends (
             id SERIAL PRIMARY KEY,
             period TEXT UNIQUE NOT NULL,
@@ -132,6 +134,9 @@ def login():
             session["username"] = user["username"]
             session["is_admin"] = user["is_admin"]
             session["page_access"] = user.get("page_access") or {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
+            fn = (user.get("first_name") or "").strip()
+            ln = (user.get("last_name") or "").strip()
+            session["display_name"] = f"{fn} {ln}".strip() or user["username"]
             return redirect(url_for("home"))
         error = "Invalid username or password."
     return render_template("login.html", error=error)
@@ -149,7 +154,7 @@ def home():
     # Admins always have full access
     if session.get("is_admin"):
         pa = {"mpc_underwriting": True, "returns": True, "loans": True, "operations": True}
-    return render_template("home.html", username=session.get("username"), is_admin=session.get("is_admin"), page_access=pa)
+    return render_template("home.html", username=session.get("username"), display_name=session.get("display_name", session.get("username")), is_admin=session.get("is_admin"), page_access=pa)
 
 @app.route("/")
 @login_required
@@ -462,7 +467,7 @@ def recalculate(pid):
 def list_users():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, username, email, is_admin, page_access, created_at, report_opt_in, report_format FROM users ORDER BY id")
+    cur.execute("SELECT id, username, email, is_admin, page_access, created_at, report_opt_in, report_format, first_name, last_name FROM users ORDER BY id")
     rows = cur.fetchall()
     cur.close(); conn.close()
     return jsonify([dict(r) for r in rows])
@@ -527,14 +532,16 @@ def reset_password(uid):
 def get_account():
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT username, email, report_opt_in, report_format FROM users WHERE id = %s", (session["user_id"],))
+    cur.execute("SELECT username, email, report_opt_in, report_format, first_name, last_name FROM users WHERE id = %s", (session["user_id"],))
     row = cur.fetchone()
     cur.close(); conn.close()
     return jsonify({
         "username": row["username"],
         "email": row["email"] or "",
         "report_opt_in": bool(row["report_opt_in"]),
-        "report_format": row["report_format"] or "pdf"
+        "report_format": row["report_format"] or "pdf",
+        "first_name": row["first_name"] or "",
+        "last_name": row["last_name"] or ""
     })
 
 @app.route("/api/admin/users/<int:uid>/email", methods=["PUT"])
@@ -594,6 +601,37 @@ def update_report_settings():
     cur = conn.cursor()
     cur.execute("UPDATE users SET report_opt_in = %s, report_format = %s WHERE id = %s",
                 (opt_in, fmt, session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/account/name", methods=["PUT"])
+@login_required
+def update_own_name():
+    data = request.json or {}
+    first_name = (data.get("first_name") or "").strip() or None
+    last_name = (data.get("last_name") or "").strip() or None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET first_name = %s, last_name = %s WHERE id = %s",
+                (first_name, last_name, session["user_id"]))
+    conn.commit(); cur.close(); conn.close()
+    # Update session display name immediately
+    fn = first_name or ""
+    ln = last_name or ""
+    session["display_name"] = f"{fn} {ln}".strip() or session.get("username")
+    return jsonify({"ok": True})
+
+@app.route("/api/admin/users/<int:uid>/name", methods=["PUT"])
+@login_required
+@admin_required
+def set_user_name(uid):
+    data = request.json or {}
+    first_name = (data.get("first_name") or "").strip() or None
+    last_name = (data.get("last_name") or "").strip() or None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET first_name = %s, last_name = %s WHERE id = %s",
+                (first_name, last_name, uid))
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
 
@@ -1657,7 +1695,7 @@ def _send_monthly_emails(force=False):
             return 0  # already sent this month
 
     # Fetch opted-in users with emails
-    cur.execute("SELECT id, username, email, report_format, page_access FROM users WHERE report_opt_in = TRUE AND email IS NOT NULL AND email != ''")
+    cur.execute("SELECT id, username, email, report_format, page_access, first_name, last_name FROM users WHERE report_opt_in = TRUE AND email IS NOT NULL AND email != ''")
     recipients = cur.fetchall()
 
     # Fetch latest report data for all three types
@@ -1701,6 +1739,9 @@ def _send_monthly_emails(force=False):
     for user in recipients:
         fmt = user["report_format"] or "pdf"
         email_addr = user["email"]
+        fn = (user.get("first_name") or "").strip()
+        ln = (user.get("last_name") or "").strip()
+        display_name = f"{fn} {ln}".strip() or user["username"]
 
         pa = user["page_access"] or {}
         accessible = {rt: label for rt, label in report_labels.items()
@@ -1726,7 +1767,7 @@ def _send_monthly_emails(force=False):
         <p style="margin:4px 0 0;font-size:11px;color:#8b95a8;letter-spacing:.08em;text-transform:uppercase">Finance &amp; Analytics</p>
       </td></tr>
       <tr><td style="padding:32px 36px">
-        <p style="margin:0 0 16px;font-size:15px;color:#1a2535">Hello {user['username']},</p>
+        <p style="margin:0 0 16px;font-size:15px;color:#1a2535">Hello {display_name},</p>
         <p style="margin:0 0 16px;font-size:14px;color:#4a5568;line-height:1.6">
           Please find your <strong>{now.strftime('%B %Y')}</strong> Ember reports attached below.
         </p>
@@ -1749,7 +1790,7 @@ def _send_monthly_emails(force=False):
 </html>"""
 
         plain_body = (
-            f"Hello {user['username']},\n\n"
+            f"Hello {display_name},\n\n"
             f"Please find your {now.strftime('%B %Y')} Ember reports attached below.\n\n"
             "Reports included:\n" +
             "".join(f"  • {label} ({fmt.upper()})\n" for rt, label in accessible.items()) +
