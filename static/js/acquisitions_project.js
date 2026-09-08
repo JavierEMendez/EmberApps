@@ -59,12 +59,19 @@ let projectData = null;
 let tractsLayer = L.layerGroup().addTo(map);
 let constraintLayerGroup = L.layerGroup().addTo(map);   // floodplain, wetlands, streams, etc
 
+// A corridor contributes two layers: the band of land its easement takes,
+// which is the acreage the ladder deducts, and the alignment that generated
+// it. The band carries the legend entry -- it is the thing with a number
+// beside it -- and the centreline rides on top unlabelled.
 const CONSTRAINT_STYLES = {
-  floodplain:   { color: '#0040aa', fillColor: '#3380ff', fillOpacity: 0.40, weight: 1,  label: 'Floodplain (100-yr)' },
-  wetlands:     { color: '#005c2e', fillColor: '#33a06f', fillOpacity: 0.45, weight: 1,  label: 'Wetlands (NWI)' },
-  transmission: { color: '#9c27b0', weight: 3, opacity: 0.85, dashArray: '4,3',         label: 'Transmission' },
-  streams:      { color: '#1976d2', weight: 2, opacity: 0.85,                            label: 'Streams' },
-  pipelines:    { color: '#F25929', weight: 2, opacity: 0.85,                            label: 'Pipelines' },
+  floodplain:         { color: '#0040aa', fillColor: '#3380ff', fillOpacity: 0.40, weight: 1, label: 'Floodplain (100-yr)' },
+  wetlands:           { color: '#005c2e', fillColor: '#33a06f', fillOpacity: 0.45, weight: 1, label: 'Wetlands (NWI)' },
+  transmission_row:   { color: '#9c27b0', fillColor: '#9c27b0', fillOpacity: 0.28, weight: 0.6, label: 'Transmission easement' },
+  stream_buffers:     { color: '#1976d2', fillColor: '#1976d2', fillOpacity: 0.28, weight: 0.6, label: 'Stream buffer' },
+  pipeline_easements: { color: '#F25929', fillColor: '#F25929', fillOpacity: 0.28, weight: 0.6, label: 'Pipeline easement' },
+  transmission:       { color: '#9c27b0', weight: 3, opacity: 0.85, dashArray: '4,3' },
+  streams:            { color: '#1976d2', weight: 2, opacity: 0.85 },
+  pipelines:          { color: '#F25929', weight: 2, opacity: 0.85 },
 };
 
 function renderConstraintGeoms(constraintGeoms) {
@@ -74,6 +81,7 @@ function renderConstraintGeoms(constraintGeoms) {
     if (!fc) continue;
     const style = CONSTRAINT_STYLES[key] || { color: '#333', weight: 1 };
     L.geoJSON(fc, { style }).addTo(constraintLayerGroup);
+    if (!style.label) continue;
     legend.push(`<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="display:inline-block;width:12px;height:12px;background:${style.fillColor || style.color};border:1px solid ${style.color}"></span><span>${style.label}</span></div>`);
   }
   // Show/hide legend
@@ -182,15 +190,25 @@ function render() {
     });
   });
 
-  // Map: draw tracts
+  // Map: draw tracts.
+  //
+  // Prefer the boundary the analysis measured. StratMap draws some accounts
+  // as the whole abstract -- 649.6 ac for a parcel the appraisal district
+  // puts at 208.0 -- and the analysis reconciles that away before measuring
+  // anything. Drawing the stored tract here put a boundary on screen that
+  // none of the acreage beside it described.
   tractsLayer.clearLayers();
   const bounds = L.latLngBounds([]);
-  for (const t of (p.tracts||[])) {
+  const drawTracts = (p.analysis_cache && p.analysis_cache.tract_geoms
+                      && p.analysis_cache.tract_geoms.length)
+    ? p.analysis_cache.tract_geoms : (p.tracts || []);
+  for (const t of drawTracts) {
     if (!t.geometry) continue;
     const layer = L.geoJSON(t.geometry, {
       style: { color: '#F25929', weight: 2, fillColor: '#F25929', fillOpacity: 0.20 }
     }).addTo(tractsLayer);
-    layer.bindPopup(`<b>${esc(t.owner_name)}</b><br>${fmt(t.acres)} ac · ${esc(t.county)}`);
+    layer.bindPopup(`<b>${esc(t.owner_name)}</b><br>${fmt(t.acres)} ac · ${esc(t.county)}`
+      + (t.reconciled ? '<br><span style="color:#C08A2E">appraisal district boundary</span>' : ''));
     bounds.extend(layer.getBounds());
   }
   if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));

@@ -296,26 +296,57 @@ def render_site_map(union_geom, constraint_geoms=None, tracts=None,
     _esri_basemap(ax, bounds, "imagery")
 
     cg = constraint_geoms or {}
+
+    def _geoms(gj):
+        """Every shapely geometry in a GeoJSON value, whatever shape it is in.
+
+        shapely's shape() parses a bare geometry and a Feature but raises on a
+        FeatureCollection, and the constraint payload carries all three. The
+        raise was landing in a bare `except: continue`, so the corridor layers
+        were dropped from the map in silence while their acreage went on
+        being deducted on the next page.
+        """
+        if gj is None:
+            return []
+        if not isinstance(gj, dict):
+            return [gj]
+        if gj.get("type") == "FeatureCollection":
+            out = []
+            for f in gj.get("features") or []:
+                out.extend(_geoms(f))
+            return out
+        try:
+            g = shp_shape(gj)
+        except Exception:
+            return []
+        return [g] if g is not None and not g.is_empty else []
+
+    # Every layer the acreage ladder deducts, in the same colours the bridge
+    # and the constraint breakdown use, under the same names. A reader has to
+    # be able to point at a bar on the next page and find it on this map.
+    #
+    # `poly` is the deducted footprint. `line` is the alignment that generated
+    # it, drawn thin and unclipped so a corridor reads as passing through the
+    # site rather than starting at the boundary.
     layers = [
-        ("floodplain", "#5B6FD6", 0.42, "Floodplain (100-yr)"),
-        ("wetlands", "#2E9E6B", 0.48, "Wetlands (NWI)"),
-        ("stream_buffers", "#2F7FD6", 0.55, "Streams"),
-        ("pipeline_easements", "#C99A2E", 0.55, "Pipeline easement"),
-        ("transmission_row", "#B0552E", 0.55, "Transmission ROW"),
+        ("floodplain", None, "#5B6FD6", 0.42, "Floodplain (100-yr)"),
+        ("wetlands", None, "#2E9E6B", 0.48, "Wetlands (NWI)"),
+        ("transmission_row", "transmission", "#B0552E", 0.55, "Transmission easement"),
+        ("stream_buffers", "streams", "#2F7FD6", 0.55, "Stream buffer"),
+        ("pipeline_easements", "pipelines", "#C99A2E", 0.55, "Pipeline easement"),
     ]
     legend = []
-    for key, colour, alpha, label in layers:
-        gj = cg.get(key)
-        if not gj:
-            continue
-        try:
-            g = shp_shape(gj) if isinstance(gj, dict) else gj
-        except Exception:
-            continue
-        if g is None or g.is_empty:
-            continue
-        _draw_geom(ax, g, face=colour, edge=colour, alpha=alpha, lw=0.6, z=3)
-        legend.append((label, colour))
+    for key, line_key, colour, alpha, label in layers:
+        drew = False
+        for g in _geoms(cg.get(key)):
+            _draw_geom(ax, g, face=colour, edge=colour, alpha=alpha, lw=0.6, z=3)
+            drew = True
+        if line_key:
+            for g in _geoms(cg.get(line_key)):
+                _draw_geom(ax, g, edge=colour, alpha=0.75, lw=0.55, z=4)
+                drew = True
+        if drew:
+            legend.append((label, colour))
 
     # Individual tracts hairlined inside the assembly outline, so a multi-tract
     # deal reads as an assembly rather than one blob.

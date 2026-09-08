@@ -207,7 +207,16 @@
   {{ r.project.tract_line }}{% if r.project.location %} &nbsp;|&nbsp; {{ r.project.location }}{% endif %}</div>
 
 {% if r.site_map %}
-<div class="card" style="padding:7pt"><img class="map" src="{{ r.site_map }}" alt="Subject site"></div>
+<div class="card" style="padding:7pt">
+  <img class="map" src="{{ r.site_map }}" alt="Subject site">
+  {# The outline is whichever boundary the analysis measured. Say so on the
+     page where the reader first sees it, not only in the bridge overleaf. #}
+  {% if r.geometry_notes %}
+  <div style="font-size:6.6pt;color:#93A0AC;font-style:italic;padding:5pt 3pt 1pt">
+    Boundary shown is the appraisal district's, which is what the acreage on
+    this page measures. See the gross-to-saleable bridge overleaf.</div>
+  {% endif %}
+</div>
 {% endif %}
 
 <div class="kpis">

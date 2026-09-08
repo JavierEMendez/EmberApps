@@ -2036,8 +2036,8 @@ def _cad_parcel_geometry(county, prop_id, timeout=20):
 def reconcile_tract_geometry(tracts, on_note=None):
     """Swap in the CAD boundary wherever it disagrees materially with StratMap.
 
-    Mutates nothing: returns a list of (shapely geom, note-or-None) so the
-    caller decides what to record. A note means the acreage moved and the
+    Mutates nothing: returns a list of (tract, shapely geom, note-or-None) so
+    the caller decides what to record. A note means the acreage moved and the
     report should say so.
     """
     from shapely.geometry import shape as shp_shape
@@ -2068,8 +2068,42 @@ def reconcile_tract_geometry(tracts, on_note=None):
                 if on_note:
                     on_note(note)
                 print(f"[analysis] geometry reconciled -- {note}", flush=True)
-        out.append((g, note))
+        out.append((t, g, note))
     return out
+
+def analysis_geometry(proj, analysis):
+    """The boundary the analysis measured, for anything that draws it.
+
+    The stored tract polygon is StratMap's, and on some accounts StratMap
+    draws the whole abstract -- 649.6 ac for a parcel the appraisal district
+    puts at 208.0. run_analysis reconciles that away before it measures
+    anything, but the maps went on drawing the raw tract, so a cover map three
+    times too large sat above a page of numbers taken from the real boundary.
+
+    Returns (union or None, tract dicts). Falls back to the stored tracts for
+    an analysis that predates this or carries no geometry.
+    """
+    from shapely.geometry import shape as shp_shape
+    from shapely.ops import unary_union
+    a = analysis or {}
+    tracts = a.get("tract_geoms") or [
+        t for t in (proj.get("tracts") or []) if t.get("geometry")]
+    union = None
+    if a.get("union_geometry"):
+        try:
+            union = shp_shape(a["union_geometry"])
+        except Exception:
+            union = None
+    if union is None or union.is_empty:
+        geoms = []
+        for t in tracts:
+            try:
+                geoms.append(shp_shape(t["geometry"]))
+            except Exception:
+                continue
+        union = unary_union(geoms) if geoms else None
+    return union, tracts
+
 
 def run_analysis(proj):
     """Analyse one project dict. Returns the analysis, or raises ValueError
@@ -2079,8 +2113,9 @@ def run_analysis(proj):
 
     tracts = proj.get("tracts") or []
     geom_notes = []
-    geoms = [g for g, _ in reconcile_tract_geometry(
-        [t for t in tracts if t.get("geometry")], on_note=geom_notes.append)]
+    reconciled = reconcile_tract_geometry(
+        [t for t in tracts if t.get("geometry")], on_note=geom_notes.append)
+    geoms = [g for _t, g, _n in reconciled]
     if not geoms:
         raise ValueError("no tract geometries - re-create the project with tract polygons")
 
@@ -2137,6 +2172,11 @@ def run_analysis(proj):
     # then swallowed a NameError - so the constraint silently did not apply and
     # net developable came back overstated with no clear reason why.
     constraints = {}
+    # The buffered, clipped easement polygons, in WGS84. The centreline is
+    # where the pipeline runs; this is the land it takes, and it is the
+    # geometry whose area became the acre figure. Keyed to match `constraints`
+    # so a map can pair a layer with its own number.
+    footprints = {}
     flood_fc = {"type": "FeatureCollection", "features": []}
     wet_fc = {"type": "FeatureCollection", "features": []}
     flood_union = None
@@ -2277,6 +2317,7 @@ def run_analysis(proj):
             project_utm = transform(to_utm, project_union)
             trans_in_project = buffered.intersection(project_utm)
             _ac = acres_utm(trans_in_project)
+            footprints["transmission_row"] = transform(to_wgs, trans_in_project)
             constraints["transmission_row"] = {
                 "acres":         round(_ac, 2),
                 "pct":           round(_ac / gross_acres * 100, 1) if gross_acres > 0 else 0,
@@ -2301,6 +2342,7 @@ def run_analysis(proj):
             project_utm = transform(to_utm, project_union)
             streams_in_project = buffered.intersection(project_utm)
             _ac = acres_utm(streams_in_project)
+            footprints["stream_buffers"] = transform(to_wgs, streams_in_project)
             constraints["stream_buffers"] = {
                 "acres":         round(_ac, 2),
                 "pct":           round(_ac / gross_acres * 100, 1) if gross_acres > 0 else 0,
@@ -2326,6 +2368,7 @@ def run_analysis(proj):
             project_utm = transform(to_utm, project_union)
             pipes_in_project = buffered.intersection(project_utm)
             _ac = acres_utm(pipes_in_project)
+            footprints["pipeline_easements"] = transform(to_wgs, pipes_in_project)
             constraints["pipeline_easements"] = {
                 "acres":         round(_ac, 2),
                 "pct":           round(_ac / gross_acres * 100, 1) if gross_acres > 0 else 0,
@@ -2578,6 +2621,19 @@ def run_analysis(proj):
                                                    "properties": {"acres": constraints["wetlands"]["acres"]}}
     except Exception as e:
         _constraint_geom_failed("wetlands", e)
+    # The deducted footprints, before the centrelines that generated them.
+    for _fk, _lbl in (("transmission_row", "transmission"),
+                      ("stream_buffers", "streams"),
+                      ("pipeline_easements", "pipelines")):
+        try:
+            _g = footprints.get(_fk)
+            if _g is not None and not _g.is_empty:
+                constraint_geoms[_fk] = {
+                    "type": "Feature", "geometry": shp_mapping(_g),
+                    "properties": {"acres": (constraints.get(_fk) or {}).get("acres")}}
+        except Exception as e:
+            _constraint_geom_failed(_fk, e)
+
     try:
         # Transmission and pipelines are LINES — return them so client can render with the standard line style
         if trans_lines:
@@ -2632,6 +2688,13 @@ def run_analysis(proj):
         "netout_overrides": netout_over,
         "tract_count":         len(tracts),
         "union_geometry":      shp_mapping(project_union),
+        # The per-tract boundaries as measured, so a map can outline an
+        # assembly's parts without reaching back to the stored geometry.
+        "tract_geoms": [
+            {"prop_id": _t.get("prop_id"), "county": _t.get("county"),
+             "owner_name": _t.get("owner_name"), "acres": _t.get("acres"),
+             "reconciled": bool(_n), "geometry": shp_mapping(_g)}
+            for _t, _g, _n in reconciled],
     }
     return analysis
 

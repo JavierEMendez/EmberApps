@@ -4544,14 +4544,13 @@ def _build_report_context(pid):
     ctx = acq_report.build_context(proj, analysis, data,
                                    (analysis.get("elevation") or None))
 
-    # Subject map, drawn from the project's own geometry.
+    # Subject map, drawn from the boundary the analysis measured -- not the
+    # stored tract, which on a reconciled account is the polygon it rejected.
     try:
-        geoms = [shp_shape(t["geometry"]) for t in (proj.get("tracts") or [])
-                 if t.get("geometry")]
-        if geoms:
+        _union, _tracts = analysis_geometry(proj, analysis)
+        if _union is not None and not _union.is_empty:
             ctx["site_map"] = acq_report.render_site_map(
-                unary_union(geoms), analysis.get("constraint_geoms"),
-                proj.get("tracts"))
+                _union, analysis.get("constraint_geoms"), _tracts)
     except Exception as e:
         print(f"[report] site map failed: {e}", flush=True)
 
@@ -4779,6 +4778,10 @@ def acq_api_projects_pdf(pid):
                 "transmission": ("#9c27b0", "#9c27b0", 0,    2.5, "line"),
                 "streams":      ("#1976d2", "#1976d2", 0,    1.5, "line"),
                 "pipelines":    ("#F25929", "#F25929", 0,    2.0, "line"),
+                # The deducted bands, drawn under their own centrelines.
+                "transmission_row":   ("#9c27b0", "#9c27b0", 0.28, 0.6, "polygon"),
+                "stream_buffers":     ("#1976d2", "#1976d2", 0.28, 0.6, "polygon"),
+                "pipeline_easements": ("#F25929", "#F25929", 0.28, 0.6, "polygon"),
             }
             for key, fc in (constraint_geoms or {}).items():
                 if not fc: continue
@@ -4962,13 +4965,7 @@ def acq_api_projects_pdf(pid):
         return _save_fig_to_buf(fig)
 
     # ===== Gather all data (analysis is cached; elevation/market/FRED fetched fresh) =====
-    tract_geoms = []
-    for t in proj.get("tracts") or []:
-        g = t.get("geometry")
-        if g:
-            try: tract_geoms.append(shp_shape(g))
-            except Exception as e: print(f"[{request.endpoint}] tract geometry skipped: {e}", flush=True)
-    proj_union = unary_union(tract_geoms) if tract_geoms else None
+    proj_union, _recon_tracts = analysis_geometry(proj, analysis)
 
     # These four cards are their own endpoints. The standalone app called them
     # by building synthetic WSGI environments and pushing request contexts,
@@ -5050,7 +5047,7 @@ def acq_api_projects_pdf(pid):
             _mb = render_project_map(
                 proj_union,
                 constraint_geoms=analysis.get("constraint_geoms"),
-                tracts_list=proj.get("tracts") or [],
+                tracts_list=_recon_tracts,
             )
             _map_png = _mb.getvalue()
         except Exception as e:
