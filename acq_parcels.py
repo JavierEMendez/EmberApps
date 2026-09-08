@@ -1572,7 +1572,11 @@ def hydrate_tract_acres(tracts):
         t = dict(t or {})
         a = _n_float(_ov_for(ov, t.get("prop_id"))) if ov else None
         if a and a > 0:
-            t["acres"] = round(a, 1)
+            # Two decimals, not one. Every other acreage here is rounded to a
+            # tenth because it is an estimate; this one was typed off a plat,
+            # and rounding 207.45 to 207.5 would put back the discrepancy the
+            # override exists to remove.
+            t["acres"] = round(a, 2)
             t["acres_basis"] = "override"
             hit_any = True
         out.append(t)
