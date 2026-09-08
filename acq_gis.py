@@ -1936,6 +1936,93 @@ def parcel_detail(prop_id):
 # one of them silently overstates how much of the site you can sell.
 # --------------------------------------------------------------------------
 
+
+# --------------------------------------------------------------------------
+# Parcel geometry reconciliation
+#
+# StratMap's polygon for an account is occasionally the whole abstract rather
+# than the tract. Harris account 0441270000001 -- "TR 1 ABST 672 J T RANDEL" --
+# is drawn at 649.6 acres against an HCAD parcel of 208.0, because StratMap's
+# shape runs a further half-mile south than the parcel does. The analysis then
+# reported 650 gross acres for a 208-acre deal, and the constraint percentages
+# with it.
+#
+# It is rare -- 21 of 21 randomly sampled Harris parcels match HCAD to within
+# 0.1% -- but it is a threefold error in the headline number when it happens,
+# so the appraisal district's own boundary wins where the two disagree
+# materially. The district draws the parcel; StratMap redraws it.
+# --------------------------------------------------------------------------
+CAD_PARCEL_ENDPOINTS = {
+    "harris": ("https://www.gis.hctx.net/arcgis/rest/services/HCAD/Parcels/"
+               "MapServer/0/query", "HCAD_NUM"),
+}
+GEOM_DISAGREEMENT = 0.20        # 20% apart before the CAD boundary is used
+
+
+def _cad_parcel_geometry(county, prop_id, timeout=20):
+    """The appraisal district's own polygon for one parcel, in WGS84."""
+    import requests
+    from shapely.geometry import Polygon, MultiPolygon
+    key = str(county or "").strip().lower().replace(" county", "")
+    ep = CAD_PARCEL_ENDPOINTS.get(key)
+    if not ep or not prop_id:
+        return None
+    url, field = ep
+    try:
+        r = requests.get(url, params={
+            "where": f"{field}='{prop_id}'", "outFields": field,
+            "returnGeometry": "true", "outSR": 4326, "f": "json"}, timeout=timeout)
+        feats = (r.json() or {}).get("features") or []
+        if not feats:
+            return None
+        rings = (feats[0].get("geometry") or {}).get("rings") or []
+        polys = [Polygon(g) for g in rings if len(g) >= 4]
+        polys = [p for p in polys if p.is_valid and not p.is_empty]
+        if not polys:
+            return None
+        return MultiPolygon(polys) if len(polys) > 1 else polys[0]
+    except Exception:
+        return None
+
+
+def reconcile_tract_geometry(tracts, on_note=None):
+    """Swap in the CAD boundary wherever it disagrees materially with StratMap.
+
+    Mutates nothing: returns a list of (shapely geom, note-or-None) so the
+    caller decides what to record. A note means the acreage moved and the
+    report should say so.
+    """
+    from shapely.geometry import shape as shp_shape
+    from shapely.ops import transform as shp_transform
+    import pyproj
+
+    to_albers = pyproj.Transformer.from_crs("EPSG:4326", "EPSG:3083",
+                                            always_xy=True).transform
+
+    def acres(g):
+        return shp_transform(to_albers, g).area / 4046.8564224
+
+    out = []
+    for t in (tracts or []):
+        try:
+            g = shp_shape(t["geometry"])
+        except Exception:
+            continue
+        note = None
+        cad = _cad_parcel_geometry(t.get("county"), t.get("prop_id"))
+        if cad is not None and not cad.is_empty:
+            a_sm, a_cad = acres(g), acres(cad)
+            if a_cad > 1 and abs(a_sm - a_cad) / a_cad > GEOM_DISAGREEMENT:
+                note = (f"{t.get('prop_id')}: StratMap draws {a_sm:,.1f} ac against "
+                        f"the appraisal district's {a_cad:,.1f} ac; the district "
+                        "boundary is used.")
+                g = cad
+                if on_note:
+                    on_note(note)
+                print(f"[analysis] geometry reconciled -- {note}", flush=True)
+        out.append((g, note))
+    return out
+
 def run_analysis(proj):
     """Analyse one project dict. Returns the analysis, or raises ValueError
     when the project carries no usable tract geometry."""
@@ -1943,15 +2030,9 @@ def run_analysis(proj):
     from shapely.ops import unary_union, transform
 
     tracts = proj.get("tracts") or []
-    geoms = []
-    for t in tracts:
-        g = t.get("geometry")
-        if not g:
-            continue
-        try:
-            geoms.append(shp_shape(g))
-        except Exception:
-            continue
+    geom_notes = []
+    geoms = [g for g, _ in reconcile_tract_geometry(
+        [t for t in tracts if t.get("geometry")], on_note=geom_notes.append)]
     if not geoms:
         raise ValueError("no tract geometries - re-create the project with tract polygons")
 
@@ -2422,6 +2503,7 @@ def run_analysis(proj):
         "constraints":         constraints,
         "constraint_geoms":    constraint_geoms,   # for client-side map overlay
         "yield_estimates":     yields,
+        "geometry_notes": geom_notes,
         "tract_count":         len(tracts),
         "union_geometry":      shp_mapping(project_union),
     }

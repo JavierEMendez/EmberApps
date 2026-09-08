@@ -284,6 +284,12 @@
     <div class="track"><span style="width:{{ b.pct }}%;background:{{ b.colour }}"></span></div>
   </div>
   {% endfor %}
+  {% if r.geometry_notes %}
+  <div class="tint" style="margin-top:8pt">
+    Boundary reconciled:
+    {% for n in r.geometry_notes %}{{ n }}{% if not loop.last %} {% endif %}{% endfor %}
+  </div>
+  {% endif %}
   <div style="font-size:6.8pt;color:#93A0AC;font-style:italic;margin-top:6pt">
     Deductions are marginal — overlapping constraints are removed once, so the column
     sums exactly to net developable. Each layer's full footprint is shown below.</div>

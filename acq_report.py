@@ -941,6 +941,9 @@ def build_context(proj, analysis, data=None, elevation=None):
             "lots": num((a.get("yield_estimates") or {}).get("total_lots")) + " lots",
         },
         "missing": [],
+        # Where the appraisal district's boundary replaced StratMap's, the
+        # document has to say so: the acreage a reader is pricing on moved.
+        "geometry_notes": list(a.get("geometry_notes") or []),
     }
 
     # ---- tract composition -------------------------------------------------
