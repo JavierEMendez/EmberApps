@@ -186,30 +186,49 @@ def _esri_basemap(ax, bounds, kind="imagery"):
         from concurrent.futures import ThreadPoolExecutor
 
         def grab(ij):
+            """One tile, retried. A single dropped tile leaves a grey
+            rectangle sitting in the middle of the aerial -- it happened on
+            the Story Lindsey cover -- and these are transient often enough
+            that one retry usually closes it."""
             i, j, tx, ty = ij
             url = (f"https://server.arcgisonline.com/ArcGIS/rest/services/"
                    f"{service}/MapServer/tile/{z}/{ty}/{tx}")
-            try:
-                r = requests.get(url, timeout=10)
-                if r.status_code != 200:
-                    return None
-                return i, j, Image.open(io.BytesIO(r.content)).convert("RGB")
-            except Exception:
-                return None
+            for attempt in range(3):
+                try:
+                    r = requests.get(url, timeout=8 + attempt * 4)
+                    if r.status_code == 200:
+                        return i, j, Image.open(io.BytesIO(r.content)).convert("RGB")
+                except Exception:
+                    pass
+            return None
 
         jobs = [(i, j, tx, ty)
                 for i, tx in enumerate(range(tx0, tx1 + 1))
                 for j, ty in enumerate(range(ty0, ty1 + 1))]
-        got = 0
+        got, filled, missing = 0, [], []
         with ThreadPoolExecutor(max_workers=12) as pool:
             for res in pool.map(grab, jobs):
                 if res is None:
                     continue
                 i, j, im = res
                 canvas.paste(im, (i * 256, j * 256))
+                filled.append((i, j, im))
                 got += 1
         if not got:
             return False
+        # Any tile still missing is painted with the average colour of the
+        # ones that arrived, so a gap reads as haze rather than as a grey
+        # box someone will ask about.
+        have = {(i, j) for i, j, _ in filled}
+        missing = [(i, j) for i, _, _ in [(x, 0, 0) for x in range(cols)]
+                   for j in range(rows) if (i, j) not in have]
+        if missing and filled:
+            sample = filled[len(filled) // 2][2].resize((1, 1)).getpixel((0, 0))
+            patch = Image.new("RGB", (256, 256), sample)
+            for i, j in missing:
+                canvas.paste(patch, (i * 256, j * 256))
+            print(f"[report] basemap: {len(missing)} tile(s) unavailable, "
+                  f"filled from neighbours", flush=True)
 
         def tile_to_lonlat(xt, yt, z):
             n = 2 ** z
@@ -1606,6 +1625,26 @@ def _news_relevance(title):
     return None
 
 
+def _headline(title, source):
+    """Google News appends " - Outlet" to every title.
+
+    The outlet is already printed on the line above, so the raw title read
+    "...after first day of school - Houston Chronicle" directly under
+    "AUG 2026 - HOUSTON CHRONICLE".
+    """
+    t = str(title or "").strip()
+    src = str(source or "").strip()
+    if src and t.lower().endswith(" - " + src.lower()):
+        t = t[: -(len(src) + 3)].rstrip()
+    else:
+        # Some feeds carry a slightly different outlet name than the source
+        # field; fall back to trimming a short trailing " - Something".
+        head, sep, tail = t.rpartition(" - ")
+        if sep and 0 < len(tail) <= 34 and not tail.endswith("."):
+            t = head.rstrip()
+    return t[:150]
+
+
 def _map_news(r, nw):
     """Recent, relevant stories only.
 
@@ -1673,7 +1712,7 @@ def _map_news(r, nw):
         per_topic[topic] = per_topic.get(topic, 0) + 1
         kept.append(s)
         r.setdefault("news", []).append({
-            "headline": str(st.get("title") or "")[:150],
+            "headline": _headline(st.get("title"), st.get("source")),
             "source": str(st.get("source") or "")[:34],
             "date": (when.strftime("%b %Y") if when else ""),
             "why": why,
