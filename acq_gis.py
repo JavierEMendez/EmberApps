@@ -2269,6 +2269,26 @@ def run_analysis(proj):
     def _on(key):
         return netout.get(key, True) is not False
 
+    # Per-constraint acreage the user has corrected by hand. A measured
+    # floodplain is only as good as the FEMA layer on the day, and someone
+    # with an engineer's exhibit or a LOMR knows better -- so a figure entered
+    # here is deducted exactly as given.
+    #
+    # An overridden constraint is taken OUT of the union arithmetic: the
+    # overlap logic works on polygons, and a number has no geometry to
+    # intersect. It is deducted at face value and flagged, so the bridge still
+    # sums to net developable and the report can say which rows are measured
+    # and which are stated.
+    netout_over = {}
+    for k, v in (proj.get("netout_overrides") or {}).items():
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            continue
+        if f >= 0:
+            netout_over[str(k)] = f
+    stated_total = [0.0]
+
     project_utm = transform(to_utm, project_union)
     all_constraints_utm = []
     netout_detail = []          # per-constraint acreage, so the UI can show the ladder
@@ -2299,6 +2319,18 @@ def run_analysis(proj):
             ac = geom_utm.area / 4046.8564224 if geom_utm else 0.0
         except Exception:
             ac = 0.0
+
+        if key in netout_over:
+            stated = netout_over[key]
+            if enabled:
+                stated_total[0] += stated
+            netout_detail.append({
+                "key": key, "label": label, "acres": round(stated, 2),
+                "acres_marginal": round(stated if enabled else 0.0, 2),
+                "applied": bool(enabled and stated > 0), "stated": True,
+                "measured_acres": round(ac, 2)})
+            return
+
         marginal = 0.0
         if enabled and geom_utm is not None and not geom_utm.is_empty:
             prev = applied_union[0]
@@ -2367,6 +2399,10 @@ def run_analysis(proj):
         net_dev_acres = net_dev_utm.area / 4046.8564224
     else:
         net_dev_acres = gross_acres
+    # Hand-entered constraint acreage comes off on top of the measured union,
+    # never below zero.
+    if stated_total[0]:
+        net_dev_acres = max(0.0, net_dev_acres - stated_total[0])
 
     # Infrastructure and landscaping. What survives the physical constraints is
     # still raw land: roads, detention, utility corridors, amenity and open space
@@ -2504,6 +2540,7 @@ def run_analysis(proj):
         "constraint_geoms":    constraint_geoms,   # for client-side map overlay
         "yield_estimates":     yields,
         "geometry_notes": geom_notes,
+        "netout_overrides": netout_over,
         "tract_count":         len(tracts),
         "union_geometry":      shp_mapping(project_union),
     }

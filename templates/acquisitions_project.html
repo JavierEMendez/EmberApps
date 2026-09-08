@@ -186,15 +186,15 @@
       <h3>Net-outs <span style="color:#6B7B8B;font-weight:400;font-size:11px">(untick to keep the acreage)</span></h3>
       <div id="netout-toggles" style="font-size:11px">
         <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
-          <input type="checkbox" id="no-flood" checked style="width:auto;margin:0"> Floodplain (100-yr)</label>
+          <input type="checkbox" id="no-flood" checked style="width:auto;margin:0"> <span style="flex:1">Floodplain (100-yr)</span><input type="text" class="netout-acres" id="ov-flood" data-key="flood" placeholder="measured" inputmode="decimal" autocomplete="off" title="Deduct this many acres instead of the measured figure. Leave blank to use what the layers measure." style="width:62px;text-align:right;font-size:10.5px;padding:2px 4px;margin:0"><span style="color:#93A0AC">ac</span></label>
         <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
-          <input type="checkbox" id="no-wetlands" checked style="width:auto;margin:0"> Wetlands (NWI)</label>
+          <input type="checkbox" id="no-wetlands" checked style="width:auto;margin:0"> <span style="flex:1">Wetlands (NWI)</span><input type="text" class="netout-acres" id="ov-wetlands" data-key="wetlands" placeholder="measured" inputmode="decimal" autocomplete="off" title="Deduct this many acres instead of the measured figure. Leave blank to use what the layers measure." style="width:62px;text-align:right;font-size:10.5px;padding:2px 4px;margin:0"><span style="color:#93A0AC">ac</span></label>
         <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
-          <input type="checkbox" id="no-transmission" checked style="width:auto;margin:0"> Transmission easement</label>
+          <input type="checkbox" id="no-transmission" checked style="width:auto;margin:0"> <span style="flex:1">Transmission easement</span><input type="text" class="netout-acres" id="ov-transmission" data-key="transmission" placeholder="measured" inputmode="decimal" autocomplete="off" title="Deduct this many acres instead of the measured figure. Leave blank to use what the layers measure." style="width:62px;text-align:right;font-size:10.5px;padding:2px 4px;margin:0"><span style="color:#93A0AC">ac</span></label>
         <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
-          <input type="checkbox" id="no-streams" checked style="width:auto;margin:0"> Stream buffers</label>
+          <input type="checkbox" id="no-streams" checked style="width:auto;margin:0"> <span style="flex:1">Stream buffers</span><input type="text" class="netout-acres" id="ov-streams" data-key="streams" placeholder="measured" inputmode="decimal" autocomplete="off" title="Deduct this many acres instead of the measured figure. Leave blank to use what the layers measure." style="width:62px;text-align:right;font-size:10.5px;padding:2px 4px;margin:0"><span style="color:#93A0AC">ac</span></label>
         <label style="display:flex;align-items:center;gap:7px;padding:3px 0;cursor:pointer">
-          <input type="checkbox" id="no-pipelines" checked style="width:auto;margin:0"> Pipeline easements</label>
+          <input type="checkbox" id="no-pipelines" checked style="width:auto;margin:0"> <span style="flex:1">Pipeline easements</span><input type="text" class="netout-acres" id="ov-pipelines" data-key="pipelines" placeholder="measured" inputmode="decimal" autocomplete="off" title="Deduct this many acres instead of the measured figure. Leave blank to use what the layers measure." style="width:62px;text-align:right;font-size:10.5px;padding:2px 4px;margin:0"><span style="color:#93A0AC">ac</span></label>
       </div>
       <div class="field" style="margin-top:8px">
         <label>Infrastructure &amp; landscaping %

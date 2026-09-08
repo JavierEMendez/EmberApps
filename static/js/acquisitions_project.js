@@ -111,6 +111,16 @@ function render() {
   const _ip = document.getElementById('infra-pct');
   if (_ip && na.infrastructure_pct !== undefined) _ip.value = na.infrastructure_pct;
 
+  // A measured constraint is only as good as the layer on the day. An
+  // engineer's exhibit or a LOMR beats FEMA's polygon, so any figure typed
+  // here is deducted exactly as given and the row is marked as stated.
+  const no = p.netout_overrides || {};
+  document.querySelectorAll('.netout-acres').forEach(el => {
+    if (no[el.dataset.key] !== undefined && no[el.dataset.key] !== null) {
+      el.value = no[el.dataset.key];
+    }
+  });
+
   // Yield mix — 4 product types with density + allocation %
   const ya = p.yield_assumptions || {};
   let lotTypes = (ya.lot_types && ya.lot_types.length) ? ya.lot_types : [
@@ -336,11 +346,14 @@ function renderAnalysis(a) {
     const shown = n.applied ? marg : n.acres;
     const note = n.error
       ? ` <span style="font-size:10px;color:#C62828;font-weight:700" title="${esc(n.reason || 'the service did not respond')}">layer unavailable — not deducted</span>`
-      : (n.applied
-          ? (overlap > 0.05
-              ? ` <span style="font-size:10px;color:#6B7B8B">${fmt(n.acres)} ac on site · ${fmt(overlap)} ac already deducted above</span>`
-              : '')
-          : ' <span style="font-size:10px;color:#6B7B8B">(kept by override)</span>');
+      : (n.stated
+          ? ` <span style="font-size:10px;color:#C08A2E;font-weight:700">stated</span>`
+            + ` <span style="font-size:10px;color:#6B7B8B">layers measure ${fmt(n.measured_acres)} ac</span>`
+          : n.applied
+            ? (overlap > 0.05
+                ? ` <span style="font-size:10px;color:#6B7B8B">${fmt(n.acres)} ac on site · ${fmt(overlap)} ac already deducted above</span>`
+                : '')
+            : ' <span style="font-size:10px;color:#6B7B8B">(kept by override)</span>');
     return `
       <div class="constraint-row" style="${n.applied ? '' : 'opacity:.65'}">
         <span>${esc(n.label)}${note}</span>
@@ -477,6 +490,17 @@ function updateImpliedLot() {
     (totalAlloc !== 100 ? `<span style="color:#C62828">Allocation totals ${totalAlloc.toFixed(0)}% — should equal 100%</span>` : '');
 }
 
+function _readNetoutOverrides() {
+  const out = {};
+  document.querySelectorAll('.netout-acres').forEach(el => {
+    const v = (el.value || '').trim().replace(/,/g, '');
+    if (v === '') return;
+    const n = Number(v);
+    if (isFinite(n) && n >= 0) out[el.dataset.key] = n;
+  });
+  return out;
+}
+
 function _readNetouts() {
   const g = (id, d) => { const el = document.getElementById(id); return el ? el.checked : d; };
   const pctEl = document.getElementById('infra-pct');
@@ -544,7 +568,8 @@ document.getElementById('btn-analyze').addEventListener('click', async () => {
   await fetch(`/api/acq/projects/${PROJECT_ID}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ yield_assumptions: { lot_types: window._lotTypes },
-                           netout_assumptions: _readNetouts() }),
+                           netout_assumptions: _readNetouts(),
+                           netout_overrides: _readNetoutOverrides() }),
   });
   const statusEl = document.getElementById('analyze-status');
   const btn = document.getElementById('btn-analyze');

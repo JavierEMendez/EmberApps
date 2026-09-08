@@ -970,10 +970,12 @@ def build_context(proj, analysis, data=None, elevation=None):
             if marg <= 0:
                 continue
             rows.append({
-                "label": d.get("label", "").replace(" (100-yr)", "").replace(" (NWI)", ""),
+                "label": (d.get("label", "").replace(" (100-yr)", "").replace(" (NWI)", "")
+                          + (" (stated)" if d.get("stated") else "")),
                 "value": "-" + ac(marg),
                 "pct": max(1.0, marg / gross * 100),
-                "colour": BRIDGE_COLOURS.get(d.get("key"), BLUE), "total": False})
+                "colour": BRIDGE_COLOURS.get(d.get("key"), BLUE), "total": False,
+                "stated": bool(d.get("stated"))})
         nd = _n(a.get("net_developable_acres"))
         rows.append({"label": "Net developable", "value": ac(nd),
                      "pct": (nd / gross * 100) if nd else 0,
@@ -995,7 +997,9 @@ def build_context(proj, analysis, data=None, elevation=None):
             if acres is None:
                 continue
             cons.append({
-                "label": d.get("label") or d.get("key"),
+                "label": ((d.get("label") or d.get("key"))
+                          + (" - stated, layers measure "
+                             + ac(d.get("measured_acres")) if d.get("stated") else "")),
                 "acres": ac(acres),
                 "pct": pct(acres / gross * 100 if gross else None),
                 "bar": min(100.0, (acres / gross * 100) if gross else 0),
