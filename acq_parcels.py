@@ -1551,6 +1551,34 @@ def _ov_for(overrides, prop_id):
             return v.get("acres")
     return None
 
+def hydrate_tract_acres(tracts):
+    """Apply hand-entered acreage overrides to a project's tract list.
+
+    A tract dict carries the acreage that was true when the parcel was added.
+    An override recorded afterwards lands in `parcel_overrides` and never
+    reaches it, so the project card went on showing the superseded figure
+    while the override applied everywhere else in the app. Reading the table
+    at use time keeps the card, the analysis and the report on one number.
+
+    Returns (tracts, any_override_applied). Tract dicts are copied, never
+    mutated -- the caller may be holding the stored project.
+    """
+    try:
+        ov = get_acreage_overrides()
+    except Exception:
+        ov = {}
+    out, hit_any = [], False
+    for t in tracts or []:
+        t = dict(t or {})
+        a = _n_float(_ov_for(ov, t.get("prop_id"))) if ov else None
+        if a and a > 0:
+            t["acres"] = round(a, 1)
+            t["acres_basis"] = "override"
+            hit_any = True
+        out.append(t)
+    return out, hit_any
+
+
 def trusted_acres(g, gis_area, legal_area, cad_acres=None, override=None):
     """Acreage for a cached parcel, preferring the geometry over StratMap.
 

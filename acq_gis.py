@@ -237,6 +237,33 @@ def _all_tax_rates():
 to_utm = Transformer.from_crs("EPSG:4326", "EPSG:32614", always_xy=True).transform
 to_wgs = Transformer.from_crs("EPSG:32614", "EPSG:4326", always_xy=True).transform
 
+# UTM is conformal, not equal-area. It preserves shape and angle, which is
+# exactly what buffering a pipeline by 50 ft needs, but its area scale grows
+# with distance from the 99W central meridian: +0.14% over Harris, +0.28%
+# over Chambers. Measuring acreage there put this module 0.3 ac above the
+# parcel cache on a 207-acre tract, because the cache measures in Texas
+# Centric Albers. Geometry is still built in UTM; only the measurement moves.
+utm_to_albers = Transformer.from_crs("EPSG:32614", "EPSG:3083",
+                                     always_xy=True).transform
+SQ_M_PER_ACRE = 4046.8564224
+
+
+def acres_utm(geom_utm):
+    """Acres for a geometry already projected to UTM 14N."""
+    if geom_utm is None:
+        return 0.0
+    try:
+        if geom_utm.is_empty:
+            return 0.0
+        return transform(utm_to_albers, geom_utm).area / SQ_M_PER_ACRE
+    except Exception:
+        # Better 0.2% high than zero -- a failed reprojection must not read as
+        # "no constraint here".
+        try:
+            return geom_utm.area / SQ_M_PER_ACRE
+        except Exception:
+            return 0.0
+
 
 def to_float(x):
     if x is None:
@@ -1957,6 +1984,27 @@ CAD_PARCEL_ENDPOINTS = {
                "MapServer/0/query", "HCAD_NUM"),
 }
 GEOM_DISAGREEMENT = 0.20        # 20% apart before the CAD boundary is used
+STATED_ACRES_TOLERANCE = 0.05   # 5% apart before the polygon overrules the card
+
+
+def stated_tract_acres(tracts):
+    """Summed tract acreage as the project page reports it, overrides included.
+
+    Returns (acres, any_override). Zero means no tract carried a figure, and
+    the caller should fall back to measuring the boundary.
+    """
+    try:
+        import acq_parcels as _pc
+        tracts, overridden = _pc.hydrate_tract_acres(tracts)
+    except Exception:
+        overridden = False
+    total = 0.0
+    for t in tracts or []:
+        try:
+            total += max(0.0, float(t.get("acres") or 0))
+        except (TypeError, ValueError):
+            continue
+    return round(total, 2), overridden
 
 
 def _cad_parcel_geometry(county, prop_id, timeout=20):
@@ -2038,8 +2086,35 @@ def run_analysis(proj):
 
     project_union = unary_union(geoms)
     project_union_utm = transform(to_utm, project_union)
-    gross_acres_m2 = project_union_utm.area
-    gross_acres = gross_acres_m2 / 4046.8564224
+
+    # Gross acreage is the figure the tract card shows, not a fresh
+    # measurement of the polygon. The two disagree by design and by more than
+    # rounding: HCAD states 207.45 ac for an account whose own boundary
+    # measures 207.98, and a plat or a survey overrides both. Re-measuring
+    # here is what put "208.3 ac" in the KPI beside a tract listed at
+    # "207.5 ac" on the same screen. The boundary still does every geometric
+    # job -- constraint intersections, buffers, maps -- it just stops being
+    # the source of the headline number.
+    #
+    # The polygon does overrule the card when the two are far apart, because
+    # then they are describing different pieces of land rather than measuring
+    # one piece two ways: StratMap draws some accounts as the whole abstract.
+    # A hand-entered override always wins, since that is its entire purpose.
+    measured_gross = acres_utm(project_union_utm)
+    stated_gross, stated_is_override = stated_tract_acres(tracts)
+    gross_acres = measured_gross
+    gross_basis = "measured"
+    if stated_gross > 0:
+        drift = (abs(stated_gross - measured_gross) / measured_gross
+                 if measured_gross > 0 else 1.0)
+        if stated_is_override or drift <= STATED_ACRES_TOLERANCE:
+            gross_acres = stated_gross
+            gross_basis = "override" if stated_is_override else "stated"
+        else:
+            geom_notes.append(
+                f"Tracts are listed at {stated_gross:,.1f} ac against a boundary "
+                f"that measures {measured_gross:,.1f} ac; the measured boundary "
+                "is used.")
 
     # Build a SIMPLIFIED query polygon for the Esri spatial filter — complex
     # parcel geometry (thousands of vertices) gets rejected by some Esri layers
@@ -2155,9 +2230,10 @@ def run_analysis(proj):
         flood_union = _safe_union(flood_geoms)
         if flood_union:
             flood_in_project = transform(to_utm, flood_union.intersection(project_union))
+            _ac = acres_utm(flood_in_project)
             constraints["floodplain"] = {
-                "acres":   round(flood_in_project.area / 4046.8564224, 2),
-                "pct":     round(flood_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "acres":   round(_ac, 2),
+                "pct":     round(_ac / gross_acres * 100, 1) if gross_acres > 0 else 0,
                 "feature_count": len(flood_geoms),
             }
         else:
@@ -2177,9 +2253,10 @@ def run_analysis(proj):
         wet_union = _safe_union(wet_geoms)
         if wet_union:
             wet_in_project = transform(to_utm, wet_union.intersection(project_union))
+            _ac = acres_utm(wet_in_project)
             constraints["wetlands"] = {
-                "acres":   round(wet_in_project.area / 4046.8564224, 2),
-                "pct":     round(wet_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "acres":   round(_ac, 2),
+                "pct":     round(_ac / gross_acres * 100, 1) if gross_acres > 0 else 0,
                 "feature_count": len(wet_geoms),
             }
         else:
@@ -2199,9 +2276,10 @@ def run_analysis(proj):
             buffered = unary_union([l.buffer(22.86) for l in trans_lines_utm])
             project_utm = transform(to_utm, project_union)
             trans_in_project = buffered.intersection(project_utm)
+            _ac = acres_utm(trans_in_project)
             constraints["transmission_row"] = {
-                "acres":         round(trans_in_project.area / 4046.8564224, 2),
-                "pct":           round(trans_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "acres":         round(_ac, 2),
+                "pct":           round(_ac / gross_acres * 100, 1) if gross_acres > 0 else 0,
                 "line_count":    len(trans_lines),
                 "row_width_ft":  150,
             }
@@ -2222,9 +2300,10 @@ def run_analysis(proj):
             buffered = unary_union([l.buffer(15.24) for l in stream_lines_utm])  # 50ft = 15.24m
             project_utm = transform(to_utm, project_union)
             streams_in_project = buffered.intersection(project_utm)
+            _ac = acres_utm(streams_in_project)
             constraints["stream_buffers"] = {
-                "acres":         round(streams_in_project.area / 4046.8564224, 2),
-                "pct":           round(streams_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "acres":         round(_ac, 2),
+                "pct":           round(_ac / gross_acres * 100, 1) if gross_acres > 0 else 0,
                 "stream_count":  len(stream_lines),
                 "buffer_ft":     50,
             }
@@ -2246,9 +2325,10 @@ def run_analysis(proj):
             buffered = unary_union([l.buffer(15.24) for l in pipe_lines_utm])
             project_utm = transform(to_utm, project_union)
             pipes_in_project = buffered.intersection(project_utm)
+            _ac = acres_utm(pipes_in_project)
             constraints["pipeline_easements"] = {
-                "acres":         round(pipes_in_project.area / 4046.8564224, 2),
-                "pct":           round(pipes_in_project.area / gross_acres_m2 * 100, 1) if gross_acres_m2 > 0 else 0,
+                "acres":         round(_ac, 2),
+                "pct":           round(_ac / gross_acres * 100, 1) if gross_acres > 0 else 0,
                 "pipeline_count": len(pipe_lines),
                 "buffer_ft":     50,
             }
@@ -2316,7 +2396,7 @@ def run_analysis(proj):
         so the attribution is at least stable between runs.
         """
         try:
-            ac = geom_utm.area / 4046.8564224 if geom_utm else 0.0
+            ac = acres_utm(geom_utm)
         except Exception:
             ac = 0.0
 
@@ -2336,7 +2416,7 @@ def run_analysis(proj):
             prev = applied_union[0]
             try:
                 fresh = geom_utm if prev is None else geom_utm.difference(prev)
-                marginal = fresh.area / 4046.8564224
+                marginal = acres_utm(fresh)
             except Exception:
                 marginal = ac          # if the difference fails, do not under-report
             try:
@@ -2395,8 +2475,13 @@ def run_analysis(proj):
 
     if all_constraints_utm:
         constraints_union = unary_union(all_constraints_utm)
-        net_dev_utm = project_utm.difference(constraints_union)
-        net_dev_acres = net_dev_utm.area / 4046.8564224
+        # Net off gross rather than measuring what is left of the boundary.
+        # The two agree only while gross IS the measured boundary; once it is
+        # the acreage the tract is actually sold as, re-measuring here would
+        # leave the ladder on the page short by the difference. Deducting the
+        # union (not the sum) still keeps a wetland inside a floodplain from
+        # coming out of the site twice.
+        net_dev_acres = max(0.0, gross_acres - acres_utm(constraints_union))
     else:
         net_dev_acres = gross_acres
     # Hand-entered constraint acreage comes off on top of the measured union,
@@ -2525,6 +2610,10 @@ def run_analysis(proj):
     analysis = {
         "computed_at":         datetime.now().isoformat(timespec="seconds"),
         "gross_acres":         round(gross_acres, 2),
+        # Where the headline acreage came from, so the page can say so rather
+        # than leaving the reader to wonder why it is not what the map draws.
+        "gross_basis":         gross_basis,
+        "measured_acres":      round(measured_gross, 2),
         "net_developable_acres": round(net_dev_acres, 2),
         "net_developable_pct": round(net_dev_acres / gross_acres * 100, 1) if gross_acres > 0 else 0,
         "netout_detail": netout_detail,

@@ -535,6 +535,12 @@ def api_acq_project_get(pid):
         conn.close()
     if not proj:
         return jsonify({"error": "project not found"}), 404
+    # Overrides live in their own table, not on the project, so a tract added
+    # before the acreage was corrected still carries the old figure. Apply
+    # them on the way out and the card, the analysis and the report agree.
+    proj["tracts"], _ = parcel_cache.hydrate_tract_acres(proj.get("tracts") or [])
+    proj["total_acres"] = round(
+        sum(float(t.get("acres") or 0) for t in proj["tracts"]), 2)
     return jsonify({"project": proj})
 
 
@@ -551,7 +557,7 @@ def api_acq_project_patch(pid):
         if not proj:
             return jsonify({"error": "project not found"}), 404
         for k in ("name", "tracts", "yield_assumptions", "netout_assumptions",
-                  "notes", "is_quick_analysis"):
+                  "netout_overrides", "notes", "is_quick_analysis"):
             if k in body:
                 proj[k] = body[k]
         if "tracts" in body:
@@ -4464,6 +4470,9 @@ def _build_report_context(pid):
     if not analysis:
         return None, ("Run the acquisition analysis first -- the report is built "
                       "from it.")
+    # Same hydration the project page gets, so the tract-composition table and
+    # the gross acreage above it cannot quote different figures.
+    proj["tracts"], _ = parcel_cache.hydrate_tract_acres(proj.get("tracts") or [])
 
     data = _report_payloads(pid)
 

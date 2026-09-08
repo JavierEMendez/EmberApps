@@ -361,9 +361,24 @@ function renderAnalysis(a) {
       </div>`;
   }).join('');
 
+  // Say where the headline acreage came from. It is deliberately NOT a fresh
+  // measurement of the polygon -- the boundary a county draws and the acreage
+  // it states for the same account differ by a few tenths, and the analysis
+  // has to agree with the tract listed above it, not with the map.
+  const basisNote = {
+    override: 'per your override',
+    stated:   'per appraisal district',
+    measured: 'measured from the boundary',
+  }[a.gross_basis] || '';
+  const grossNote = basisNote
+    ? `<div style="font-size:10px;color:#6B7B8B;margin-top:2px">${esc(basisNote)}${
+        (a.gross_basis !== 'measured' && a.measured_acres) ?
+          ` &middot; boundary measures ${fmt(a.measured_acres)} ac` : ''}</div>`
+    : '';
+
   body.innerHTML = `
     <div class="kpi-grid">
-      <div class="kpi big"><div class="label">Gross</div><div class="value">${fmt(a.gross_acres)} ac</div></div>
+      <div class="kpi big"><div class="label">Gross</div><div class="value">${fmt(a.gross_acres)} ac</div>${grossNote}</div>
       <div class="kpi big"><div class="label">Net developable</div><div class="value">${fmt(a.net_developable_acres)} ac</div></div>
       <div class="kpi big" style="background:#FFF4ED;border:1px solid #F25929">
         <div class="label">Net saleable</div>
