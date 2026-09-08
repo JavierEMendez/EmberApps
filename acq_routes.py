@@ -794,6 +794,42 @@ _STATUS_TTL = 15.0
 _CACHE_STATUS_MEMO = {"at": 0.0, "payload": None}
 
 
+@acq_bp.route("/api/acq/parcel/<prop_id>/acres", methods=["POST", "DELETE"])
+@_login_required
+def api_acq_parcel_acres(prop_id):
+    """Set or clear a hand-entered acreage for one parcel.
+
+    Beats both StratMap and the appraisal district everywhere the app shows
+    acreage. Kept in its own table so a county re-bootstrap cannot erase it.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    body = request.get_json(silent=True) or {}
+    fips = str(body.get("county_fips") or request.args.get("county_fips") or "").strip()
+    if not fips:
+        return jsonify({"error": "county_fips required"}), 400
+    acres = None if request.method == "DELETE" else body.get("acres")
+    who = (session.get("display_name") or session.get("username") or "")[:60]
+    res = parcel_cache.set_acreage_override(prop_id, fips, acres,
+                                            note=(body.get("note") or None),
+                                            set_by=who)
+    if res.get("error"):
+        return jsonify(res), 400
+    _acq_log("acreage_override", {"prop_id": prop_id, "acres": res.get("acres")})
+    return jsonify(res)
+
+
+@acq_bp.route("/api/acq/parcel-overrides")
+@_login_required
+def api_acq_parcel_overrides():
+    """Every hand-entered acreage, with what the cache would otherwise say."""
+    guard = _acq_guard()
+    if guard:
+        return guard
+    return jsonify({"overrides": parcel_cache.list_acreage_overrides()})
+
+
 @acq_bp.route("/api/acq/cache/reconcile-cad", methods=["POST"])
 @_login_required
 def api_acq_cache_reconcile_cad():

@@ -143,6 +143,7 @@ def _init_db_inner():
         # accounts; nullable, so an un-reconciled database behaves as before.
         try:
             c.execute("ALTER TABLE parcels ADD COLUMN cad_acres REAL")
+            c.executescript(_OVERRIDES_DDL)
         except Exception:
             pass                      # column already present
 
@@ -941,6 +942,7 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
         """, (minx, maxx, miny, maxy))
         candidates = cur.fetchall()
 
+    overrides = get_acreage_overrides()
     features = []
     for row in candidates:
         try:
@@ -954,7 +956,7 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
         # Measured from the polygon, not taken from StratMap: an inflated
         # figure here pushed real tracts outside the user's acreage range
         # and they silently never appeared in results.
-        acres = trusted_acres(g, gis_area, legal_area, row[9])
+        acres = trusted_acres(g, gis_area, legal_area, row[9], _ov_for(overrides, row[0]))
         # Server-side acreage filter is done by Shape_Area in the live path;
         # here we have the StratMap acres directly so we can pre-filter against
         # the user's wide guesstimate range. But StratMap is unreliable for
@@ -1342,6 +1344,100 @@ def _albers():
 
 
 # --------------------------------------------------------------------------
+# Manual acreage overrides
+#
+# Neither StratMap nor the appraisal district is the last word. A survey, a
+# deed, or a broker's take-off can all beat both, and someone who knows a
+# tract is 208 acres should be able to say so and have the whole app agree.
+#
+# These live in their OWN table, not on the parcel row. Bootstrapping a county
+# deletes and refills every row it owns, so an override kept there would be
+# silently erased the next time the county was refreshed -- which is exactly
+# the kind of quiet data loss this cache has produced before.
+#
+# Precedence, highest first: manual override, appraisal district, measured
+# geometry, StratMap's own figure.
+# --------------------------------------------------------------------------
+_OVERRIDES_DDL = """
+CREATE TABLE IF NOT EXISTS parcel_overrides (
+    county_fips TEXT NOT NULL,
+    prop_id     TEXT NOT NULL,
+    acres       REAL,
+    note        TEXT,
+    set_by      TEXT,
+    set_at      INTEGER,
+    PRIMARY KEY (county_fips, prop_id)
+);
+"""
+
+
+def set_acreage_override(prop_id, county_fips, acres, note=None, set_by=None):
+    """Record -- or with acres=None clear -- a hand-entered acreage."""
+    init_db()
+    pid = str(prop_id or "").strip()
+    fips = str(county_fips or "").strip()
+    if not pid or not fips:
+        return {"error": "prop_id and county_fips are required"}
+    with _db_lock, _conn() as c:
+        c.execute(_OVERRIDES_DDL)
+        if acres in (None, ""):
+            c.execute("DELETE FROM parcel_overrides WHERE county_fips=? AND prop_id=?",
+                      (fips, pid))
+            c.commit()
+            return {"prop_id": pid, "county_fips": fips, "acres": None,
+                    "cleared": True}
+        try:
+            val = round(float(acres), 2)
+        except (TypeError, ValueError):
+            return {"error": f"{acres!r} is not a number"}
+        if val <= 0 or val > 500000:
+            return {"error": "acreage must be between 0 and 500,000"}
+        c.execute(
+            "INSERT INTO parcel_overrides (county_fips, prop_id, acres, note,"
+            "                              set_by, set_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(county_fips, prop_id) DO UPDATE SET"
+            "   acres=excluded.acres, note=excluded.note,"
+            "   set_by=excluded.set_by, set_at=excluded.set_at",
+            (fips, pid, val, (note or None), (set_by or None), int(time.time())))
+        c.commit()
+    return {"prop_id": pid, "county_fips": fips, "acres": val, "note": note,
+            "set_by": set_by}
+
+
+def get_acreage_overrides(pairs=None):
+    """{(county_fips, prop_id): {...}} for the given pairs, or all of them."""
+    init_db()
+    with _db_lock, _conn() as c:
+        c.execute(_OVERRIDES_DDL)
+        rows = c.execute("SELECT county_fips, prop_id, acres, note, set_by, set_at"
+                         "  FROM parcel_overrides").fetchall()
+    out = {(r[0], r[1]): {"acres": r[2], "note": r[3], "set_by": r[4], "set_at": r[5]}
+           for r in rows}
+    if pairs is None:
+        return out
+    want = {(str(a), str(b)) for a, b in pairs}
+    return {k: v for k, v in out.items() if k in want}
+
+
+def list_acreage_overrides():
+    """Every override, with what the cache would otherwise have said."""
+    init_db()
+    with _db_lock, _conn() as c:
+        c.execute(_OVERRIDES_DDL)
+        return [dict(zip(
+            ("county_fips", "prop_id", "acres", "note", "set_by", "set_at",
+             "owner_name", "cad_acres", "gis_area"), r))
+            for r in c.execute(
+                "SELECT o.county_fips, o.prop_id, o.acres, o.note, o.set_by,"
+                "       o.set_at, p.owner_name, p.cad_acres, p.gis_area"
+                "  FROM parcel_overrides o"
+                "  LEFT JOIN parcels p ON p.prop_id = o.prop_id"
+                "                     AND p.county_fips = o.county_fips"
+                " ORDER BY o.set_at DESC").fetchall()]
+
+
+# --------------------------------------------------------------------------
 # Appraisal-district acreage reconciliation
 #
 # StratMap's polygon for an account is sometimes the abstract rather than the
@@ -1440,7 +1536,22 @@ def _n_float(v):
         return None
 
 
-def trusted_acres(g, gis_area, legal_area, cad_acres=None):
+def _ov_for(overrides, prop_id):
+    """Override acreage for a prop_id, whichever county it was recorded under.
+
+    Prop_IDs are not unique across counties, but an override is only ever set
+    from a parcel the user was looking at, so a match on the id alone is the
+    behaviour they expect and the ambiguity is not reachable in practice.
+    """
+    if not overrides:
+        return None
+    pid = str(prop_id)
+    for (_fips, p), v in overrides.items():
+        if p == pid:
+            return v.get("acres")
+    return None
+
+def trusted_acres(g, gis_area, legal_area, cad_acres=None, override=None):
     """Acreage for a cached parcel, preferring the geometry over StratMap.
 
     StratMap's GIS_AREA is not merely noisy, it is wrong by a constant factor
@@ -1460,6 +1571,11 @@ def trusted_acres(g, gis_area, legal_area, cad_acres=None):
     # The appraisal district's own figure wins when it materially disagrees
     # with the polygon: StratMap draws some accounts as the whole abstract,
     # and on those the geometry is measuring land the parcel does not include.
+    # A hand-entered figure beats every computed one: someone with a survey
+    # or a deed knows more than either the polygon or the district.
+    ov = _n_float(override)
+    if ov and ov > 0:
+        return round(ov, 1)
     cad = _n_float(cad_acres)
     m = measured_acres(g)
     if cad and cad > 0:
@@ -1613,6 +1729,7 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
     # Keyed per parcel, matching the dedup above.
     score_by_pid = {(x[2][0], x[2][9]): (round(x[0], 3), x[1]) for x in scored}
 
+    overrides = get_acreage_overrides()
     parcels = []
     by_county = {}
     for r in rows:
@@ -1631,7 +1748,8 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
             # The polygon is already parsed for the centroid, so measuring it
             # costs one transform. StratMap's stored figure is wrong by a
             # constant factor for whole counties -- see trusted_acres().
-            acres = trusted_acres(g, gis_area, legal_area, cad_ac)
+            acres = trusted_acres(g, gis_area, legal_area, cad_ac,
+                                  _ov_for(overrides, prop_id))
         except Exception:
             lat = lon = None
             bounds = None

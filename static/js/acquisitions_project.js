@@ -1,3 +1,11 @@
+// Tracts carry a county NAME; the override is keyed by FIPS.
+const COUNTY_FIPS = {
+  Harris: '48201', 'Fort Bend': '48157', Montgomery: '48339', Brazoria: '48039',
+  Galveston: '48167', Liberty: '48291', Waller: '48473', Chambers: '48071',
+  'San Jacinto': '48407', Walker: '48471', Grimes: '48185', Washington: '48477',
+  Austin: '48015', Madison: '48313', Brazos: '48041',
+};
+
 /* Ported from the standalone Acquisitions GIS project page.
  * Static file, so Jinja never parses it. Server values arrive on window.ACQ_*.
  */
@@ -126,9 +134,43 @@ function render() {
   tlist.innerHTML = (p.tracts||[]).map(t => `
     <div class="tract-row">
       <span><b>${esc(t.owner_name || '(no owner)')}</b><br><span style="color:#6B7B8B">${esc(t.county||'')} · Prop ${esc(t.prop_id)}</span></span>
-      <span style="white-space:nowrap">${fmt(t.acres)} ac</span>
+      <span style="white-space:nowrap">${fmt(t.acres)} ac
+        <button class="acre-edit" title="Set the acreage you know to be correct"
+                data-pid="${esc(t.prop_id)}" data-fips="${esc(t.county_fips || '')}"
+                data-county="${esc(t.county || '')}" data-acres="${t.acres || ''}"
+                style="background:none;border:0;color:#6B7B8B;cursor:pointer;font-size:11px;padding:0 2px">&#9998;</button>
+      </span>
     </div>
   `).join('') || '<div class="placeholder">No tracts in this project.</div>';
+
+  // Neither StratMap nor the appraisal district is the last word -- a survey
+  // or a deed beats both, so the acreage is editable here and the override
+  // applies everywhere the app reports that parcel.
+  tlist.querySelectorAll('.acre-edit').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const pid = btn.dataset.pid;
+      const cur = btn.dataset.acres;
+      const val = prompt(`Acreage for Prop ${pid}`
+        + ' (blank to clear an override and go back to the surveyed sources):', cur);
+      if (val === null) return;
+      const note = val.trim() ? (prompt('Source, for the record (optional):', '') || '') : '';
+      try {
+        const r = await fetch(`/api/acq/parcel/${encodeURIComponent(pid)}/acres`, {
+          method: val.trim() ? 'POST' : 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            county_fips: btn.dataset.fips || COUNTY_FIPS[btn.dataset.county] || '',
+            acres: val.trim() ? Number(val) : null, note }),
+        });
+        const d = await r.json();
+        if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+        alert('Saved. Re-run the analysis to apply it to the acreage and yield.');
+        location.reload();
+      } catch (e) {
+        alert('Could not save the acreage: ' + e.message);
+      }
+    });
+  });
 
   // Map: draw tracts
   tractsLayer.clearLayers();
