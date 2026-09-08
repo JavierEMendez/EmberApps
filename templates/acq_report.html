@@ -132,12 +132,6 @@
   .fact-n { width: 118pt; font-size: 7.2pt; color: #93A0AC; text-align: right; }
   .v-strong { color: #2E7D4F; } .v-mod { color: #C08A2E; } .v-risk { color: #C0431C; }
 
-  .dq { display: flex; gap: 8pt; padding: 5.5pt 0; break-inside: avoid; }
-  .dq-n { width: 13pt; height: 13pt; flex: none; border-radius: 50%;
-          background: #F25929; color: #FFF; font-size: 6.8pt; font-weight: 700;
-          text-align: center; line-height: 13pt; }
-  .dq-t { font-size: 8pt; color: #33475A; }
-
   img.map { display: block; width: 100%; border-radius: 6pt; }
 
   .pair { display: flex; justify-content: space-between; font-size: 7.8pt;
@@ -650,13 +644,13 @@
 {% endif %}
 
 
-{# ══════════════ 9 · MACRO & IC CHECKLIST ══════════════ #}
-{% if r.macro or r.why_works or r.next_steps %}
+{# ══════════════ 9 · MACRO ══════════════ #}
+{% if r.macro or r.why_works %}
 <div class="page-break"></div>
 <div class="sec-head">
-{{ header('Macro Context & IC Checklist') }}
-<div class="sec-title">7. Macro Context &amp; Investment Committee Checklist</div>
-<div class="sec-sub">Economic backdrop, synthesized risks and diligence questions before pricing land</div>
+{{ header('Macro Context') }}
+<div class="sec-title">7. Macro Context</div>
+<div class="sec-sub">Economic backdrop and synthesized risks before pricing land</div>
 </div>
 
 {% if r.macro %}
@@ -685,14 +679,6 @@
   {% endif %}
 </div>
 
-{% if r.next_steps %}
-<div class="card">
-  <div class="card-t">Recommended next diligence</div>
-  {% for s in r.next_steps %}
-  <div class="dq"><div class="dq-n">{{ loop.index }}</div><div class="dq-t">{{ s }}</div></div>
-  {% endfor %}
-</div>
-{% endif %}
 {% endif %}
 
 </body>

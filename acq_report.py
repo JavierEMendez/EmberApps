@@ -326,14 +326,17 @@ def render_site_map(union_geom, constraint_geoms=None, tracts=None,
     # be able to point at a bar on the next page and find it on this map.
     #
     # `poly` is the deducted footprint. `line` is the alignment that generated
-    # it, drawn thin and unclipped so a corridor reads as passing through the
-    # site rather than starting at the boundary.
+    # it -- CLIPPED to the site, like everything else here. Drawing the raw
+    # alignments for context put 80 miles of pipeline centreline across a map
+    # of a 208-acre tract: 98.6% of the line length landed outside the
+    # boundary, which read as layers spilling off the site rather than as
+    # context. Nothing on this map extends past the parcel it describes.
     layers = [
         ("floodplain", None, "#5B6FD6", 0.42, "Floodplain (100-yr)"),
         ("wetlands", None, "#2E9E6B", 0.48, "Wetlands (NWI)"),
-        ("transmission_row", "transmission", "#B0552E", 0.55, "Transmission easement"),
-        ("stream_buffers", "streams", "#2F7FD6", 0.55, "Stream buffer"),
-        ("pipeline_easements", "pipelines", "#C99A2E", 0.55, "Pipeline easement"),
+        ("transmission_row", "transmission", "#B0552E", 0.50, "Transmission easement"),
+        ("stream_buffers", "streams", "#2F7FD6", 0.50, "Stream buffer"),
+        ("pipeline_easements", "pipelines", "#C99A2E", 0.50, "Pipeline easement"),
     ]
     legend = []
     for key, line_key, colour, alpha, label in layers:
@@ -341,10 +344,15 @@ def render_site_map(union_geom, constraint_geoms=None, tracts=None,
         for g in _geoms(cg.get(key)):
             _draw_geom(ax, g, face=colour, edge=colour, alpha=alpha, lw=0.6, z=3)
             drew = True
-        if line_key:
-            for g in _geoms(cg.get(line_key)):
-                _draw_geom(ax, g, edge=colour, alpha=0.75, lw=0.55, z=4)
-                drew = True
+        for g in _geoms(cg.get(line_key)) if line_key else []:
+            try:
+                g = g.intersection(union_geom)
+            except Exception:
+                continue
+            if g.is_empty:
+                continue
+            _draw_geom(ax, g, edge=colour, alpha=0.85, lw=0.5, z=4)
+            drew = True
         if drew:
             legend.append((label, colour))
 
@@ -874,22 +882,6 @@ def _site_read(r, a):
     return out[:3] or None
 
 
-NEXT_STEPS = [
-    "Civil: confirm floodplain reclamation assumptions, detention need, drainage "
-    "outfalls and off-site utility availability.",
-    "Market: builder calls and LOIs by lot width, phase and price; reconcile "
-    "capture against current community absorption.",
-    "Phasing: model a conservative lot takedown against prevailing months of "
-    "supply and the future pipeline.",
-    "Land basis: derive maximum land value from net saleable acreage and "
-    "finished-lot economics, not gross acreage.",
-    "Entitlements: validate jurisdiction, MUD / PID / utility-district path, "
-    "school boundaries and roadway obligations.",
-    "IC output: return with low / base / high yield, absorption and cost cases "
-    "plus a clear walk-away land basis.",
-]
-
-
 
 # ---------------------------------------------------------------------------
 # Height budget
@@ -1069,8 +1061,6 @@ def build_context(proj, analysis, data=None, elevation=None):
                 "lots": num(p.get("lots")),
             } for p in (y.get("breakdown") or [])],
         }
-
-    r["next_steps"] = NEXT_STEPS
 
     # Each section is mapped in isolation. One upstream payload shaped
     # differently than expected should cost its own page, not the whole

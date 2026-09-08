@@ -4783,6 +4783,11 @@ def acq_api_projects_pdf(pid):
                 "stream_buffers":     ("#1976d2", "#1976d2", 0.28, 0.6, "polygon"),
                 "pipeline_easements": ("#F25929", "#F25929", 0.28, 0.6, "polygon"),
             }
+            # Everything drawn is clipped to the site. The corridor keys carry
+            # raw alignments straight from the RRC and NHD feeds, which run for
+            # miles: on a 208-acre tract 98.6% of that line length fell outside
+            # the boundary, so the map read as layers spilling off the parcel
+            # instead of describing it.
             for key, fc in (constraint_geoms or {}).items():
                 if not fc: continue
                 fillc, edgec, alpha, lw, kind = cstyles.get(key, ("#888", "#444", 0.3, 1, "polygon"))
@@ -4792,6 +4797,10 @@ def acq_api_projects_pdf(pid):
                     if not g: continue
                     try:
                         s = _shp(g)
+                        if proj_union is not None:
+                            s = s.intersection(proj_union)
+                        if s.is_empty:
+                            continue
                         if s.geom_type == "Polygon":
                             xs, ys = s.exterior.xy
                             ax.fill(xs, ys, color=fillc, alpha=alpha, edgecolor=edgec, linewidth=0.8, zorder=2)
