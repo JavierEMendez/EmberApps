@@ -794,6 +794,34 @@ _STATUS_TTL = 15.0
 _CACHE_STATUS_MEMO = {"at": 0.0, "payload": None}
 
 
+@acq_bp.route("/api/acq/cache/reconcile-cad", methods=["POST"])
+@_login_required
+def api_acq_cache_reconcile_cad():
+    """Store the appraisal district's own acreage for every sizeable parcel.
+
+    StratMap draws some accounts as the whole abstract rather than the tract --
+    3.5% of sampled Harris parcels over 90 acres, always oversized, up to 8x.
+    This pulls HCAD's figure for anything over five acres so that every
+    acreage the app shows is the district's, not a polygon that may include
+    land the parcel does not.
+    """
+    guard = _acq_guard()
+    if guard:
+        return guard
+    if not _acq_is_admin():
+        return jsonify({"error": "admin only"}), 403
+    fips = (request.args.get("county_fips") or "48201").strip()
+    try:
+        min_ac = float(request.args.get("min_acres") or 5)
+    except ValueError:
+        min_ac = 5.0
+    try:
+        return jsonify(parcel_cache.reconcile_cad_acres(fips, min_ac))
+    except Exception as e:
+        print(f"[cad] reconcile failed: {e}", flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @acq_bp.route("/api/acq/cache/status")
 @_login_required
 def api_acq_cache_status():

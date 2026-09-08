@@ -278,6 +278,7 @@
       <p style="color:#6B7B8B;margin-top:0">Pre-loads StratMap parcels for Houston-metro counties into a local DB so searches don't hit the live ArcGIS API every time. HCAD/MCAD overlays still run live for owner-name freshness. Counties are re-checked weekly but only re-downloaded when StratMap actually publishes a change, so a check is normally free. A load that is interrupted resumes where it stopped rather than starting over.</p>
       <div style="margin:14px 0;display:flex;gap:10px;flex-wrap:wrap">
         <button class="ghost" id="btn-cache-refresh-status">Refresh status</button>
+  <button id="btn-reconcile-cad" type="button" title="Pull HCAD's own acreage for every Harris parcel over 5 acres. StratMap draws some accounts as the whole abstract rather than the tract.">Reconcile CAD acreage</button>
         <button class="ghost" id="btn-cache-bootstrap-all" style="background:#F25929;color:#FFF">Bootstrap all (1–3 hrs)</button>
       </div>
       <div id="cache-progress" style="display:none;background:#FFF4ED;border-left:3px solid #F25929;padding:8px 12px;border-radius:4px;margin-bottom:10px;font-size:13px"></div>

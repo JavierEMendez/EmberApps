@@ -179,3 +179,32 @@ async function reindexParcels() {
 on('btn-cache-refresh-status', 'click', loadCacheStatus);
 on('btn-cache-bootstrap-all', 'click', function () { triggerBootstrap('all'); });
 loadCacheStatus();
+
+// Pull the appraisal district's own acreage. StratMap draws some accounts as
+// the whole abstract rather than the tract -- 3.5% of sampled Harris parcels
+// over 90 acres, always oversized, up to eight times -- so until this has run
+// the acreage shown for those is the polygon's, not the parcel's.
+on('btn-reconcile-cad', 'click', async (ev) => {
+  const b = ev.currentTarget;
+  const label = b.textContent;
+  if (!confirm('Pull HCAD acreage for every Harris parcel over 5 acres?'
+             + '\nAbout 56,000 parcels; takes a few minutes.')) return;
+  b.disabled = true;
+  b.textContent = 'Reconciling...';
+  try {
+    const r = await fetch('/api/acq/cache/reconcile-cad?county_fips=48201&min_acres=5',
+                          { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || ('HTTP ' + r.status));
+    alert('Reconciled ' + d.matched.toLocaleString() + ' of '
+        + d.considered.toLocaleString() + ' parcels.\n'
+        + d.disagreeing.toLocaleString() + ' disagree with StratMap by more than '
+        + '20% and now report the district acreage.');
+    loadCacheStatus();
+  } catch (e) {
+    alert('Reconcile failed: ' + e.message);
+  } finally {
+    b.disabled = false;
+    b.textContent = label;
+  }
+});

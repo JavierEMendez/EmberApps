@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS parcels (
     situs_addr  TEXT,
     legal_desc  TEXT,
     gis_area    REAL,
+    cad_acres   REAL,
     legal_area  REAL,
     shape_wkb   BLOB,
     updated_at  INTEGER,
@@ -138,6 +139,13 @@ def init_db():
 def _init_db_inner():
     with _db_lock, _conn() as c:
         c.executescript(_PARCELS_DDL)
+        # Added after StratMap was found drawing whole abstracts for some
+        # accounts; nullable, so an un-reconciled database behaves as before.
+        try:
+            c.execute("ALTER TABLE parcels ADD COLUMN cad_acres REAL")
+        except Exception:
+            pass                      # column already present
+
         c.executescript("""
             -- R-Tree spatial index. Query by bbox first (sublinear), then exact
             -- intersection in shapely. Keyed by parcels.rowid for fast joins.
@@ -924,7 +932,8 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
         # R-Tree bbox filter first — drops from millions to thousands
         cur = c.execute("""
             SELECT p.prop_id, p.county_name, p.owner_name, p.mail_addr, p.situs_addr,
-                   p.legal_desc, p.gis_area, p.legal_area, p.shape_wkb
+                   p.legal_desc, p.gis_area, p.legal_area, p.shape_wkb,
+                   p.cad_acres
               FROM parcels p
               JOIN parcels_rtree r ON p.rowid = r.id
              WHERE r.maxx >= ? AND r.minx <= ?
@@ -945,7 +954,7 @@ def query_parcels_in_polygon(buffer_wgs, min_acres=0, max_acres=1e12):
         # Measured from the polygon, not taken from StratMap: an inflated
         # figure here pushed real tracts outside the user's acreage range
         # and they silently never appeared in results.
-        acres = trusted_acres(g, gis_area, legal_area)
+        acres = trusted_acres(g, gis_area, legal_area, row[9])
         # Server-side acreage filter is done by Shape_Area in the live path;
         # here we have the StratMap acres directly so we can pre-filter against
         # the user's wide guesstimate range. But StratMap is unreliable for
@@ -1331,6 +1340,89 @@ def _albers():
     return _TO_ALBERS
 
 
+
+# --------------------------------------------------------------------------
+# Appraisal-district acreage reconciliation
+#
+# StratMap's polygon for an account is sometimes the abstract rather than the
+# tract. Measured against HCAD's own parcel boundary across 256 randomly
+# sampled Harris parcels over 90 acres, 3.5% disagree by more than 20% -- and
+# every one of them in the same direction, StratMap larger. The worst in that
+# sample were 8.4x, 8.4x, 3.4x and 3.2x; account 0441270000001 is drawn at
+# 649.6 acres against a 208.0-acre parcel. Across just those nine parcels
+# StratMap adds a thousand acres that are not there.
+#
+# One in twenty-nine large parcels is too often to leave to the analysis path
+# alone, so the district's figure is stored on the row and every acreage the
+# app shows -- owner search, map search, the acreage filter, the report --
+# reads it. Geometry is left as StratMap drew it: the polygon is still what
+# gets clipped against floodplain and wetlands, and the project analysis
+# swaps in the district boundary itself where it matters.
+# --------------------------------------------------------------------------
+CAD_ACREAGE_SOURCES = {
+    "48201": ("https://www.gis.hctx.net/arcgis/rest/services/HCAD/Parcels/"
+              "MapServer/0/query", "HCAD_NUM", "Shape.STArea()", 43560.0),
+}
+CAD_DISAGREEMENT = 0.20
+
+
+def reconcile_cad_acres(county_fips="48201", min_acres=5.0, batch=250,
+                        on_progress=None):
+    """Store the appraisal district's own acreage for every sizeable parcel.
+
+    Attributes only -- no geometry -- so it batches to a few hundred parcels a
+    request. Small parcels are skipped: the error is a land-acquisition
+    problem and a rooftop lot is not one.
+    """
+    import requests
+    src = CAD_ACREAGE_SOURCES.get(str(county_fips))
+    if not src:
+        return {"error": f"no appraisal-district source configured for {county_fips}"}
+    url, id_field, area_field, per_acre = src
+
+    init_db()
+    with _db_lock, _conn() as c:
+        rows = c.execute(
+            "SELECT prop_id, gis_area FROM parcels"
+            "  WHERE county_fips = ? AND shape_wkb IS NOT NULL AND gis_area > ?",
+            (county_fips, min_acres * 10.7639)).fetchall()
+    ids = sorted({r[0] for r in rows if r[0]})
+    found = changed = 0
+    for i in range(0, len(ids), batch):
+        chunk = ids[i:i + batch]
+        where = f"{id_field} IN (" + ",".join("'" + x + "'" for x in chunk) + ")"
+        try:
+            resp = requests.post(url, data={
+                "where": where, "outFields": f"{id_field},{area_field}",
+                "returnGeometry": "false", "f": "json"}, timeout=120)
+            feats = (resp.json() or {}).get("features") or []
+        except Exception as e:
+            print(f"[cad] batch at {i} failed: {e}", flush=True)
+            continue
+        vals = []
+        for f in feats:
+            a = f.get("attributes") or {}
+            pid, area = a.get(id_field), a.get(area_field)
+            if pid and area:
+                vals.append((round(area / per_acre, 2), pid, county_fips))
+        if vals:
+            with _db_lock, _conn() as c:
+                c.executemany("UPDATE parcels SET cad_acres = ?"
+                              " WHERE prop_id = ? AND county_fips = ?", vals)
+                c.commit()
+            found += len(vals)
+        if on_progress:
+            on_progress({"done": min(i + batch, len(ids)), "total": len(ids),
+                         "matched": found})
+    with _db_lock, _conn() as c:
+        changed, = c.execute(
+            "SELECT COUNT(*) FROM parcels WHERE county_fips = ? AND cad_acres > 0"
+            "  AND gis_area > 0"
+            "  AND ABS(cad_acres - gis_area/10.7639) > cad_acres * ?",
+            (county_fips, CAD_DISAGREEMENT)).fetchone()
+    return {"county_fips": county_fips, "considered": len(ids),
+            "matched": found, "disagreeing": changed}
+
 def measured_acres(g):
     """Acres from the polygon itself, in an equal-area projection."""
     from shapely.ops import transform as _tf
@@ -1340,7 +1432,15 @@ def measured_acres(g):
         return 0.0
 
 
-def trusted_acres(g, gis_area, legal_area):
+def _n_float(v):
+    try:
+        f = float(v)
+        return None if f != f else f
+    except (TypeError, ValueError):
+        return None
+
+
+def trusted_acres(g, gis_area, legal_area, cad_acres=None):
     """Acreage for a cached parcel, preferring the geometry over StratMap.
 
     StratMap's GIS_AREA is not merely noisy, it is wrong by a constant factor
@@ -1357,11 +1457,20 @@ def trusted_acres(g, gis_area, legal_area):
     projection variance, and there the appraisal district's own number is the
     one people recognise and should keep seeing.
     """
-    stored = round((gis_area or legal_area or 0), 1)
+    # The appraisal district's own figure wins when it materially disagrees
+    # with the polygon: StratMap draws some accounts as the whole abstract,
+    # and on those the geometry is measuring land the parcel does not include.
+    cad = _n_float(cad_acres)
     m = measured_acres(g)
+    if cad and cad > 0:
+        if m <= 0 or abs(m - cad) > cad * CAD_DISAGREEMENT:
+            return round(cad, 1)
+        return round(m, 1)
+    stored = round((gis_area or legal_area or 0), 1)
     if m > 0 and (not stored or abs(stored - m) > max(1.0, m * 0.25)):
         return round(m, 1)
     return stored
+
 
 def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 500,
                           min_score: float = 0.72, include_geometry: bool = False):
@@ -1390,7 +1499,8 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
     q = q_raw.upper()
     qn = _norm_owner(owner_query)
     COLS = ("prop_id, county_name, owner_name, mail_addr, situs_addr, "
-            "legal_desc, gis_area, legal_area, shape_wkb, geom_key")
+            "legal_desc, gis_area, legal_area, shape_wkb, geom_key, "
+            "cad_acres")
 
     seen, rows, passes = set(), [], {}
     owner_seen = set()
@@ -1506,7 +1616,8 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
     parcels = []
     by_county = {}
     for r in rows:
-        prop_id, county, owner, mail, situs, legal, gis_area, legal_area, wkb, gkey = r
+        (prop_id, county, owner, mail, situs, legal, gis_area, legal_area,
+         wkb, gkey, cad_ac) = r
         acres = round((gis_area or legal_area or 0), 1)
         # Compute centroid from WKB for "go to map" action
         geom = None
@@ -1520,7 +1631,7 @@ def find_parcels_by_owner(owner_query: str, exact: bool = False, limit: int = 50
             # The polygon is already parsed for the centroid, so measuring it
             # costs one transform. StratMap's stored figure is wrong by a
             # constant factor for whole counties -- see trusted_acres().
-            acres = trusted_acres(g, gis_area, legal_area)
+            acres = trusted_acres(g, gis_area, legal_area, cad_ac)
         except Exception:
             lat = lon = None
             bounds = None
