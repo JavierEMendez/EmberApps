@@ -213,28 +213,11 @@
 </div>
 {% endif %}
 
-<div class="kpis">
-  {{ kpi('Gross acreage', r.kpi.gross) }}
-  {{ kpi('Net developable', r.kpi.net_dev) }}
-  {{ kpi('Net saleable', r.kpi.net_saleable, hot=True) }}
-  {{ kpi('Pro-forma yield', r.kpi.lots) }}
-</div>
-
-<div style="margin-top:16pt;font-size:8.4pt;font-weight:700;color:#13344E">
-  Prepared from EMBER Acquisitions GIS</div>
-<div style="font-size:7.6pt;color:#93A0AC;margin-top:3pt">
-  Market, physical site, competition, schools, infrastructure, amenities and macro screening</div>
-<div style="font-size:7.6pt;color:#93A0AC;margin-top:10pt">{{ r.project.date_long }}</div>
-
-
-{# ══════════════ 2 · EXECUTIVE VIEW ══════════════ #}
-<div class="page-break hard"></div>
-<div class="sec-head">
-{{ header('Executive Investment View') }}
-<div class="sec-title">{{ r.project.name_upper }}</div>
-<div class="sec-sub">{{ r.project.location }}{% if r.kpi.gross %} &nbsp;|&nbsp; {{ r.kpi.gross }} gross{% endif %}</div>
-</div>
-
+{# The executive view used to be its own sheet, repeating the four cards
+   already on the cover and adding a three-line thesis. That left two pages
+   running two-thirds full while every other page ran to nine-tenths. The
+   thesis and the tract table belong with the map and the headline figures,
+   so they sit here and the separate section is gone. #}
 <div class="kpis">
   {{ kpi('Gross acreage', r.kpi.gross) }}
   {{ kpi('Net developable', r.kpi.net_dev) }}
@@ -248,8 +231,6 @@
   <div style="font-size:8.4pt;color:#33475A;line-height:1.55">{{ r.thesis }}</div>
 </div>
 {% endif %}
-
-
 
 {% if r.tracts and r.tracts|length > 1 %}
 <div class="card flush">
@@ -268,10 +249,16 @@
 </div>
 {% endif %}
 
+<div style="margin-top:14pt;font-size:8.4pt;font-weight:700;color:#13344E">
+  Prepared from EMBER Acquisitions GIS</div>
+<div style="font-size:7.6pt;color:#93A0AC;margin-top:3pt">
+  Market, physical site, competition, schools, infrastructure, amenities and macro screening</div>
+<div style="font-size:7.6pt;color:#93A0AC;margin-top:8pt">{{ r.project.date_long }}</div>
 
-{# ══════════════ 3 · SITE & DEVELOPMENT POTENTIAL ══════════════ #}
+
+{# ══════════════ 2 · SITE & DEVELOPMENT POTENTIAL ══════════════ #}
 {% if r.bridge %}
-<div class="page-break"></div>
+<div class="page-break hard"></div>
 <div class="sec-head">
 {{ header('Site & Development Potential') }}
 <div class="sec-title">1. Site &amp; Development Potential</div>

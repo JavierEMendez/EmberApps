@@ -71,6 +71,22 @@ def _geo_figsize(bounds, target_w=7.4, min_h=3.0, max_h=5.2):
     return (target_w, max(min_h, min(max_h, h)))
 
 
+def _set_geo_aspect(ax, bounds):
+    """Hold the map to true ground shape without letterboxing it.
+
+    set_aspect("equal") equalises DEGREES, and a degree of longitude is
+    cos(lat) shorter than a degree of latitude -- 0.865 at Harris County. So
+    the axes enforced a 2.507 shape on a figure sized to the true ground shape
+    of 2.170 and matplotlib padded the difference with blank: a seventh of
+    every map was a white bar above and below the imagery, which is what made
+    the page-one map look like a floating strip. The plate-carree aspect,
+    1/cos(lat), makes the two agree.
+    """
+    mid_lat = (bounds[1] + bounds[3]) / 2.0
+    k = math.cos(math.radians(mid_lat)) or 1.0
+    ax.set_aspect(1.0 / k)
+
+
 def _padded_bounds(bounds, frac=0.12):
     minx, miny, maxx, maxy = bounds
     px = (maxx - minx) * frac or 0.004
@@ -238,8 +254,13 @@ def _esri_basemap(ax, bounds, kind="imagery"):
 
         w_lon, n_lat = tile_to_lonlat(tx0, ty0, z)
         e_lon, s_lat = tile_to_lonlat(tx1 + 1, ty1 + 1, z)
+        # aspect="auto" or imshow silently resets the axes to aspect="equal",
+        # which is the degree-equalising default this map is trying to avoid.
+        # That override is why setting the plate-carree aspect on the axes had
+        # no effect: the basemap put it straight back.
         ax.imshow(np.asarray(canvas), extent=[w_lon, e_lon, s_lat, n_lat],
-                  origin="upper", zorder=0, interpolation="bilinear")
+                  origin="upper", zorder=0, interpolation="bilinear",
+                  aspect="auto")
         return True
     except Exception:
         return False
@@ -286,12 +307,18 @@ def render_site_map(union_geom, constraint_geoms=None, tracts=None,
     if union_geom is None:
         return None
     bounds = _padded_bounds(union_geom.bounds, 0.16)
-    figsize = _geo_figsize(bounds, target_w=width_in, min_h=3.2, max_h=4.9)
+    # A cover map is a page block before it is a picture of a parcel. Sized to
+    # the parcel's own shape, a 2.5:1 tract produced a 3.4-inch letterbox and
+    # left a third of the cover blank. The floor here holds the map to a
+    # readable landscape whatever the parcel looks like; _fit_bounds_to_figure
+    # makes up the difference with surrounding ground, which is context worth
+    # having, and the parcel keeps its true shape either way.
+    figsize = _geo_figsize(bounds, target_w=width_in, min_h=4.6, max_h=5.0)
     fig, ax = plt.subplots(figsize=figsize, dpi=170)
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.set_position([0, 0, 1, 1])
     ax.set_facecolor("#E7ECF0")
-    ax.set_aspect("equal")
+    _set_geo_aspect(ax, bounds)
     bounds = _fit_bounds_to_figure(ax, bounds, figsize)
     _esri_basemap(ax, bounds, "imagery")
 
@@ -405,7 +432,7 @@ def render_competitor_map(center, communities, radius_mi=None, width_in=7.4):
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.set_position([0, 0, 1, 1])
     ax.set_facecolor("#EEF1F4")
-    ax.set_aspect("equal")
+    _set_geo_aspect(ax, bounds)
     bounds = _fit_bounds_to_figure(ax, bounds, figsize)
     _esri_basemap(ax, bounds, "topo")
 
@@ -485,7 +512,7 @@ def render_roads_map(center, projects, site_geom=None, radius_mi=None, width_in=
     fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.set_position([0, 0, 1, 1])
     ax.set_facecolor("#EEF1F4")
-    ax.set_aspect("equal")
+    _set_geo_aspect(ax, bounds)
     bounds = _fit_bounds_to_figure(ax, bounds, figsize)
     _esri_basemap(ax, bounds, "topo")
 

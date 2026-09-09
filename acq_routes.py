@@ -4845,7 +4845,12 @@ def acq_api_projects_pdf(pid):
 
         ax.set_xlim(west, east)
         ax.set_ylim(south, north)
-        ax.set_aspect("equal")
+        # Plate-carree, not "equal": equalising degrees squashes the map and
+        # letterboxes it, because a degree of longitude is cos(lat) shorter
+        # than a degree of latitude. math is imported here because this module
+        # takes acq_gis by star-import and does not carry it at module level.
+        import math as _m
+        ax.set_aspect(1.0 / (_m.cos(_m.radians((south + north) / 2.0)) or 1.0))
 
         # N arrow + scale-ish text
         ax.text(0.97, 0.97, "N\n▲", transform=ax.transAxes, ha="center", va="top",
