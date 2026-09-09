@@ -633,6 +633,28 @@ def _enforce_password_change():
 def health():
     return "ok", 200
 
+
+@app.route("/version")
+def version():
+    """Which commit is actually running.
+
+    "Did that fix deploy?" was previously only answerable by logging in and
+    reading an admin diagnostics page, or by finding a change that happened to
+    touch a static file. Public because a commit hash on its own grants
+    nothing, and because the whole point is to be able to check it without a
+    session.
+    """
+    import os as _os
+    sha = (_os.environ.get("RAILWAY_GIT_COMMIT_SHA")
+           or _os.environ.get("RENDER_GIT_COMMIT")
+           or _os.environ.get("SOURCE_VERSION") or "")
+    return jsonify({
+        "commit": sha[:7] or "unknown",
+        "commit_full": sha or "unknown",
+        "branch": _os.environ.get("RAILWAY_GIT_BRANCH") or "unknown",
+        "deployed_at": _os.environ.get("RAILWAY_DEPLOYMENT_ID") or "unknown",
+    })
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     error = None
