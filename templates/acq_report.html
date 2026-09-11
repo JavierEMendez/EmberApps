@@ -232,23 +232,6 @@
 </div>
 {% endif %}
 
-{% if r.tracts and r.tracts|length > 1 %}
-<div class="card flush">
-  <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">Tract composition</div>
-  <table>
-    <thead><tr><th>#</th><th>Owner</th><th>Prop ID</th><th>County</th>
-      <th class="num">Acres</th><th class="num">% of assembly</th></tr></thead>
-    <tbody>
-      {% for t in r.tracts %}
-      <tr><td>{{ loop.index }}</td><td>{{ t.owner }}</td><td>{{ t.prop_id }}</td>
-        <td>{{ t.county }}</td><td class="num">{{ t.acres }}</td>
-        <td class="num">{{ t.pct }}</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
 <div style="margin-top:14pt;font-size:8.4pt;font-weight:700;color:#13344E">
   Prepared from EMBER Acquisitions GIS</div>
 <div style="font-size:7.6pt;color:#93A0AC;margin-top:3pt">
@@ -284,6 +267,27 @@
     Deductions are marginal — overlapping constraints are removed once, so the column
     sums exactly to net developable. Each layer's full footprint is shown below.</div>
 </div>
+
+{# What makes up the gross figure the bridge starts from. This lives here
+   rather than on the cover because its height depends on the deal -- one row
+   or fifteen -- and the cover has to be the same shape every time. #}
+{% if r.tracts and r.tracts|length > 1 %}
+<div class="card flush">
+  <div class="card-t" style="padding:12pt 13pt 9pt;margin:0">Tract composition</div>
+  <table>
+    <thead><tr><th>#</th><th>Owner</th><th>Prop ID</th><th>County</th>
+      <th class="num">Acres</th><th class="num">% of assembly</th></tr></thead>
+    <tbody>
+      {% for t in r.tracts %}
+      <tr><td>{{ loop.index }}</td><td>{{ t.owner }}</td><td>{{ t.prop_id }}</td>
+        <td>{{ t.county }}</td><td class="num">{{ t.acres }}</td>
+        <td class="num">{{ t.pct }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
 
 <div class="grid2">
   <div class="card">
