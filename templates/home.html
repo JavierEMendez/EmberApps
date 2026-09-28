@@ -662,6 +662,12 @@
 {% if is_admin %}
 <div class="admin-bar">
   <span class="admin-bar-label">Admin Utilities</span>
+  <button class="admin-btn" onclick="downloadDashboardSource()"
+          title="Download the workbook the live reports were built from">
+    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m5-5l5 5 5-5m-5 5V3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Download Dashboard Excel
+  </button>
+  <span id="dashDownloadStatus" class="upload-status"></span>
   <input type="file" id="dashUpload" accept=".xlsx">
   <button class="admin-btn" onclick="document.getElementById('dashUpload').click()">
     <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4m14-7l-5-5-5 5m5-5v12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -897,6 +903,33 @@ document.getElementById('dashUpload').addEventListener('change', async function(
   } catch (e) { status.textContent = 'Upload failed'; status.style.color = 'var(--eax-bad)'; }
   this.value = '';
 });
+
+/* Pull down the workbook the live reports were built from, so it can be
+   updated and sent straight back through Update Dashboard Reports. */
+async function downloadDashboardSource() {
+  const status = document.getElementById('dashDownloadStatus');
+  status.textContent = 'Preparing...'; status.style.color = 'var(--eax-muted)';
+  try {
+    const res = await fetch('/api/download-dashboard');
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      status.textContent = data.error || 'Nothing to download yet';
+      status.style.color = 'var(--eax-bad)';
+      return;
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = /filename="?([^"]+)"?/.exec(cd);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = match ? match[1] : 'Ember Dashboard.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(a.href);
+    status.textContent = 'Downloaded'; status.style.color = 'var(--eax-good)';
+  } catch (e) {
+    status.textContent = 'Download failed'; status.style.color = 'var(--eax-bad)';
+  }
+}
 
 document.getElementById('macroUpload').addEventListener('change', async function() {
   const file = this.files[0];

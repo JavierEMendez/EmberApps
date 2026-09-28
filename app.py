@@ -10863,8 +10863,54 @@ def upload_dashboard():
             "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
             ("operations", json.dumps(data["operations"]), session["user_id"])
         )
+    # Keep the workbook itself, not just what we parsed out of it, so an admin
+    # can pull the current one back down, update it and upload the same file
+    # again instead of rebuilding it from scratch. Stored as base64 inside the
+    # JSONB payload, the same way the Project Library stores its images.
+    cur.execute("DELETE FROM reports WHERE report_type = 'dashboard_source'")
+    cur.execute(
+        "INSERT INTO reports (report_type, data, uploaded_by) VALUES (%s, %s, %s)",
+        ("dashboard_source", json.dumps({
+            "filename": f.filename or "Ember Dashboard.xlsx",
+            "size": len(file_bytes),
+            "b64": base64.b64encode(file_bytes).decode("ascii"),
+        }), session["user_id"])
+    )
     conn.commit(); cur.close(); conn.close()
     return jsonify({"ok": True})
+
+
+@app.route("/api/download-dashboard", methods=["GET"])
+@login_required
+@admin_required
+def download_dashboard():
+    """Hand back the workbook the current reports were built from.
+
+    The round trip is: download this, update the new month's numbers in it,
+    upload it again through Update Dashboard Reports. Only workbooks uploaded
+    after this was added are stored, so the first call on an older install has
+    nothing to give and says so.
+    """
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT data, uploaded_at FROM reports "
+                "WHERE report_type = 'dashboard_source' "
+                "ORDER BY uploaded_at DESC LIMIT 1")
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    src = (row["data"] if row else None) or {}
+    if not src.get("b64"):
+        return jsonify({"error": "No workbook saved yet — upload one through "
+                                 "Update Dashboard Reports and it will be "
+                                 "available here from then on."}), 404
+    stamp = (row["uploaded_at"] or datetime.datetime.now()).strftime("%Y-%m-%d")
+    name = src.get("filename") or "Ember Dashboard.xlsx"
+    stem = name[:-5] if name.lower().endswith(".xlsx") else name
+    return send_file(
+        io.BytesIO(base64.b64decode(src["b64"])),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True, download_name="%s (%s).xlsx" % (stem, stamp))
+
 
 @app.route("/api/export-returns-excel")
 @login_required
