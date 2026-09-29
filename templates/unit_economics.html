@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=5"/>
-<link rel="stylesheet" href="/static/css/unit_economics.css?v=2"/>
+<link rel="stylesheet" href="/static/css/unit_economics.css?v=3"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — canonical sidebar chrome (same as /financials). */
@@ -152,7 +152,9 @@
         <b>Unit Economics</b> tab, rolled up by phase, entity, and community.
         Phases blend sections across entity models within a community. The
         <b>Actuals</b> column is fed from the Budget vs Actuals GL data, allocated
-        to sections the same way the model allocates each line's Total.
+        to sections the same way the model allocates each line's Total. Upload a
+        model as a named <b>scenario</b> to see how it changes the numbers against
+        the entity's default.
       </p>
 
       {# ── Controls ────────────────────────────────────────── #}
@@ -192,7 +194,34 @@
           <input type="file" id="ue-file" accept=".xlsx,.xlsm" style="display:none;">
         </div>
       </div>
+      {# ── Scenario picks (per entity, this viewer only) ────────── #}
+      <div class="ue-scenario-bar" id="ue-scenario-bar" style="display:none;"></div>
       <div id="ue-status" class="ue-status"></div>
+
+      {# ── Upload panel: which scenario the picked workbook is for ── #}
+      <div class="ue-panel" id="ue-upload-panel" style="display:none;">
+        <div class="ue-panel-title">Upload <span id="ue-up-file"></span></div>
+        <div class="ue-panel-body">
+          Replace an existing scenario's model, or add this workbook as a new scenario.
+          The entity it belongs to is detected from its sections.
+        </div>
+        <div class="ue-up-opts">
+          <label class="ue-radio" id="ue-up-existing-wrap">
+            <input type="radio" name="ue-up-mode" value="existing" checked>
+            <span>Update scenario</span>
+            <select id="ue-up-existing"></select>
+          </label>
+          <label class="ue-radio">
+            <input type="radio" name="ue-up-mode" value="new">
+            <span>New scenario</span>
+            <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ue-up-new" maxlength="60" placeholder="Scenario name">
+          </label>
+        </div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+          <button class="ue-btn primary" id="ue-up-confirm">Upload</button>
+          <button class="ue-btn" id="ue-up-cancel">Cancel</button>
+        </div>
+      </div>
 
       {# ── Assign-entity panel (shown when an upload needs one) ── #}
       <div class="ue-panel" id="ue-assign-panel" style="display:none;">
@@ -255,8 +284,26 @@
     community: null,     // community key
     level: "community",  // community | entity | phase | section
     item: null,          // selected index at the current level
-    pendingFile: null,   // file awaiting entity assignment
+    pendingFile: null,   // file awaiting its scenario / entity assignment
+    pendingScenario: null,
+    sel: {},             // {entity: scenario} picks for this community (non-defaults only)
   };
+
+  // Scenario picks live in the URL hash (#c=GPD&sc:Dennison=Church Site) so
+  // they are per viewer and a link reproduces the same view.
+  function readHash() {
+    const p = new URLSearchParams(location.hash.slice(1));
+    const sel = {};
+    for (const [k, v] of p) if (k.startsWith('sc:') && v) sel[k.slice(3)] = v;
+    return {community: p.get('c'), sel};
+  }
+  function writeHash() {
+    const p = new URLSearchParams();
+    if (state.community) p.set('c', state.community);
+    for (const [e, s] of Object.entries(state.sel)) p.set('sc:' + e, s);
+    const h = p.toString();
+    history.replaceState(null, '', h ? '#' + h : location.pathname + location.search);
+  }
 
   // ── formatting ─────────────────────────────────────────────
   function escapeHtml(s) {
@@ -271,6 +318,12 @@
     return (r < 0 ? '-$' : '$') + Math.abs(r).toLocaleString('en-US');
   }
   const fmtUnit = fmtMoney;
+  // Signed change: "+$1,234" / "-$1,234"; em-dash under a dollar.
+  function fmtDelta(n) {
+    if (n === null || n === undefined || isNaN(n) || Math.abs(n) < 0.5) return '—';
+    const r = Math.round(n);
+    return (r < 0 ? '-$' : '+$') + Math.abs(r).toLocaleString('en-US');
+  }
   function fmtPct(n) {
     if (n === null || n === undefined || n === 0 || isNaN(n)) return '—';
     return Math.round(n * 100) + '%';
@@ -293,7 +346,9 @@
 
   // ── data ───────────────────────────────────────────────────
   async function loadData(keepSelection) {
-    const res = await fetch('/api/unit-economics/data');
+    const picks = Object.keys(state.sel).length && state.community
+      ? '?sel=' + encodeURIComponent(JSON.stringify({[state.community]: state.sel})) : '';
+    const res = await fetch('/api/unit-economics/data' + picks);
     if (!res.ok) {
       $('ue-content').innerHTML =
         '<div class="ue-empty"><div class="ue-empty-title">Could not load data</div></div>';
@@ -305,7 +360,15 @@
       const withData = comms.find(c => (c.entities || []).length);
       state.community = (withData || comms[0] || {}).key || null;
     }
+    // Keep only picks the server honored (a real, non-default scenario).
+    const c = currentCommunity();
+    for (const [ent, sc] of Object.entries(state.sel)) {
+      const e = ((c && c.entities) || []).find(x => x.name === ent);
+      if (!e || e.scenario !== sc || e.is_default) delete state.sel[ent];
+    }
+    writeHash();
     renderCommunitySelect();
+    renderScenarioBar();
     renderItemSelect();
     render();
   }
@@ -322,6 +385,28 @@
       return `<option value="${escapeHtml(c.key)}"${c.key === state.community ? ' selected' : ''}>` +
              `${escapeHtml(c.label)}${suffix}</option>`;
     }).join('');
+  }
+
+  // One picker per entity that has more than one scenario. Picks affect only
+  // this viewer; the Δ column compares against each entity's default.
+  function renderScenarioBar() {
+    const bar = $('ue-scenario-bar');
+    const c = currentCommunity();
+    const ents = ((c && c.entities) || []).filter(e => (e.scenarios || []).length > 1);
+    if (!ents.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+    const pickers = ents.map(e =>
+      `<label class="ue-sb-item"><span>${escapeHtml(e.name)}</span>` +
+      `<select data-entity="${escapeHtml(e.name)}">` +
+      e.scenarios.map(s => `<option value="${escapeHtml(s.name)}"${s.name === e.scenario ? ' selected' : ''}>` +
+        `${escapeHtml(s.name)}${s.is_default ? ' (default)' : ''}</option>`).join('') +
+      `</select></label>`).join('');
+    const note = c.comparing
+      ? `<span class="ue-sb-note">Δ vs Default compares each entity's pick with its default scenario</span>` +
+        `<button class="ue-btn" id="ue-sb-reset">Reset to defaults</button>`
+      : `<span class="ue-sb-note">Viewing each entity's default scenario</span>`;
+    bar.innerHTML = `<span class="ue-sb-label">Scenario</span>${pickers}${note}`;
+    bar.classList.toggle('is-comparing', !!c.comparing);
+    bar.style.display = '';
   }
 
   function renderItemSelect() {
@@ -350,15 +435,22 @@
   }
 
   // ── view resolution ────────────────────────────────────────
+  // "Dennison · Church Site" when the entity has scenarios to choose from.
+  function scenarioTag(c, entityName) {
+    const e = (c.entities || []).find(x => x.name === entityName);
+    return e && (e.scenarios || []).length > 1 ? ` · ${e.scenario}` : '';
+  }
+
   function currentView() {
     const c = currentCommunity();
     if (!c || !(c.entities || []).length) return null;
+    const compare = !!c.comparing;
     if (state.level === 'entity') {
       const e = c.entities[state.item || 0];
       return e && {
-        name: e.name, tag: 'Entity', rows: e.rows, units: e.units,
+        name: e.name + scenarioTag(c, e.name), tag: 'Entity', rows: e.rows, units: e.units,
         meta: `Actuals through ${fmtDate(e.actuals_date)}`,
-        rail: railEntity(c, e),
+        rail: railEntity(c, e), compare, hasBase: e.has_base !== false,
       };
     }
     if (state.level === 'phase') {
@@ -367,14 +459,15 @@
         name: p.phase, tag: 'Phase', rows: p.rows, units: p.units,
         meta: `${p.sections.length} sections across ${new Set(p.sections.map(s => s.entity)).size} ` +
               `${new Set(p.sections.map(s => s.entity)).size === 1 ? 'entity' : 'entities'}`,
-        rail: railPhase(p),
+        rail: railPhase(p), compare, hasBase: p.has_base !== false,
       };
     }
     if (state.level === 'section') {
       const s = c.sections[state.item || 0];
       return s && {
-        name: `${s.entity} · ${s.key}`, tag: s.phase || 'Section', rows: s.rows, units: s.units,
-        meta: '', rail: railSection(s),
+        name: `${s.entity}${scenarioTag(c, s.entity)} · ${s.key}`, tag: s.phase || 'Section',
+        rows: s.rows, units: s.units,
+        meta: '', rail: railSection(s), compare, hasBase: s.has_base !== false,
       };
     }
     return {
@@ -382,7 +475,7 @@
       units: (c.community || {}).units || {},
       meta: `${c.entities.length} ${c.entities.length === 1 ? 'entity' : 'entities'} · ` +
             `${c.sections.length} sections · ${c.phases.length} phases`,
-      rail: railCommunity(c),
+      rail: railCommunity(c), compare, hasBase: true,
     };
   }
 
@@ -440,15 +533,37 @@
         `${escapeHtml(k)} ${fmtMoney(v)}`).join(' · ')]);
       html += factsCard('Actuals Feed', facts);
     }
+    html += railScenarios(e);
     if (IS_ADMIN) {
       html += `<div class="ue-card"><div class="ue-card-title">Admin</div>` +
-        `<button class="ue-btn" id="ue-delete-entity" data-entity="${escapeHtml(e.name)}">Remove this entity's data</button></div>`;
+        `<button class="ue-btn" id="ue-delete-entity" data-entity="${escapeHtml(e.name)}">` +
+        `Remove this entity (all scenarios)</button></div>`;
     }
     return html;
   }
+  function railScenarios(e) {
+    const list = e.scenarios || [];
+    if (!list.length) return '';
+    const items = list.map(s =>
+      `<div class="ue-fact"><span class="ue-fact-label">${escapeHtml(s.name)}` +
+      `${s.is_default ? '<span class="ue-badge">default</span>' : ''}` +
+      `${s.name === e.scenario && list.length > 1 ? '<span class="ue-badge is-viewing">viewing</span>' : ''}</span>` +
+      `<span class="ue-fact-value" title="${escapeHtml(s.source_filename)}">${fmtDate(s.uploaded_at)}</span></div>`).join('');
+    let actions = '';
+    if (IS_ADMIN) {
+      const q = escapeHtml(e.scenario);
+      const data = `data-entity="${escapeHtml(e.name)}" data-scenario="${q}"`;
+      if (!e.is_default) actions += `<button class="ue-btn ue-sc-btn" data-act="default" ${data}>Make “${q}” the default</button>`;
+      actions += `<button class="ue-btn ue-sc-btn" data-act="rename" ${data}>Rename “${q}”</button>`;
+      if (list.length > 1) actions += `<button class="ue-btn ue-sc-btn" data-act="remove" ${data}>Remove “${q}”</button>`;
+    }
+    return `<div class="ue-card"><div class="ue-card-title">Scenarios</div>${items}` +
+           (actions ? `<div class="ue-sc-actions">${actions}</div>` : '') + `</div>`;
+  }
   function railCommunity(c) {
     const chips = c.entities.map(e =>
-      `<span class="ue-chip">${escapeHtml(e.name)} <small>${e.section_count} sections</small></span>`).join('');
+      `<span class="ue-chip">${escapeHtml(e.name)} <small>${e.section_count} sections` +
+      `${(e.scenarios || []).length > 1 ? ' · ' + escapeHtml(e.scenario) : ''}</small></span>`).join('');
     return unitsCard((c.community || {}).units || {}) +
       `<div class="ue-card"><div class="ue-card-title">Entities</div><div class="ue-chips">${chips}</div></div>`;
   }
@@ -473,22 +588,40 @@
     const grossMargin = find('gross margin'), netCosts = find('net costs'), netMargin = find('net margin');
     const marginPct = (netMargin && revTotal && revTotal.total) ? netMargin.total / revTotal.total : null;
 
-    const kpi = (label, row, cls) => `
+    // Change vs the default scenario mix, when comparing. costLike flips the
+    // colour: more cost is bad, more revenue / margin is good.
+    const kpiDelta = (row, costLike) => {
+      if (!view.compare || !row) return '';
+      if (!view.hasBase || row.base_total == null) return `<div class="ue-kpi-delta">new vs default</div>`;
+      const d = (row.total || 0) - (row.base_total || 0);
+      if (Math.abs(d) < 0.5) return `<div class="ue-kpi-delta">no change vs default</div>`;
+      return `<div class="ue-kpi-delta ${(costLike ? d < 0 : d > 0) ? 'good' : 'bad'}">${fmtDelta(d)} vs default</div>`;
+    };
+    const kpi = (label, row, cls, costLike) => `
       <div class="ue-kpi"><div class="ue-kpi-label">${label}</div>
         <div class="ue-kpi-value${cls || ''}">${row ? fmtMoney(row.total) : '—'}</div>
         <div class="ue-kpi-sub">${row && row.per_ff != null ? fmtUnit(row.per_ff) + ' /FF' : ''}</div>
+        ${kpiDelta(row, costLike)}
       </div>`;
     const signCls = (row) => row && row.total != null ? (row.total < 0 ? ' bad' : ' good') : '';
+    let pctDelta = '';
+    if (view.compare && view.hasBase && netMargin && revTotal && netMargin.base_total != null && revTotal.base_total) {
+      const pts = (marginPct - netMargin.base_total / revTotal.base_total) * 100;
+      pctDelta = Math.abs(pts) < 0.005 ? `<div class="ue-kpi-delta">no change vs default</div>`
+        : `<div class="ue-kpi-delta ${pts > 0 ? 'good' : 'bad'}">${pts > 0 ? '+' : ''}` +
+          `${pts.toFixed(Math.abs(pts) < 1 ? 2 : 1)} pts vs default</div>`;
+    }
 
     const kpis = `
       <div class="ue-kpis">
         ${kpi('Total Revenue', revTotal)}
         ${kpi('Gross Margin', grossMargin, signCls(grossMargin))}
-        ${kpi('Net Costs', netCosts)}
+        ${kpi('Net Costs', netCosts, '', true)}
         ${kpi('Net Margin', netMargin, signCls(netMargin))}
         <div class="ue-kpi"><div class="ue-kpi-label">Net Margin %</div>
           <div class="ue-kpi-value${marginPct != null && marginPct < 0 ? ' bad' : ' good'}">${fmtPct(marginPct)}</div>
           <div class="ue-kpi-sub">of total revenue</div>
+          ${pctDelta}
         </div>
       </div>`;
 
@@ -501,26 +634,40 @@
                <span class="ue-stmt-tag">${escapeHtml(view.tag)}</span>
                <span class="ue-stmt-meta">${view.meta || ''}</span>
              </div>
-             ${renderTable(rows)}
+             ${renderTable(rows, view.compare, view.hasBase)}
            </div>
          </div>
          <div class="ue-rail">${view.rail || ''}</div>
        </div>` + footer(c);
     const del = $('ue-delete-entity');
     if (del) del.addEventListener('click', () => deleteEntity(del.dataset.entity));
+    document.querySelectorAll('.ue-sc-btn').forEach(b =>
+      b.addEventListener('click', () => scenarioAction(b.dataset.act, b.dataset.entity, b.dataset.scenario)));
   }
 
-  function renderTable(rows) {
+  const COST_SUMMARY = new Set(['gross costs', 'net costs', 'operations & overhead', 'financing']);
+  function deltaCell(r, hasBase) {
+    if (!hasBase || r.base_total == null) return r.total ? `<td class="pct">new</td>` : `<td class="pct">—</td>`;
+    const d = (r.total || 0) - (r.base_total || 0);
+    if (Math.abs(d) < 0.5) return `<td class="pct">—</td>`;
+    const costLike = r.group === 'cost' || COST_SUMMARY.has(r.label.trim().toLowerCase());
+    const good = costLike ? d < 0 : d > 0;
+    return `<td class="${good ? 'under' : 'over'}" title="Default: ${fmtMoney(r.base_total)}">${fmtDelta(d)}</td>`;
+  }
+
+  function renderTable(rows, compare, hasBase) {
+    const cols = compare ? 10 : 9;
     const head = `<thead><tr>
       <th class="left">Line Item</th><th>Actuals</th><th>Remaining</th><th>Total</th>
+      ${compare ? '<th title="Total minus the same line in the default scenario mix">Δ vs Default</th>' : ''}
       <th>$/FF</th><th>$/Lot</th><th>$/Acre</th><th>% of Costs</th><th>% of Rev</th>
     </tr></thead>`;
     let body = '', lastGroup = null;
     for (const r of rows) {
       if (r.group === 'revenue' && lastGroup !== 'revenue') {
-        body += `<tr class="band"><td class="left" colspan="9">Revenues</td></tr>`;
+        body += `<tr class="band"><td class="left" colspan="${cols}">Revenues</td></tr>`;
       } else if (r.group === 'cost' && lastGroup !== 'cost') {
-        body += `<tr class="band"><td class="left" colspan="9">Costs</td></tr>`;
+        body += `<tr class="band"><td class="left" colspan="${cols}">Costs</td></tr>`;
       }
       lastGroup = r.group;
       const isMargin = r.group === 'summary' && r.label.toLowerCase().includes('margin');
@@ -538,6 +685,7 @@
       body += `<tr class="${cls.join(' ')}">
         <td class="left">${escapeHtml(r.label)}</td>
         ${money(r.to_date)}${money(r.remaining)}${money(r.total)}
+        ${compare ? deltaCell(r, hasBase) : ''}
         ${money(r.per_ff)}${money(r.per_lot)}${money(r.per_acre)}
         <td class="pct">${fmtPct(r.pct_costs)}</td><td class="pct">${fmtPct(r.pct_rev)}</td>
       </tr>`;
@@ -548,16 +696,46 @@
   function footer(c) {
     if (!c || !(c.entities || []).length) return '';
     const parts = c.entities.map(e =>
-      `<span class="ddf-item"><span class="ddf-lbl">${escapeHtml(e.name)}</span>` +
+      `<span class="ddf-item"><span class="ddf-lbl">${escapeHtml(e.name + scenarioTag(c, e.name))}</span>` +
       `<span class="ddf-val">actuals ${fmtDate(e.actuals_date)} · uploaded ${fmtDate(e.uploaded_at)}</span></span>`);
     return `<div class="ue-data-dates">${parts.join('<span class="ddf-sep">|</span>')}</div>`;
   }
 
   // ── upload flow ────────────────────────────────────────────
-  async function doUpload(file, entityName) {
+  // "2026.08.13 Data Center Model - Church Site in Town Center Scenario.xlsx"
+  //   -> "Church Site in Town Center Scenario"
+  function suggestScenario(filename) {
+    let s = (filename || '').replace(/\.(xlsx|xlsm)$/i, '').replace(/^copy of\s+/i, '')
+      .replace(/^\s*\d{1,4}[.\-_/]\d{1,2}[.\-_/]\d{1,4}\s*-?\s*/, '');
+    const parts = s.split(/\s+-\s+/);
+    if (parts.length > 1) s = parts[parts.length - 1];
+    return s.trim().slice(0, 60);
+  }
+
+  // Step 1 after picking a file: which scenario it is for.
+  function openUploadPanel(file) {
+    state.pendingFile = file;
+    const c = currentCommunity();
+    const names = [];
+    for (const e of (c && c.entities) || [])       // defaults first, then the rest
+      for (const s of [...(e.scenarios || [])].sort((a, b) => b.is_default - a.is_default))
+        if (!names.includes(s.name)) names.push(s.name);
+    const sel = $('ue-up-existing');
+    sel.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    $('ue-up-existing-wrap').style.display = names.length ? '' : 'none';
+    $('ue-up-new').value = names.length ? suggestScenario(file.name) : 'Base';
+    document.querySelector(`input[name="ue-up-mode"][value="${names.length ? 'existing' : 'new'}"]`).checked = true;
+    $('ue-up-file').textContent = file.name;
+    $('ue-assign-panel').style.display = 'none';
+    $('ue-upload-panel').style.display = '';
+    setStatus('');
+  }
+
+  async function doUpload(file, entityName, scenario) {
     const fd = new FormData();
     fd.append('file', file);
     fd.append('community', state.community || '');
+    fd.append('scenario', scenario || 'Base');
     if (entityName) fd.append('entity', entityName);
     setStatus('Uploading & parsing ' + file.name + '…');
     let d;
@@ -571,6 +749,7 @@
     }
     if (d.needs_entity) {
       state.pendingFile = file;
+      state.pendingScenario = scenario;
       const sel = $('ue-assign-existing');
       if ((d.entities || []).length) {
         sel.style.display = '';
@@ -591,9 +770,45 @@
     }
     $('ue-assign-panel').style.display = 'none';
     state.pendingFile = null;
-    setStatus(`Saved ${d.entity} (${d.community}): ${d.sections} sections, ` +
-              `${(d.phases || []).length} phases` + (d.matched ? ' — matched to existing entity' : ''), 'ok');
+    state.pendingScenario = null;
+    // Show what was just uploaded: a non-default scenario opens compared
+    // against the default, a default one clears any pick for that entity.
+    if (d.is_default) delete state.sel[d.entity];
+    else state.sel[d.entity] = d.scenario;
+    setStatus(`Saved ${d.entity} · ${d.scenario}${d.new_scenario ? ' (new scenario)' : ''}: ` +
+              `${d.sections} sections, ${(d.phases || []).length} phases` +
+              (d.matched ? ' — matched to existing entity' : '') +
+              (d.is_default ? '' : '. Showing it against the default.'), 'ok');
     await loadData(true);
+  }
+
+  // Admin: make default / rename / remove the scenario being viewed.
+  async function scenarioAction(act, entity, scenario) {
+    const base = {community: state.community, entity, scenario};
+    try {
+      let res;
+      if (act === 'default') {
+        if (!confirm(`Make "${scenario}" the default ${entity} scenario for everyone?`)) return;
+        res = await fetch('/api/unit-economics/scenario', {method: 'PUT',
+          headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...base, make_default: true})});
+      } else if (act === 'rename') {
+        const name = (prompt(`Rename the ${entity} scenario "${scenario}" to:`, scenario) || '').trim();
+        if (!name || name === scenario) return;
+        res = await fetch('/api/unit-economics/scenario', {method: 'PUT',
+          headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...base, name})});
+        if (res.ok && state.sel[entity] === scenario) state.sel[entity] = name;
+      } else if (act === 'remove') {
+        if (!confirm(`Remove the ${entity} scenario "${scenario}"? This deletes its uploaded model.`)) return;
+        res = await fetch(`/api/unit-economics/entity?community=${encodeURIComponent(state.community)}` +
+          `&entity=${encodeURIComponent(entity)}&scenario=${encodeURIComponent(scenario)}`, {method: 'DELETE'});
+      }
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || 'Request failed');
+      if (act !== 'rename') delete state.sel[entity];
+      setStatus(act === 'default' ? `"${scenario}" is now the default for ${entity}.`
+              : act === 'rename' ? `Renamed to "${d.scenario}".` : `Removed "${scenario}".`, 'ok');
+      await loadData(true);
+    } catch (e) { setStatus(e.message, 'err'); }
   }
 
   async function deleteEntity(name) {
@@ -604,13 +819,34 @@
     if (!res.ok) { setStatus(d.error || 'Delete failed', 'err'); return; }
     setStatus(`Removed ${name}.`, 'ok');
     state.item = null;
+    delete state.sel[name];
     await loadData(true);
   }
 
   // ── wiring ─────────────────────────────────────────────────
   $('ue-community').addEventListener('change', (e) => {
-    state.community = e.target.value; state.item = null;
-    renderItemSelect(); render();
+    // Picks belong to one community; the others were built on defaults.
+    const hadPicks = Object.keys(state.sel).length > 0;
+    state.community = e.target.value; state.item = null; state.sel = {};
+    writeHash();
+    if (hadPicks) { loadData(true); return; }
+    renderScenarioBar(); renderItemSelect(); render();
+  });
+  $('ue-scenario-bar').addEventListener('change', (e) => {
+    const sel = e.target.closest('select[data-entity]');
+    if (!sel) return;
+    const c = currentCommunity();
+    const ent = (c.entities || []).find(x => x.name === sel.dataset.entity);
+    const dflt = ent && (ent.scenarios || []).find(s => s.is_default);
+    if (dflt && sel.value === dflt.name) delete state.sel[sel.dataset.entity];
+    else state.sel[sel.dataset.entity] = sel.value;
+    setStatus('Loading ' + sel.dataset.entity + ' · ' + sel.value + '…');
+    loadData(true).then(() => setStatus(''));
+  });
+  $('ue-scenario-bar').addEventListener('click', (e) => {
+    if (!e.target.closest('#ue-sb-reset')) return;
+    state.sel = {};
+    loadData(true);
   });
   $('ue-levelnav').addEventListener('click', (e) => {
     const btn = e.target.closest('.ue-level');
@@ -626,16 +862,36 @@
   $('ue-file').addEventListener('change', (e) => {
     const f = e.target.files[0];
     e.target.value = '';
-    if (f) doUpload(f, null);
+    if (f) openUploadPanel(f);
+  });
+  const upMode = () => (document.querySelector('input[name="ue-up-mode"]:checked') || {}).value;
+  $('ue-up-new').addEventListener('focus', () => {
+    document.querySelector('input[name="ue-up-mode"][value="new"]').checked = true;
+  });
+  $('ue-up-existing').addEventListener('focus', () => {
+    document.querySelector('input[name="ue-up-mode"][value="existing"]').checked = true;
+  });
+  $('ue-up-confirm').addEventListener('click', () => {
+    if (!state.pendingFile) return;
+    const scenario = upMode() === 'new' ? $('ue-up-new').value.trim() : $('ue-up-existing').value;
+    if (!scenario) { setStatus('Name the new scenario first.', 'err'); return; }
+    $('ue-upload-panel').style.display = 'none';
+    doUpload(state.pendingFile, null, scenario);
+  });
+  $('ue-up-cancel').addEventListener('click', () => {
+    state.pendingFile = null;
+    $('ue-upload-panel').style.display = 'none';
+    setStatus('Upload cancelled.');
   });
   $('ue-assign-confirm').addEventListener('click', () => {
     if (!state.pendingFile) return;
     const chosen = $('ue-assign-existing').value || $('ue-assign-name').value.trim();
     if (!chosen) { setStatus('Pick an existing entity or type a name.', 'err'); return; }
-    doUpload(state.pendingFile, chosen);
+    doUpload(state.pendingFile, chosen, state.pendingScenario);
   });
   $('ue-assign-cancel').addEventListener('click', () => {
     state.pendingFile = null;
+    state.pendingScenario = null;
     $('ue-assign-panel').style.display = 'none';
     setStatus('Upload cancelled.');
   });
@@ -703,7 +959,18 @@
     });
   }
 
-  loadData(false);
+  const fromHash = readHash();
+  state.community = fromHash.community;
+  state.sel = fromHash.sel;
+  loadData(!!fromHash.community);
+  // A shared link pasted into an open tab (writeHash's replaceState doesn't fire this).
+  window.addEventListener('hashchange', () => {
+    const h = readHash();
+    state.community = h.community || state.community;
+    state.sel = h.sel;
+    state.item = null;
+    loadData(true);
+  });
 })();
 </script>
 </body>

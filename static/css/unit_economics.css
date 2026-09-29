@@ -390,3 +390,76 @@
   font-variant-numeric: tabular-nums;
 }
 .ue-data-dates .ddf-sep { color: var(--eax-line-2); }
+
+/* ── Scenarios ─────────────────────────────────────────────── */
+.ue-scenario-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 12px 0 4px;
+}
+.ue-scenario-bar.is-comparing { border-color: var(--eax-accent); }
+.ue-sb-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--eax-subtle);
+}
+.ue-sb-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eax-muted);
+}
+.ue-sb-item select,
+.ue-panel select {
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 8px;
+  color: var(--eax-ink);
+  padding: 7px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.ue-sb-item select:focus,
+.ue-panel select:focus { border-color: var(--eax-accent); }
+.ue-sb-note { margin-left: auto; font-size: 12px; color: var(--eax-muted); }
+.ue-scenario-bar .ue-btn { padding: 7px 12px; font-size: 12px; }
+
+.ue-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--eax-accent-soft);
+  color: var(--eax-accent);
+  vertical-align: 1px;
+}
+.ue-badge.is-viewing {
+  background: transparent;
+  color: var(--eax-muted);
+  border: 1px solid var(--eax-line);
+}
+.ue-sc-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.ue-sc-actions .ue-btn { justify-content: center; padding: 7px 12px; font-size: 12px; }
+
+.ue-kpi-delta { font-size: 11px; font-weight: 600; margin-top: 3px; color: var(--eax-muted); }
+.ue-kpi-delta.good { color: var(--eax-good); }
+.ue-kpi-delta.bad  { color: var(--eax-bad); }
+
+.ue-up-opts { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.ue-radio { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.ue-radio > span { min-width: 110px; font-weight: 600; }

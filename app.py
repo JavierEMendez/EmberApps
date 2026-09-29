@@ -2,7 +2,7 @@
 Ember Tract Underwriting Web App
 Flask + PostgreSQL + Flask-Login — no Excel required
 """
-import os, re, html, json, datetime, io, base64, requests, threading, concurrent.futures
+import os, re, html, json, copy, datetime, io, base64, requests, threading, concurrent.futures
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -375,23 +375,33 @@ def init_db():
             ON invoice_periods (period_start DESC);
 
         -- ── Unit Economics ──────────────────────────────────────────
-        -- One row per (community, entity) holding the parsed "Unit
+        -- One row per (community, entity, scenario) holding the parsed "Unit
         -- Economics" tab of that entity's pro-forma model. A community
         -- (Grand Prairie / Dennison / Windrose) can span several entity
         -- models whose sections blend into shared phases, so re-uploads
-        -- replace only their own entity's row (UPSERT on the unique key).
+        -- replace only their own entity + scenario row (UPSERT on the
+        -- unique key). Each entity has exactly one default scenario — what
+        -- everyone sees until they pick another on the page.
         CREATE TABLE IF NOT EXISTS ue_models (
             id SERIAL PRIMARY KEY,
             community TEXT NOT NULL,
             entity_name TEXT NOT NULL,
+            scenario TEXT NOT NULL DEFAULT 'Base',
+            is_default BOOLEAN NOT NULL DEFAULT FALSE,
             data JSONB NOT NULL,
             source_filename TEXT,
             actuals_date TEXT,
             uploaded_by INTEGER REFERENCES users(id),
-            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            UNIQUE (community, entity_name)
+            uploaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         CREATE INDEX IF NOT EXISTS ue_models_community_idx ON ue_models(community);
+        -- Tables created before scenarios hold one model per entity under
+        -- UNIQUE (community, entity_name); those rows become scenario 'Base'.
+        ALTER TABLE ue_models ADD COLUMN IF NOT EXISTS scenario TEXT NOT NULL DEFAULT 'Base';
+        ALTER TABLE ue_models ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE ue_models DROP CONSTRAINT IF EXISTS ue_models_community_entity_name_key;
+        CREATE UNIQUE INDEX IF NOT EXISTS ue_models_scenario_key
+            ON ue_models (community, entity_name, scenario);
         -- Master-planned communities the Unit Economics models roll up to.
         -- Admin-managed (rename / add / delete-when-empty) — the entity ↔
         -- community structure changed once already (the original hardcoded
@@ -491,6 +501,16 @@ def init_db():
     cur.execute("INSERT INTO ue_communities (key, label) "
                 "SELECT DISTINCT community, community FROM ue_models "
                 "ON CONFLICT (key) DO NOTHING")
+    # Every Unit Economics entity keeps exactly one default scenario; models
+    # uploaded before scenarios existed (one per entity) become the default.
+    cur.execute("""
+        UPDATE ue_models m SET is_default = TRUE
+        WHERE m.id = (SELECT MIN(x.id) FROM ue_models x
+                      WHERE x.community = m.community AND x.entity_name = m.entity_name)
+          AND NOT EXISTS (SELECT 1 FROM ue_models d
+                          WHERE d.community = m.community AND d.entity_name = m.entity_name
+                            AND d.is_default)
+    """)
     # `unit_economics` gates the Unit Economics dashboard (pro-forma section
     # margins — money data). Same convention as `budget`: admins start
     # visible, everyone else starts hidden and is granted per user.
@@ -5296,9 +5316,59 @@ def _ue_phase_sort_key(phase: str):
 
 
 def _ue_load_community(cur, community: str) -> list:
-    cur.execute("SELECT entity_name, data, source_filename, actuals_date, uploaded_at "
-                "FROM ue_models WHERE community = %s ORDER BY entity_name", (community,))
+    """Every stored model of a community — all scenarios of every entity,
+    each entity's default first."""
+    cur.execute("SELECT entity_name, scenario, is_default, data, source_filename, "
+                "actuals_date, uploaded_at FROM ue_models WHERE community = %s "
+                "ORDER BY entity_name, is_default DESC, uploaded_at", (community,))
     return cur.fetchall()
+
+
+def _ue_pick_scenarios(rows: list, picks: dict) -> tuple:
+    """One model per entity for the viewer's scenario picks ({entity:
+    scenario}, unknown names fall back) and one per entity for the defaults,
+    plus each entity's scenario menu for the page."""
+    by_entity = {}
+    for r in rows:
+        by_entity.setdefault(r["entity_name"], []).append(r)
+    chosen, defaults, menus = [], [], {}
+    for entity, models in by_entity.items():
+        default = next((m for m in models if m["is_default"]), models[0])
+        want = (picks or {}).get(entity)
+        chosen.append(next((m for m in models if m["scenario"] == want), default))
+        defaults.append(default)
+        menus[entity] = [{
+            "name": m["scenario"],
+            "is_default": m is default,
+            "source_filename": m["source_filename"] or "",
+            "actuals_date": m["actuals_date"] or (m["data"] or {}).get("actuals_date") or "",
+            "uploaded_at": m["uploaded_at"].isoformat() if m["uploaded_at"] else "",
+        } for m in models]
+    return chosen, defaults, menus
+
+
+def _ue_stamp_baseline(block: dict, base: dict) -> None:
+    """Give every row of the viewer's scenario mix the default mix's Total
+    for the same line (base_total), so the page can show the change. Blocks
+    are matched by identity — section by entity + number, phase by name —
+    and a block the default mix doesn't have is flagged has_base False."""
+    def stamp(rows, base_rows):
+        idx = {(r["group"], line_key(r["label"])): r.get("total") for r in base_rows or []}
+        for r in rows:
+            r["base_total"] = idx.get((r["group"], line_key(r["label"])))
+
+    def pair(items, base_items, key):
+        lookup = {key(b): b["rows"] for b in base_items}
+        for it in items:
+            base_rows = lookup.get(key(it))
+            it["has_base"] = base_rows is not None
+            stamp(it["rows"], base_rows)
+
+    pair(block["sections"], base["sections"], lambda s: (s["entity"], s["key"]))
+    pair(block["phases"], base["phases"], lambda p: p["phase"])
+    pair(block["entities"], base["entities"], lambda e: e["name"])
+    if block.get("community") and base.get("community"):
+        stamp(block["community"]["rows"], base["community"]["rows"])
 
 
 # ── BVA actuals → Unit Economics ────────────────────────────────────────────
@@ -5636,7 +5706,8 @@ def _ue_build_community(rows: list) -> dict:
             # formulas, which differ between models and carry copy-paste
             # references to other sections — restate on the rollup basis.
             restate_units(s.get("rows") or [], sum_units([s.get("info") or {}]))
-            all_sections.append(dict(s, entity=row["entity_name"]))
+            all_sections.append(dict(s, entity=row["entity_name"],
+                                     scenario=row.get("scenario") or "Base"))
         units = d.get("entity_units") or sum_units([s.get("info") or {} for s in secs])
         # Entity level: the model's own rollup (it carries to-date history
         # from closed-out sections), per unit of the whole project; fall
@@ -5649,6 +5720,8 @@ def _ue_build_community(rows: list) -> dict:
             total_units[k] += units.get(k) or 0
         entities.append({
             "name": row["entity_name"],
+            "scenario": row.get("scenario") or "Base",
+            "is_default": bool(row.get("is_default", True)),
             "actuals_date": row["actuals_date"] or d.get("actuals_date") or "",
             "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else "",
             "source_filename": row["source_filename"] or "",
@@ -5674,7 +5747,7 @@ def _ue_build_community(rows: list) -> dict:
         "rows": blend_blocks([r for r, _u in entity_rollups], total_units) if entity_rollups else [],
     }
     sections_out = [{
-        "entity": s["entity"], "key": s["key"], "number": s.get("number"),
+        "entity": s["entity"], "scenario": s["scenario"], "key": s["key"], "number": s.get("number"),
         "phase": s.get("phase") or "", "info": s.get("info") or {},
         "units": {
             "front_feet": (s.get("info") or {}).get("total_front_feet") or 0,
@@ -5690,25 +5763,50 @@ def _ue_build_community(rows: list) -> dict:
 @app.route("/api/unit-economics/data", methods=["GET"])
 @login_required
 def api_ue_data():
-    """All communities with their four computed levels."""
+    """All communities with their four computed levels.
+
+    ?sel={"<community key>": {"<entity>": "<scenario>"}} picks a scenario per
+    entity for this viewer; entities not named use their default. When a
+    pick differs from the defaults, every row also carries base_total (the
+    default mix's Total for that line) and the community is flagged
+    comparing, so the page can show the change."""
     if not _ue_can_view():
         return jsonify({"error": "forbidden"}), 403
+    try:
+        sel = json.loads(request.args.get("sel") or "{}")
+        sel = sel if isinstance(sel, dict) else {}
+    except ValueError:
+        sel = {}
     conn = get_db(); cur = conn.cursor()
     try:
         out = []
         bva_blocks = None       # built once, only when some community has data
         for key, label in _ue_communities(cur):
             rows = _ue_load_community(cur, key)
-            if rows:
-                if bva_blocks is None:
-                    try:
-                        bva_blocks, _hg, _hc = _bva_build_blocks()
-                    except Exception:
-                        bva_blocks = []
-                _ue_attach_bva_actuals(rows, bva_blocks)
-            block = _ue_build_community(rows) if rows else {
+            picks = sel.get(key) if isinstance(sel.get(key), dict) else {}
+            chosen, defaults, menus = _ue_pick_scenarios(rows, picks)
+            comparing = any(c is not d for c, d in zip(chosen, defaults))
+            if rows and bva_blocks is None:
+                try:
+                    bva_blocks, _hg, _hc = _bva_build_blocks()
+                except Exception:
+                    bva_blocks = []
+            base = None
+            if comparing:
+                # The default mix is built from its own copies: attaching
+                # actuals and restating rewrite the model rows in place.
+                base_rows = [dict(r, data=copy.deepcopy(r["data"])) for r in defaults]
+                _ue_attach_bva_actuals(base_rows, bva_blocks)
+                base = _ue_build_community(base_rows)
+            if chosen:
+                _ue_attach_bva_actuals(chosen, bva_blocks)
+            block = _ue_build_community(chosen) if chosen else {
                 "entities": [], "sections": [], "phases": [], "community": None}
-            out.append(dict(block, key=key, label=label))
+            for e in block["entities"]:
+                e["scenarios"] = menus.get(e["name"], [])
+            if base:
+                _ue_stamp_baseline(block, base)
+            out.append(dict(block, key=key, label=label, comparing=comparing))
     finally:
         cur.close(); conn.close()
     return jsonify({"communities": out})
@@ -5719,10 +5817,13 @@ def api_ue_data():
 def api_ue_upload():
     """Ingest an entity model workbook (must contain a "Unit Economics" tab).
 
-    Form fields: community (GPD|Dennison|WRG), entity (optional name).
-    Without an entity name, the upload is matched to an existing entity of
-    that community by section-number overlap; when nothing matches, the
-    response asks the client to assign one (needs_entity) and stores nothing.
+    Form fields: community (GPD|Dennison|WRG), entity (optional name),
+    scenario (name; defaults to "Base"). Without an entity name, the upload
+    is matched to an existing entity of that community by section-number
+    overlap; when nothing matches, the response asks the client to assign
+    one (needs_entity) and stores nothing. An existing scenario name
+    replaces that scenario's model; a new name adds a scenario. An entity's
+    first model becomes its default scenario.
     """
     if not _ue_can_view():
         return jsonify({"error": "forbidden"}), 403
@@ -5732,6 +5833,7 @@ def api_ue_upload():
     if not (f.filename or "").lower().endswith((".xlsx", ".xlsm")):
         return jsonify({"error": "Expected an .xlsx/.xlsm workbook"}), 400
     community = (request.form.get("community") or "").strip()
+    scenario = re.sub(r"\s+", " ", request.form.get("scenario") or "").strip()[:60] or "Base"
     try:
         parsed = parse_unit_economics(f.read())
     except ValueError as e:
@@ -5765,27 +5867,34 @@ def api_ue_upload():
                 return jsonify({
                     "needs_entity": True,
                     "community": community,
-                    "entities": [r["entity_name"] for r in existing],
+                    "entities": sorted({r["entity_name"] for r in existing}),
                     "sections": len(parsed["sections"]),
                     "actuals_date": parsed["actuals_date"],
                 }), 200
         cur.execute("""
-            INSERT INTO ue_models (community, entity_name, data, source_filename,
-                                   actuals_date, uploaded_by, uploaded_at)
-            VALUES (%s, %s, %s, %s, %s, %s, NOW())
-            ON CONFLICT (community, entity_name) DO UPDATE
+            INSERT INTO ue_models (community, entity_name, scenario, is_default, data,
+                                   source_filename, actuals_date, uploaded_by, uploaded_at)
+            VALUES (%s, %s, %s,
+                    NOT EXISTS (SELECT 1 FROM ue_models
+                                WHERE community = %s AND entity_name = %s AND is_default),
+                    %s, %s, %s, %s, NOW())
+            ON CONFLICT (community, entity_name, scenario) DO UPDATE
               SET data = EXCLUDED.data,
                   source_filename = EXCLUDED.source_filename,
                   actuals_date = EXCLUDED.actuals_date,
                   uploaded_by = EXCLUDED.uploaded_by,
                   uploaded_at = NOW()
-        """, (community, entity, json.dumps(parsed), f.filename,
-              parsed["actuals_date"], session.get("user_id")))
+            RETURNING (xmax = 0) AS inserted, is_default
+        """, (community, entity, scenario, community, entity, json.dumps(parsed),
+              f.filename, parsed["actuals_date"], session.get("user_id")))
+        saved = cur.fetchone()
         conn.commit()
     finally:
         cur.close(); conn.close()
     return jsonify({
         "ok": True, "community": community, "entity": entity, "matched": matched,
+        "scenario": scenario, "new_scenario": bool(saved["inserted"]),
+        "is_default": bool(saved["is_default"]),
         "sections": len(parsed["sections"]),
         "phases": sorted({s["phase"] for s in parsed["sections"] if s.get("phase")},
                          key=_ue_phase_sort_key),
@@ -5797,20 +5906,75 @@ def api_ue_upload():
 @login_required
 @admin_required
 def api_ue_delete_entity():
-    """Remove one entity's model from a community (fixing a mis-assigned upload)."""
+    """Remove an entity's models from a community (fixing a mis-assigned
+    upload) — every scenario, or just ?scenario=. Removing the default
+    scenario promotes the entity's most recently uploaded remaining one."""
     community = (request.args.get("community") or "").strip()
     entity = (request.args.get("entity") or "").strip()
+    scenario = (request.args.get("scenario") or "").strip()
     if not community or not entity:
         return jsonify({"error": "community and entity are required"}), 400
     conn = get_db(); cur = conn.cursor()
     try:
-        cur.execute("DELETE FROM ue_models WHERE community = %s AND entity_name = %s",
-                    (community, entity))
+        if scenario:
+            cur.execute("DELETE FROM ue_models WHERE community = %s AND entity_name = %s "
+                        "AND scenario = %s", (community, entity, scenario))
+        else:
+            cur.execute("DELETE FROM ue_models WHERE community = %s AND entity_name = %s",
+                        (community, entity))
         deleted = cur.rowcount
+        cur.execute("""
+            UPDATE ue_models SET is_default = TRUE
+            WHERE id = (SELECT id FROM ue_models WHERE community = %s AND entity_name = %s
+                        ORDER BY uploaded_at DESC, id DESC LIMIT 1)
+              AND NOT EXISTS (SELECT 1 FROM ue_models WHERE community = %s
+                              AND entity_name = %s AND is_default)
+        """, (community, entity, community, entity))
         conn.commit()
     finally:
         cur.close(); conn.close()
     return jsonify({"ok": True, "deleted": deleted})
+
+
+@app.route("/api/unit-economics/scenario", methods=["PUT"])
+@login_required
+@admin_required
+def api_ue_scenario():
+    """Admin changes to one entity's scenario.
+
+    PUT {community, entity, scenario, make_default: true} — becomes the
+        default everyone sees (the entity's other scenarios stop being it)
+    PUT {community, entity, scenario, name: "<new name>"} — rename
+    """
+    body = request.get_json(silent=True) or {}
+    community = (body.get("community") or "").strip()
+    entity = (body.get("entity") or "").strip()
+    scenario = (body.get("scenario") or "").strip()
+    new_name = re.sub(r"\s+", " ", body.get("name") or "").strip()[:60]
+    if not (community and entity and scenario):
+        return jsonify({"error": "community, entity and scenario are required"}), 400
+    conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute("SELECT 1 FROM ue_models WHERE community = %s AND entity_name = %s "
+                    "AND scenario = %s", (community, entity, scenario))
+        if not cur.fetchone():
+            return jsonify({"error": "Unknown scenario %r for %s" % (scenario, entity)}), 404
+        if body.get("make_default"):
+            cur.execute("UPDATE ue_models SET is_default = (scenario = %s) "
+                        "WHERE community = %s AND entity_name = %s",
+                        (scenario, community, entity))
+        if new_name and new_name != scenario:
+            cur.execute("SELECT 1 FROM ue_models WHERE community = %s AND entity_name = %s "
+                        "AND scenario = %s", (community, entity, new_name))
+            if cur.fetchone():
+                return jsonify({"error": "%s already has a scenario named %r" % (entity, new_name)}), 400
+            cur.execute("UPDATE ue_models SET scenario = %s WHERE community = %s "
+                        "AND entity_name = %s AND scenario = %s",
+                        (new_name, community, entity, scenario))
+        conn.commit()
+    finally:
+        cur.close(); conn.close()
+    return jsonify({"ok": True, "scenario": new_name or scenario})
 
 
 @app.route("/api/unit-economics/community", methods=["POST", "PUT", "DELETE"])
