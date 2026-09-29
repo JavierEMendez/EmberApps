@@ -28,7 +28,7 @@ from hpermits_parser import parse_hpermits
 from uw_parser import parse_uw
 from ember_budget_parser import parse_ember_budget
 from unit_economics_parser import (parse_unit_economics, blend_blocks, sum_units,
-                                   line_key, restate_pcts)
+                                   line_key, restate_units)
 
 # Acquisitions GIS tab. acq_gis is the engine lifted from the standalone app
 # (live GIS layer queries, geometry, spatial enrichment); acq_parcels is the
@@ -5632,14 +5632,16 @@ def _ue_build_community(rows: list) -> dict:
         d = row["data"] or {}
         secs = d.get("sections") or []
         for s in secs:
-            # Parsed % columns follow each model's section-block formulas,
-            # which differ between models — restate on the rollup basis.
-            restate_pcts(s.get("rows") or [])
+            # Parsed $/unit and % columns follow each model's section-block
+            # formulas, which differ between models and carry copy-paste
+            # references to other sections — restate on the rollup basis.
+            restate_units(s.get("rows") or [], sum_units([s.get("info") or {}]))
             all_sections.append(dict(s, entity=row["entity_name"]))
         units = d.get("entity_units") or sum_units([s.get("info") or {} for s in secs])
         # Entity level: the model's own rollup (it carries to-date history
-        # from closed-out sections); fall back to a blend of its sections.
-        rollup = restate_pcts(d.get("entity_rollup") or []) or blend_blocks(
+        # from closed-out sections), per unit of the whole project; fall
+        # back to a blend of its sections.
+        rollup = restate_units(d.get("entity_rollup") or [], units) or blend_blocks(
             [s.get("rows") or [] for s in secs],
             sum_units([s.get("info") or {} for s in secs]))
         entity_rollups.append((rollup, units))

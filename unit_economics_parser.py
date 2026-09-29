@@ -11,6 +11,8 @@ Everything is located by label, never by fixed row/column: sections get added,
 removed, and re-phased between model versions. Only section-level data and the
 entity rollup are trusted from the workbook — phase and cross-entity rollups
 are recomputed by the app (verified to match the model's own rollups exactly).
+Of those blocks, only the dollar columns are trusted: $/unit and % columns are
+restated from each block's own Totals and units (see restate_units).
 
 Layout facts the parser relies on (stable across model versions):
   * Section title cell matches "Section N" and the row below it, same column,
@@ -451,6 +453,26 @@ def restate_pcts(rows: list[dict]) -> list[dict]:
     return rows
 
 
+def restate_units(rows: list[dict], units: dict) -> list[dict]:
+    """Recompute $/FF, $/Lot and $/Acre in place as each row's Total over
+    the block's own units — the Phase Rollup method — then both % columns.
+
+    The models' section blocks were built by copying the first section's
+    block, and absolute references came along: in GPD, Sections 2-33 divide
+    eleven sub-lines' $/Lot and $/Acre by Section 1's 15 lots and 5.74
+    acres; in Dennison, Sections 10-12 divide sixteen sub-lines by Section
+    9's units. A denominator the block doesn't carry leaves the parsed value
+    in place."""
+    for unit, field in (("front_feet", "per_ff"), ("lots", "per_lot"), ("acreage", "per_acre")):
+        denom = units.get(unit) or 0
+        for row in rows:
+            if denom:
+                row[field] = round((row.get("total") or 0) / denom, 2)
+            else:
+                row.setdefault(field, None)
+    return restate_pcts(rows)
+
+
 def blend_blocks(row_sets: list[list[dict]], units: dict) -> list[dict]:
     """Sum dollar columns across blocks and recompute per-unit and percentage
     columns against the blended denominators. Row identity is (group,
@@ -483,20 +505,13 @@ def blend_blocks(row_sets: list[list[dict]], units: dict) -> list[dict]:
                 if row[f] is not None:
                     tgt[f] = (tgt[f] or 0) + row[f]
 
-    ff = units.get("front_feet") or 0
-    lots = units.get("lots") or 0
-    acres = units.get("acreage") or 0
     out = []
     for key in order:
         row = merged[key]
         if len(labels[key]) > 1:
             row["label"] = _CANONICAL_LABELS.get(key[1], row["label"])
-        total = row["total"] or 0
-        row["per_ff"] = round(total / ff, 2) if ff else None
-        row["per_lot"] = round(total / lots, 2) if lots else None
-        row["per_acre"] = round(total / acres, 2) if acres else None
         out.append(row)
-    return restate_pcts(out)
+    return restate_units(out, units)
 
 
 def sum_units(infos: list[dict]) -> dict:
