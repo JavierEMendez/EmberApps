@@ -58,6 +58,32 @@ _INFO_KEYS = {
 }
 
 
+# The same line item is worded differently across entity models (the
+# Dennison model predates GPD's renames). Blends and actuals match rows on
+# line_key(); a blended row whose members disagree on wording shows the
+# canonical label — the names the TGP Phase 2+3 Unit Economics Summary
+# uses when it blends Dennison and GPD sections into one phase.
+_LINE_ALIASES = {
+    "commercial site revenues": "commercial pod sales revenues",
+    "residential pod revenues": "residential pod sales revenues",
+    "residential pods + dc sales revenues": "residential pod sales revenues",
+    "dry utilities, mailboxes": "dry utilities, mailboxes, site work",
+    "legal": "legal & mud advances",
+}
+_CANONICAL_LABELS = {
+    "commercial pod sales revenues": "Commercial Pod Sales Revenues",
+    "residential pod sales revenues": "Residential Pod Sales Revenues",
+    "dry utilities, mailboxes, site work": "Dry Utilities, Mailboxes, Site Work",
+    "legal & mud advances": "Legal & MUD Advances",
+}
+
+
+def line_key(label: str) -> str:
+    """Match key for a line item, stable across models' wording."""
+    low = re.sub(r"\s+", " ", (label or "").strip().lower())
+    return _LINE_ALIASES.get(low, low)
+
+
 def _num(val: Any) -> float | int | None:
     """Cell value → number, preserving None (blank) as None."""
     if val is None:
@@ -407,26 +433,51 @@ def parse_unit_economics(file_bytes: bytes) -> dict:
 # Aggregation — blends N section blocks (or N entity rollups) into one block
 # ---------------------------------------------------------------------------
 
+def restate_pcts(rows: list[dict]) -> list[dict]:
+    """Recompute both % columns in place on the rollup basis: % of Costs is
+    each row over Net Costs and % of Rev each row over Total revenue, for
+    revenue and cost rows alike. That is how the model's Phase Rollup and
+    Community Rollup blocks (and the Dennison model's section blocks)
+    compute them; GPD's section blocks divide cost lines by Gross Costs and
+    reuse the revenue share as % of Costs, so parsed section values are
+    restated to keep every level on one basis."""
+    rev_total = next((r["total"] for r in rows if r["group"] == "revenue_total"), None) or 0
+    net_costs = next((r["total"] for r in rows if r["group"] == "summary"
+                      and line_key(r["label"]) == "net costs"), None) or 0
+    for row in rows:
+        total = row.get("total") or 0
+        row["pct_costs"] = round(total / net_costs, 6) if net_costs else None
+        row["pct_rev"] = round(total / rev_total, 6) if rev_total else None
+    return rows
+
+
 def blend_blocks(row_sets: list[list[dict]], units: dict) -> list[dict]:
     """Sum dollar columns across blocks and recompute per-unit and percentage
-    columns against the blended denominators. Row identity is (group, label);
-    ordering follows the first block, with unseen rows appended in place.
+    columns against the blended denominators. Row identity is (group,
+    line_key); ordering follows the first block, and a row only a later
+    block carries (e.g. Dennison's Impact Fee) slots in after the row that
+    precedes it in its own block.
 
-    Verified against the model: its own phase rollups equal this blend of
-    their member sections to the dollar.
+    Verified against the model: its phase rollups equal this blend of their
+    member sections, and so does the TGP Phase 2 Unit Economics Summary,
+    which blends Dennison and GPD sections into one phase.
     """
     order: list[tuple] = []
     merged: dict[tuple, dict] = {}
+    labels: dict[tuple, set] = {}
     for rows in row_sets:
+        prev = None
         for row in rows:
-            key = (row["group"], row["label"].lower())
+            key = (row["group"], line_key(row["label"]))
             if key not in merged:
                 merged[key] = {
                     "label": row["label"], "group": row["group"],
                     "indent": row["indent"], "bold": row["bold"],
                     "to_date": None, "remaining": None, "total": None,
                 }
-                order.append(key)
+                order.insert(order.index(prev) + 1 if prev in merged else 0, key)
+            labels.setdefault(key, set()).add(row["label"].strip())
+            prev = key
             tgt = merged[key]
             for f in ("to_date", "remaining", "total"):
                 if row[f] is not None:
@@ -435,27 +486,17 @@ def blend_blocks(row_sets: list[list[dict]], units: dict) -> list[dict]:
     ff = units.get("front_feet") or 0
     lots = units.get("lots") or 0
     acres = units.get("acreage") or 0
-    out = [merged[k] for k in order]
-
-    rev_total = next((r["total"] for r in out if r["group"] == "revenue_total"), None) or 0
-    gross_costs = next((r["total"] for r in out
-                        if r["group"] == "summary" and r["label"].lower() == "gross costs"), None) or 0
-
-    for row in out:
+    out = []
+    for key in order:
+        row = merged[key]
+        if len(labels[key]) > 1:
+            row["label"] = _CANONICAL_LABELS.get(key[1], row["label"])
         total = row["total"] or 0
         row["per_ff"] = round(total / ff, 2) if ff else None
         row["per_lot"] = round(total / lots, 2) if lots else None
         row["per_acre"] = round(total / acres, 2) if acres else None
-        # Same convention as the model's section blocks: revenue rows are a
-        # share of total revenue in both % columns; cost/summary rows are a
-        # share of gross costs and of total revenue.
-        if row["group"] in ("revenue", "revenue_total"):
-            row["pct_costs"] = round(total / rev_total, 4) if rev_total else None
-            row["pct_rev"] = round(total / rev_total, 4) if rev_total else None
-        else:
-            row["pct_costs"] = round(total / gross_costs, 4) if gross_costs else None
-            row["pct_rev"] = round(total / rev_total, 4) if rev_total else None
-    return out
+        out.append(row)
+    return restate_pcts(out)
 
 
 def sum_units(infos: list[dict]) -> dict:

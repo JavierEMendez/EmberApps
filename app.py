@@ -27,7 +27,8 @@ from waller_parser import parse_waller_monthly
 from hpermits_parser import parse_hpermits
 from uw_parser import parse_uw
 from ember_budget_parser import parse_ember_budget
-from unit_economics_parser import parse_unit_economics, blend_blocks, sum_units
+from unit_economics_parser import (parse_unit_economics, blend_blocks, sum_units,
+                                   line_key, restate_pcts)
 
 # Acquisitions GIS tab. acq_gis is the engine lifted from the standalone app
 # (live GIS layer queries, geometry, spatial enrichment); acq_parcels is the
@@ -5452,7 +5453,7 @@ def _ue_write_actuals(rows: list, amounts: dict) -> None:
         is_parent = (not r.get("indent") and i + 1 < n
                      and rows[i + 1].get("group") == "cost" and rows[i + 1].get("indent"))
         if not is_parent:
-            label = (r.get("label") or "").strip().lower()
+            label = line_key(r.get("label"))
             r["to_date"] = round(amounts[label], 2) if label in amounts else None
             r["remaining"] = round((r.get("total") or 0) - (r["to_date"] or 0), 2)
     for i, r in enumerate(rows):
@@ -5536,7 +5537,7 @@ def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
         for s in secs:
             for r in s.get("rows") or []:
                 if r.get("group") in ("cost", "summary"):
-                    line_tot.setdefault((r.get("label") or "").strip().lower(), {})[s["number"]] = r.get("total") or 0
+                    line_tot.setdefault(line_key(r.get("label")), {})[s["number"]] = r.get("total") or 0
         lines = ent_line.setdefault(id(row), {})
         unmapped = {}
         routed = 0.0                     # went to a sibling model's section
@@ -5553,7 +5554,7 @@ def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
                 cat = rec.get("category") or "Other"
                 unmapped[cat] = unmapped.get(cat, 0) + act
                 continue
-            key = line.lower()
+            key = line_key(line)
             lines[key] = lines.get(key, 0) + act
             m = _UE_SEC_PROJECT_RE.match((rec.get("project") or "").strip())
             if m:
@@ -5631,11 +5632,14 @@ def _ue_build_community(rows: list) -> dict:
         d = row["data"] or {}
         secs = d.get("sections") or []
         for s in secs:
+            # Parsed % columns follow each model's section-block formulas,
+            # which differ between models — restate on the rollup basis.
+            restate_pcts(s.get("rows") or [])
             all_sections.append(dict(s, entity=row["entity_name"]))
         units = d.get("entity_units") or sum_units([s.get("info") or {} for s in secs])
         # Entity level: the model's own rollup (it carries to-date history
         # from closed-out sections); fall back to a blend of its sections.
-        rollup = d.get("entity_rollup") or blend_blocks(
+        rollup = restate_pcts(d.get("entity_rollup") or []) or blend_blocks(
             [s.get("rows") or [] for s in secs],
             sum_units([s.get("info") or {} for s in secs]))
         entity_rollups.append((rollup, units))
