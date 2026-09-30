@@ -228,7 +228,7 @@
         <div class="kpi accent">
           <div class="label">Total Equity Deployed</div>
           <div class="v num">{{ fmt_money(capital.kpis.total_equity) }}</div>
-          <div class="s">LP capital at work</div>
+          <div class="s">LP capital contributed to date</div>
         </div>
         <div class="kpi">
           <div class="label">Total Commitments</div>
@@ -328,7 +328,7 @@
         <header class="sec-head">
           <div class="eyebrow">{{ capital.kpis.active_count }} projects</div>
           <h2>Active Projects</h2>
-          <p>Equity, IRR, EM, distributions to date.</p>
+          <p>Equity contributed to date, IRR, EM, distributions to date.</p>
         </header>
 
         <div class="table-card">
@@ -345,7 +345,7 @@
           <div class="tr grid-active" data-project-id="{{ p.id }}">
             <div class="td name">{{ p.name }}</div>
             <div class="td">{{ class_chip(p.asset_class, capital.asset_classes) }}</div>
-            <div class="td right num">{{ fmt_money(p.equity) }}</div>
+            <div class="td right num">{{ fmt_money(p.equity) }}{% if p.equity_total and p.equity_total > p.equity %}<span class="td-sub" title="Lifetime LP equity, including future capital calls">of {{ fmt_money(p.equity_total) }}</span>{% endif %}</div>
             <div class="td right num">{{ fmt_pct(p.irr) }}</div>
             <div class="td right num">{{ fmt_em(p.em) }}</div>
             <div class="td right num muted">{{ fmt_money(p.to_date) }}</div>
