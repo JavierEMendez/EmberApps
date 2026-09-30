@@ -721,7 +721,7 @@
       <div class="kpi accent">
         <div class="l">Total Equity Invested</div>
         <div class="v">{{ fmt_money(capital.kpis.total_equity) }}</div>
-        <div class="s">LP</div>
+        <div class="s">LP · contributed to date</div>
       </div>
       <div class="kpi">
         <div class="l">Committed Equity</div>
@@ -753,7 +753,7 @@
         <div class="panel">
           <div class="panel-head">
             <div class="h">Active Projects</div>
-            <div class="s">{{ capital.kpis.active_count }} · $000s</div>
+            <div class="s">{{ capital.kpis.active_count }} · Equity to date · $000s</div>
           </div>
           {# Keep the table body ~420px tall regardless of project count: at
              <=9 projects this caps at the original 14px padding; each extra
@@ -780,7 +780,7 @@
               </tr>
             </thead>
             <tbody>
-              {% set _ag = namespace(eq=0, td=0, profit=0, irr_w=0, em_w=0) %}
+              {% set _ag = namespace(eq=0, w=0, td=0, profit=0, irr_w=0, em_w=0) %}
               {% for p in capital.active %}
                 {% set ac = (capital.asset_classes | selectattr('id','equalto',p.asset_class) | list | first) or capital.asset_classes[0] %}
                 <tr>
@@ -796,15 +796,18 @@
                 {% set _ag.eq      = _ag.eq + p.equity %}
                 {% set _ag.td      = _ag.td + p.to_date %}
                 {% set _ag.profit  = _ag.profit + p.profit %}
-                {% set _ag.irr_w   = _ag.irr_w + (p.irr * p.equity) %}
-                {% set _ag.em_w    = _ag.em_w  + (p.em  * p.equity) %}
+                {# IRR / EM are lifetime forecasts, so weight by lifetime
+                   equity (matches the Forecasted LP IRR KPI), not to-date. #}
+                {% set _ag.w       = _ag.w + p.equity_total %}
+                {% set _ag.irr_w   = _ag.irr_w + (p.irr * p.equity_total) %}
+                {% set _ag.em_w    = _ag.em_w  + (p.em  * p.equity_total) %}
               {% endfor %}
               {% if capital.active %}
               <tr class="total-row">
                 <td>Portfolio</td>
                 <td>{{ fmt_num(_ag.eq) }}</td>
-                <td>{{ fmt_pct(_ag.irr_w / _ag.eq if _ag.eq else 0) }}</td>
-                <td>{{ fmt_em(_ag.em_w / _ag.eq if _ag.eq else 0) }}</td>
+                <td>{{ fmt_pct(_ag.irr_w / _ag.w if _ag.w else 0) }}</td>
+                <td>{{ fmt_em(_ag.em_w / _ag.w if _ag.w else 0) }}</td>
                 <td>{{ fmt_num(_ag.td) }}</td>
                 <td class="accent">{{ fmt_num(_ag.profit) }}</td>
               </tr>

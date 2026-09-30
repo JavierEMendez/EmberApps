@@ -261,6 +261,8 @@
 .td.accent { color: var(--cap-accent); font-weight: 600; }
 .td.muted  { color: var(--cap-muted); }
 .td.subtle { color: var(--cap-subtle); font-size: 11px; }
+/* Secondary line under a value, e.g. an Equity cell's lifetime total */
+.td-sub { display: block; margin-top: 2px; color: var(--cap-subtle); font-size: 11px; font-weight: 400; }
 
 .grid-active   { grid-template-columns: 1.7fr 1fr 90px 70px 90px 90px 90px; }
 /* Pipeline grid: 9th column holds the "Show in report" toggle (all

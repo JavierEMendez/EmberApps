@@ -774,9 +774,10 @@ def _fmt_data_date(val) -> str | None:
 def _home_portfolio_summary():
     """Compute the at-a-glance portfolio numbers shown on the home hero.
 
-    The total equity figure mirrors the Ember Capital page's "Totals" row
-    so the home and Ember Capital pages always agree:
-        total LP equity = sum across projects of |Total LP Contributions|
+    The total equity figure mirrors the Ember Capital page's "Total Equity
+    Deployed" KPI so the home and Ember Capital pages always agree:
+        total LP equity = sum across projects of LP contributions through
+        today (_lp_contributed_to_date), not the lifetime forecast total
     Values in the returns report are stored in $K (thousands of dollars,
     matching the Excel pro-forma convention), so we multiply by 1000 to
     get raw dollars before formatting.
@@ -875,6 +876,9 @@ def _home_portfolio_summary():
         if row and row["data"]:
             data = row["data"]
             projects = data.get("projects") or []
+            src_months = list(data.get("months") or [])
+            years_int = list(data.get("years") or [])
+            today_d = datetime.date.today()
             total_equity_k = 0.0      # in $K, matches Ember Capital totals row
             active = 0
             irr_weighted = 0.0
@@ -890,7 +894,8 @@ def _home_portfolio_summary():
                 irr         = _f("LP IRR")
                 if contrib_abs > 0 or distrib > 0:
                     active += 1
-                total_equity_k += contrib_abs
+                total_equity_k += _lp_contributed_to_date(
+                    by_label, src_months, years_int, today_d)
                 # LP-contribution-weighted IRR — bigger checks weigh more.
                 if irr and contrib_abs > 0:
                     irr_weighted += irr * contrib_abs
@@ -8554,6 +8559,58 @@ def _build_investor_view(raw_projects: list, years_str: list, years_int: list,
     }
 
 
+def _returns_monthly_ties(metric: dict, src_months: list) -> bool:
+    """True when a returns metric's monthly row sums to its total column.
+
+    Some workbook uploads have buggy monthly cells (rows shifted, spurious
+    or missing values — e.g. a project's contributions booked only in the
+    yearly grid). Callers that want month precision fall back to the yearly
+    row when this is False.
+    """
+    mlist = (metric or {}).get("monthly") or []
+    if not mlist or not src_months:
+        return False
+    try: total = float(metric.get("total") or 0)
+    except (TypeError, ValueError): return False
+    try: sm = sum(float(v or 0) for v in mlist)
+    except (TypeError, ValueError): return False
+    tol = max(0.5, abs(total) * 0.001)  # $0.5K or 0.1% of total
+    return abs(sm - total) <= tol
+
+
+def _lp_contributed_to_date(by_label: dict, src_months: list, years_int: list,
+                            today: datetime.date) -> float:
+    """LP equity actually contributed through today, in $K (positive).
+
+    The Total LP Contributions total column is the lifetime forecast, so a
+    project still calling capital (e.g. LightHaven Preferred) would overstate
+    deployed equity. Sums the monthly row through today — same cutoff as the
+    To Date distributions column. When the monthly row doesn't tie to the
+    total, falls back to whole prior years (the current year counts as not
+    yet contributed, matching the To Date distributions fallback). Snaps to
+    the total when fully contributed so cell rounding doesn't show as a gap.
+    """
+    metric = by_label.get("Total LP Contributions") or {}
+    try: total = abs(float(metric.get("total") or 0))
+    except (TypeError, ValueError): total = 0.0
+    if _returns_monthly_ties(metric, src_months):
+        today_iso = today.isoformat()
+        cutoff = sum(1 for d in src_months if str(d) <= today_iso)
+        to_date = abs(sum(float(v or 0) for v in (metric.get("monthly") or [])[:cutoff]))
+    else:
+        to_date = 0.0
+        for yr, v in zip(years_int, metric.get("yearly") or []):
+            try:
+                if int(yr) < today.year:
+                    to_date += float(v or 0)
+            except (TypeError, ValueError):
+                pass
+        to_date = abs(to_date)
+    if abs(total - to_date) <= max(0.5, total * 0.001):
+        return total
+    return to_date
+
+
 def _build_capital_view_context() -> dict:
     """Assemble the dict the redesigned /capital template consumes.
 
@@ -8649,7 +8706,11 @@ def _build_capital_view_context() -> dict:
         em_val   = _t("LP Equity Multiple", 0.0)
         profit   = _t("Total LP Profit", 0.0)
         promote  = _t("Promote", 0.0)
-        contrib  = abs(_t("Total LP Contributions", 0.0))   # stored negative; equity is positive
+        # Lifetime LP equity (forecast) weights the forecast IRR; the
+        # Equity column and Total Equity Deployed show only what's been
+        # contributed through today.
+        contrib  = abs(_t("Total LP Contributions", 0.0))
+        contrib_td = _lp_contributed_to_date(by_label, src_months, years_int, today.date())
         dist_y   = _y("Total LP Distributions")
         dist_m   = _m("Total LP Distributions")
         prom_y   = _y("Promote")
@@ -8666,21 +8727,10 @@ def _build_capital_view_context() -> dict:
         # check per-metric per-project so e.g. Mid Main's broken Promote
         # row falls back while Hawthorne's clean rows keep using
         # exact monthly precision.
-        def _monthly_reliable(metric):
-            mlist = (metric or {}).get("monthly") or []
-            if not mlist or not src_months:
-                return False
-            try: total = float(metric.get("total") or 0)
-            except (TypeError, ValueError): return False
-            try: sm = sum(float(v or 0) for v in mlist)
-            except (TypeError, ValueError): return False
-            tol = max(0.5, abs(total) * 0.001)  # $0.5K or 0.1% of total
-            return abs(sm - total) <= tol
-
         dist_metric = by_label.get("Total LP Distributions") or {}
         prom_metric = by_label.get("Promote") or {}
-        dist_reliable = _monthly_reliable(dist_metric)
-        prom_reliable = _monthly_reliable(prom_metric)
+        dist_reliable = _returns_monthly_ties(dist_metric, src_months)
+        prom_reliable = _returns_monthly_ties(prom_metric, src_months)
         idx_cur = years_int.index(current_year) if current_year in years_int else -1
 
         # ── To Date (life-to-date through today) ─────────────────────
@@ -8757,7 +8807,8 @@ def _build_capital_view_context() -> dict:
             "id":          slug,
             "name":        name,
             "asset_class": _class_for(name),
-            "equity":      int(round(contrib)),
+            "equity":      int(round(contrib_td)),   # contributed through today
+            "equity_total": int(round(contrib)),     # lifetime, incl. future calls
             "irr":         round(irr_pct, 1),
             "em":          round(em_val, 2),
             "to_date":     int(round(to_date)),
@@ -8785,7 +8836,7 @@ def _build_capital_view_context() -> dict:
             eq_weighted_irr_den += contrib
         total_lp_profit += profit
         total_promote   += promote
-        total_equity    += contrib
+        total_equity    += contrib_td
 
     forecasted_lp_irr = round(eq_weighted_irr_num / eq_weighted_irr_den, 1) if eq_weighted_irr_den else 0.0
 
@@ -13687,6 +13738,8 @@ def _build_ember_capital_payload():
     returns_row = cur.fetchone()
     src = (returns_row["data"] if returns_row else {}) or {}
     years = src.get("years", []) or []
+    src_months = list(src.get("months") or [])
+    today_d = datetime.date.today()
 
     projects = []
     for p in src.get("projects", []) or []:
@@ -13711,6 +13764,9 @@ def _build_ember_capital_payload():
             "lp_em":                   _total("LP Equity Multiple"),
             "lp_profit":               _total("Total LP Profit"),
             "lp_contributions_total":  _total("Total LP Contributions"),
+            # Positive $K through today; the LP Equity column shows this
+            # while IRR weighting keeps the lifetime total above.
+            "lp_contributed_to_date":  _lp_contributed_to_date(by_label, src_months, years, today_d),
             "lp_distributions_total":  _total("Total LP Distributions"),
             "promote_total":           _total("Promote"),
             "lp_distributions_yearly": _yearly("Total LP Distributions"),
@@ -13829,7 +13885,7 @@ def _gen_excel_ember_capital(data):
 
     # --- Projects table ---------------------------------------------------
     ws.cell(row=r, column=1, value="Projects").font = _f(bold=True, color=GOLD, size=12); r += 1
-    hdrs = ["Project", "LP IRR", "LP EM", "LP Equity", "Distributions", "LP Recycle %",
+    hdrs = ["Project", "LP IRR", "LP EM", "LP Equity (to date)", "Distributions", "LP Recycle %",
             "Promote", "Promote Recycle %", "LP Recycled", "Promote Recycled",
             "LP Leaving", "Promote Leaving"]
     for ci, h in enumerate(hdrs, 1):
@@ -13842,7 +13898,7 @@ def _gen_excel_ember_capital(data):
     for p in projects:
         rec = recycle.get(p["name"], {"lp": 0, "prom": 0})
         rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
-        eq   = abs(p.get("lp_contributions_total") or 0)
+        eq   = p.get("lp_contributed_to_date") or 0   # through today, not lifetime
         dist = p.get("lp_distributions_total") or 0
         prom = p.get("promote_total") or 0
         lpR, lpL  = dist * rLp, dist * (1 - rLp)
@@ -14470,7 +14526,7 @@ def _gen_pdf_ember_capital(data):
     for i, p in enumerate(shown_projects):
         rec = recycle.get(p.get("name",""), {"lp": 0, "prom": 0})
         rLp, rPr = (rec.get("lp") or 0)/100.0, (rec.get("prom") or 0)/100.0
-        eq   = abs(p.get("lp_contributions_total") or 0)
+        eq   = p.get("lp_contributed_to_date") or 0   # through today, not lifetime
         dist = p.get("lp_distributions_total") or 0
         prom = p.get("promote_total") or 0
         lpR  = dist * rLp
