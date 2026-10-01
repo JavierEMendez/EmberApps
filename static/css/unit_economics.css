@@ -463,3 +463,86 @@
 .ue-up-opts { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
 .ue-radio { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 .ue-radio > span { min-width: 110px; font-weight: 600; }
+
+/* ── Scenario comparison ───────────────────────────────────── */
+.ue-sb-rows { display: flex; flex-direction: column; gap: 8px; }
+.ue-sb-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.ue-sb-ent { min-width: 170px; font-size: 13px; font-weight: 700; color: var(--eax-ink); }
+
+.ue-notes {
+  background: var(--eax-accent-soft);
+  border: 1px solid var(--eax-line);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--eax-muted);
+  line-height: 1.6;
+}
+
+.ue-basis {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--eax-bg-2);
+  border: 1px solid var(--eax-line);
+  border-radius: 999px;
+  padding: 3px;
+  margin-left: 12px;
+}
+.ue-basis-btn {
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eax-muted);
+  cursor: pointer;
+}
+.ue-basis-btn.is-active { background: var(--eax-accent); color: var(--eax-accent-fg); }
+
+.ue-cmp-units {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 0 0 10px;
+  font-size: 12px;
+  color: var(--eax-muted);
+}
+.ue-cmp-units b { color: var(--eax-ink); margin-right: 6px; }
+.ue-table.ue-cmp tr.grp th {
+  text-align: center;
+  border-bottom: 1px solid var(--eax-line);
+  color: var(--eax-subtle);
+}
+
+.ue-returns {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  flex-wrap: wrap;
+  background: var(--eax-surface);
+  border: 1px solid var(--eax-line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: -6px 0 18px;
+}
+.ue-ret { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.ue-ret-label { font-size: 11px; color: var(--eax-muted); font-weight: 600; }
+.ue-ret b { font-variant-numeric: tabular-nums; }
+.ue-ret small { color: var(--eax-muted); font-size: 11px; }
+.ue-ret .good { color: var(--eax-good); font-weight: 600; }
+.ue-ret .bad  { color: var(--eax-bad); font-weight: 600; }
+
+.ue-im-meta { color: var(--eax-muted); font-size: 11px; }
+/* Comparing: the side-by-side table takes the full width, cards go below. */
+.ue-body.is-compare { flex-direction: column; align-items: stretch; }
+.ue-body.is-compare .ue-rail {
+  width: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.ue-body.is-compare .ue-rail .ue-card { margin-bottom: 0; }

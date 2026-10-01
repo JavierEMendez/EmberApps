@@ -71,6 +71,7 @@ _LINE_ALIASES = {
     "residential pods + dc sales revenues": "residential pod sales revenues",
     "dry utilities, mailboxes": "dry utilities, mailboxes, site work",
     "legal": "legal & mud advances",
+    "legal & mud/hoa deficit": "legal & mud advances",      # Windrose model
 }
 _CANONICAL_LABELS = {
     "commercial pod sales revenues": "Commercial Pod Sales Revenues",
@@ -83,6 +84,7 @@ _CANONICAL_LABELS = {
 def line_key(label: str) -> str:
     """Match key for a line item, stable across models' wording."""
     low = re.sub(r"\s+", " ", (label or "").strip().lower())
+    low = re.sub(r"\s*,\s*", ", ", low)        # "Mailboxes,Site Work"
     return _LINE_ALIASES.get(low, low)
 
 
@@ -134,14 +136,23 @@ def _find_sheet(wb, needle: str = "unit economics"):
 # Block reader
 # ---------------------------------------------------------------------------
 
-def _read_block_rows(ws, header_row: int, label_col: int, max_row: int) -> list[dict]:
+# Value columns of a Unit Economics block, as offsets right of the label.
+_UE_COLS = {"to_date": 1, "remaining": 2, "total": 3, "per_ff": 4, "per_lot": 5,
+            "per_acre": 6, "pct_costs": 7, "pct_rev": 8}
+
+
+def _read_block_rows(ws, header_row: int, label_col: int, max_row: int,
+                     cols: dict | None = None) -> list[dict]:
     """Read a unit-economics block starting at its "Revenues" header row.
 
     Returns the rows in sheet order. Each row carries a `group`:
       revenue / revenue_total / cost / summary
     plus indent + bold flags so the UI can mirror the Excel presentation.
     Stops at "Net Margin" (inclusive) or the first gap after the block.
+    `cols` maps value fields to offsets right of the label column (default:
+    the Unit Economics tab's layout); fields it leaves out read as blank.
     """
+    cols = cols or _UE_COLS
     rows: list[dict] = []
     group = "revenue"
     r = header_row + 1
@@ -161,21 +172,15 @@ def _read_block_rows(ws, header_row: int, label_col: int, max_row: int) -> list[
             group = "cost"
             r += 1
             continue
-        vals = [ws.cell(row=r, column=label_col + i).value for i in range(1, 9)]
         row = {
             "label": label,
             "group": group,
             "indent": 1 if (cell.alignment.indent or 0) >= 1 else 0,
             "bold": bool(cell.font.bold),
-            "to_date": _num(vals[0]),
-            "remaining": _num(vals[1]),
-            "total": _num(vals[2]),
-            "per_ff": _num(vals[3]),
-            "per_lot": _num(vals[4]),
-            "per_acre": _num(vals[5]),
-            "pct_costs": _num(vals[6]),
-            "pct_rev": _num(vals[7]),
         }
+        for field in _UE_COLS:
+            off = cols.get(field)
+            row[field] = _num(ws.cell(row=r, column=label_col + off).value) if off else None
         if group == "revenue" and low == "total":
             row["group"] = "revenue_total"
             group = "cost"          # "Costs" header follows; skip handled above
@@ -308,6 +313,128 @@ def _parse_allocation_projects(wb) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Returns tab — LP IRR / equity multiple / promote
+# ---------------------------------------------------------------------------
+
+_RETURN_LABELS = {"lp irr": "irr", "irr": "irr", "lp equity multiple": "multiple",
+                  "multiple": "multiple", "promote": "promote"}
+
+
+def _parse_returns(wb) -> dict:
+    """LP IRR, LP equity multiple and promote from the model's "Returns"
+    tab (labels in one column, the value two columns right). {} when the
+    tab or the labels are missing."""
+    ws = next((wb[n] for n in wb.sheetnames if n.strip().lower() == "returns"), None)
+    if ws is None:
+        return {}
+    out = {}
+    for r in range(1, min(ws.max_row, 80) + 1):
+        for c in range(1, 6):
+            key = _RETURN_LABELS.get(_str(ws.cell(row=r, column=c).value).lower())
+            if key and key not in out:
+                val = _num(ws.cell(row=r, column=c + 2).value)
+                if val is not None:
+                    out[key] = val
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Pro-forma comparison tables — entity-level statements without sections
+# ---------------------------------------------------------------------------
+
+_DATE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
+_EXTRA_LABELS = {"total front feet": "front_feet", "total acreage": "acreage",
+                 "total lots": "lots", "total projected av": "projected_av",
+                 "irr": "irr", "multiple": "multiple", "promote": "promote"}
+
+
+def _header_field(text: str) -> str | None:
+    """Comparison-table column header -> statement field."""
+    t = text.strip().lower()
+    if t in ("total", "actual + forecast", "actuals + forecast"):
+        return "total"
+    if t.startswith("to date") or t.startswith("actuals"):
+        return "to_date"
+    if t in ("remaining", "forecast"):
+        return "remaining"
+    return None
+
+
+def parse_comparison_table(file_bytes: bytes) -> dict:
+    """Parse a "Pro-Forma Comparison Table" workbook: side-by-side statement
+    columns (e.g. "Original Pro Forma - Jordan", "Current Pro-Forma") in the
+    Unit Economics line-item format, each with To Date / Remaining / Total,
+    $/FF... and an "Acreage & Yield Assumptions" + "Returns" footer.
+
+    A statement column is a "Base Lot Revenue" label whose header row has a
+    "$/FF" column; the side comparison blocks (Total / % of Rev / Delta)
+    have none and are skipped. Returns {"blocks": [{title, as_of, rows,
+    units, returns, projected_av}]}. Raises ValueError when none is found.
+    """
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+    blocks = []
+    for ws in wb.worksheets:
+        max_row, max_col = ws.max_row, min(ws.max_column, 120)
+        for r in range(1, max_row + 1):
+            for c in range(1, max_col + 1):
+                if _str(ws.cell(row=r, column=c).value).lower() != "base lot revenue":
+                    continue
+                # Header row: the nearest row above with "$/FF" to the right.
+                header = None
+                for h in range(r - 1, max(0, r - 4), -1):
+                    if any(_str(ws.cell(row=h, column=cc).value).lower() == "$/ff"
+                           for cc in range(c + 1, c + 12)):
+                        header = h
+                        break
+                if header is None:
+                    continue
+                cols, as_of = {}, ""
+                for cc in range(c + 1, c + 12):
+                    text = _str(ws.cell(row=header, column=cc).value)
+                    if text.lower() == "$/ff":
+                        break
+                    field = _header_field(text)
+                    if field and field not in cols:
+                        cols[field] = cc - c
+                        m = _DATE_RE.search(text)
+                        if field == "to_date" and m:
+                            as_of = "%s-%02d-%02d" % (m.group(3), int(m.group(1)), int(m.group(2)))
+                if "total" not in cols:
+                    continue
+                title = ""
+                for h in range(header, max(0, header - 3), -1):
+                    t = _str(ws.cell(row=h, column=c).value)
+                    if t and t.lower() != "revenues":
+                        title = t
+                        break
+                rows = _read_block_rows(ws, header, c, max_row, cols)
+                for row in rows:
+                    if row["remaining"] is None and row["total"] is not None and row["to_date"] is not None:
+                        row["remaining"] = round(row["total"] - row["to_date"], 6)
+                # Footer: units and returns, labels in the same column.
+                end = r + len(rows) + 4
+                extras = {}
+                for rr in range(r, min(max_row, end + 20) + 1):
+                    key = _EXTRA_LABELS.get(_str(ws.cell(row=rr, column=c).value).lower())
+                    if key and key not in extras:
+                        for cc in range(c + 1, c + 4):
+                            val = _num(ws.cell(row=rr, column=cc).value)
+                            if val is not None:
+                                extras[key] = val
+                                break
+                blocks.append({
+                    "sheet": ws.title, "title": title, "as_of": as_of, "rows": rows,
+                    "units": {k: extras.get(k) or 0 for k in ("front_feet", "acreage", "lots")},
+                    "returns": {k: extras[k] for k in ("irr", "multiple", "promote") if k in extras},
+                    "projected_av": extras.get("projected_av"),
+                })
+    if not blocks:
+        raise ValueError("No pro-forma statement columns found (expected a "
+                         "\"Base Lot Revenue\" column with a $/FF header)")
+    return {"blocks": blocks}
+
+
+# ---------------------------------------------------------------------------
 # Main entry
 # ---------------------------------------------------------------------------
 
@@ -428,6 +555,7 @@ def parse_unit_economics(file_bytes: bytes) -> dict:
         "entity_units": entity_units,
         "phase_stats": phase_stats,
         "alloc_projects": _parse_allocation_projects(wb),
+        "returns": _parse_returns(wb),
     }
 
 

@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=5"/>
-<link rel="stylesheet" href="/static/css/unit_economics.css?v=3"/>
+<link rel="stylesheet" href="/static/css/unit_economics.css?v=4"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — canonical sidebar chrome (same as /financials). */
@@ -185,8 +185,14 @@
           <label for="ue-item" id="ue-item-label">Entity</label>
           <select id="ue-item"></select>
         </div>
-        <div class="ue-control ue-control-actions" style="margin-left:auto;">
-          <label>&nbsp;</label>
+        <div class="ue-control ue-control-actions" style="margin-left:auto; flex-direction:row; align-items:flex-end; gap:10px;">
+          {% if is_admin %}
+          <button id="ue-import-btn" class="ue-btn" title="Import an entity-level pro forma (e.g. the original underwriting) from a Pro-Forma Comparison Table">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 17V7m0 10l-3-3m3 3l3-3M15 7v10m0-10l-3 3m3-3l3 3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Import Original UW
+          </button>
+          <input type="file" id="ue-import-file" accept=".xlsx,.xlsm" style="display:none;">
+          {% endif %}
           <button id="ue-upload-btn" class="ue-btn primary">
             <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3M12 4v12m0-12l-4 4m4-4l4 4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Upload Model
@@ -222,6 +228,31 @@
           <button class="ue-btn" id="ue-up-cancel">Cancel</button>
         </div>
       </div>
+
+      {% if is_admin %}
+      {# ── Import panel: one statement column of a comparison table ── #}
+      <div class="ue-panel" id="ue-import-panel" style="display:none;">
+        <div class="ue-panel-title">Import an entity-level pro forma · <span id="ue-im-file"></span></div>
+        <div class="ue-panel-body">
+          Saves one column of the comparison table as a scenario with entity totals only
+          (no sections), so it can be compared at the Entity and Community levels.
+        </div>
+        <div class="ue-up-opts" id="ue-im-blocks"></div>
+        <div class="ue-up-opts">
+          <label class="ue-radio"><span>Entity</span>
+            <select id="ue-im-entity"></select>
+            <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ue-im-entity-new" maxlength="80" placeholder="New entity name" style="display:none;">
+          </label>
+          <label class="ue-radio"><span>Scenario name</span>
+            <input autocomplete="off" data-lpignore="true" data-1p-ignore type="text" id="ue-im-scenario" maxlength="60" value="Original UW">
+          </label>
+        </div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+          <button class="ue-btn primary" id="ue-im-confirm">Import</button>
+          <button class="ue-btn" id="ue-im-cancel">Cancel</button>
+        </div>
+      </div>
+      {% endif %}
 
       {# ── Assign-entity panel (shown when an upload needs one) ── #}
       <div class="ue-panel" id="ue-assign-panel" style="display:none;">
@@ -286,21 +317,31 @@
     item: null,          // selected index at the current level
     pendingFile: null,   // file awaiting its scenario / entity assignment
     pendingScenario: null,
-    sel: {},             // {entity: scenario} picks for this community (non-defaults only)
+    sel: {},             // {entity: scenario} viewed, for this community (non-defaults only)
+    cmp: {},             // {entity: scenario} compared to (non-defaults only)
+    basis: 'total',      // comparison basis: total | per_ff | per_lot | per_acre
   };
+  const BASES = [['total', 'Total'], ['per_ff', '$/FF'], ['per_lot', '$/Lot'], ['per_acre', '$/Acre']];
 
-  // Scenario picks live in the URL hash (#c=GPD&sc:Dennison=Church Site) so
-  // they are per viewer and a link reproduces the same view.
+  // Scenario picks live in the URL hash (#c=GPD&sc:Dennison=Church Site&
+  // vs:Dennison=Original UW&b=per_lot) so they are per viewer and a link
+  // reproduces the same view.
   function readHash() {
     const p = new URLSearchParams(location.hash.slice(1));
-    const sel = {};
-    for (const [k, v] of p) if (k.startsWith('sc:') && v) sel[k.slice(3)] = v;
-    return {community: p.get('c'), sel};
+    const sel = {}, cmp = {};
+    for (const [k, v] of p) {
+      if (k.startsWith('sc:') && v) sel[k.slice(3)] = v;
+      if (k.startsWith('vs:') && v) cmp[k.slice(3)] = v;
+    }
+    const b = p.get('b');
+    return {community: p.get('c'), sel, cmp, basis: BASES.some(x => x[0] === b) ? b : 'total'};
   }
   function writeHash() {
     const p = new URLSearchParams();
     if (state.community) p.set('c', state.community);
     for (const [e, s] of Object.entries(state.sel)) p.set('sc:' + e, s);
+    for (const [e, s] of Object.entries(state.cmp)) p.set('vs:' + e, s);
+    if (state.basis !== 'total') p.set('b', state.basis);
     const h = p.toString();
     history.replaceState(null, '', h ? '#' + h : location.pathname + location.search);
   }
@@ -346,9 +387,12 @@
 
   // ── data ───────────────────────────────────────────────────
   async function loadData(keepSelection) {
-    const picks = Object.keys(state.sel).length && state.community
-      ? '?sel=' + encodeURIComponent(JSON.stringify({[state.community]: state.sel})) : '';
-    const res = await fetch('/api/unit-economics/data' + picks);
+    const q = new URLSearchParams();
+    if (state.community && Object.keys(state.sel).length)
+      q.set('sel', JSON.stringify({[state.community]: state.sel}));
+    if (state.community && Object.keys(state.cmp).length)
+      q.set('cmp', JSON.stringify({[state.community]: state.cmp}));
+    const res = await fetch('/api/unit-economics/data' + (q.toString() ? '?' + q : ''));
     if (!res.ok) {
       $('ue-content').innerHTML =
         '<div class="ue-empty"><div class="ue-empty-title">Could not load data</div></div>';
@@ -362,9 +406,14 @@
     }
     // Keep only picks the server honored (a real, non-default scenario).
     const c = currentCommunity();
+    const dflt = (e) => ((e.scenarios || []).find(s => s.is_default) || {}).name;
     for (const [ent, sc] of Object.entries(state.sel)) {
       const e = ((c && c.entities) || []).find(x => x.name === ent);
       if (!e || e.scenario !== sc || e.is_default) delete state.sel[ent];
+    }
+    for (const [ent, sc] of Object.entries(state.cmp)) {
+      const e = ((c && c.entities) || []).find(x => x.name === ent);
+      if (!e || e.compare_scenario !== sc || sc === dflt(e)) delete state.cmp[ent];
     }
     writeHash();
     renderCommunitySelect();
@@ -387,24 +436,28 @@
     }).join('');
   }
 
-  // One picker per entity that has more than one scenario. Picks affect only
-  // this viewer; the Δ column compares against each entity's default.
+  // Per entity with more than one scenario: what it is viewed at and what it
+  // is compared to (both default to the entity's default). Picks affect only
+  // this viewer. Entity-level imports (no sections) are marked "· entity".
   function renderScenarioBar() {
     const bar = $('ue-scenario-bar');
     const c = currentCommunity();
     const ents = ((c && c.entities) || []).filter(e => (e.scenarios || []).length > 1);
     if (!ents.length) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
-    const pickers = ents.map(e =>
-      `<label class="ue-sb-item"><span>${escapeHtml(e.name)}</span>` +
-      `<select data-entity="${escapeHtml(e.name)}">` +
-      e.scenarios.map(s => `<option value="${escapeHtml(s.name)}"${s.name === e.scenario ? ' selected' : ''}>` +
-        `${escapeHtml(s.name)}${s.is_default ? ' (default)' : ''}</option>`).join('') +
-      `</select></label>`).join('');
-    const note = c.comparing
-      ? `<span class="ue-sb-note">Δ vs Default compares each entity's pick with its default scenario</span>` +
-        `<button class="ue-btn" id="ue-sb-reset">Reset to defaults</button>`
-      : `<span class="ue-sb-note">Viewing each entity's default scenario</span>`;
-    bar.innerHTML = `<span class="ue-sb-label">Scenario</span>${pickers}${note}`;
+    const opts = (e, current) => e.scenarios.map(s =>
+      `<option value="${escapeHtml(s.name)}"${s.name === current ? ' selected' : ''}>` +
+      `${escapeHtml(s.name)}${s.is_default ? ' (default)' : ''}${s.kind === 'summary' ? ' · entity' : ''}</option>`).join('');
+    const rows = ents.map(e =>
+      `<div class="ue-sb-row"><span class="ue-sb-ent">${escapeHtml(e.name)}</span>` +
+      `<label class="ue-sb-item"><span>Viewing</span><select data-entity="${escapeHtml(e.name)}" data-side="sel">` +
+      `${opts(e, e.scenario)}</select></label>` +
+      `<label class="ue-sb-item"><span>Compare to</span><select data-entity="${escapeHtml(e.name)}" data-side="cmp">` +
+      `${opts(e, e.compare_scenario)}</select></label></div>`).join('');
+    const picked = Object.keys(state.sel).length || Object.keys(state.cmp).length;
+    const note = (c.comparing ? `<span class="ue-sb-note">Showing both sides and the change (Viewing − Compare to)</span>`
+                              : `<span class="ue-sb-note">Pick a different Compare to scenario to see the change</span>`) +
+      (picked ? `<button class="ue-btn" id="ue-sb-reset">Reset to defaults</button>` : '');
+    bar.innerHTML = `<span class="ue-sb-label">Scenarios</span><div class="ue-sb-rows">${rows}</div>${note}`;
     bar.classList.toggle('is-comparing', !!c.comparing);
     bar.style.display = '';
   }
@@ -417,7 +470,7 @@
     if (state.level === 'entity') {
       lbl.textContent = 'Entity';
       opts = (c.entities || []).map((e, i) =>
-        [i, `${e.name} · ${e.section_count} sections`]);
+        [i, `${e.name} · ${e.kind === 'summary' ? 'entity totals only' : e.section_count + ' sections'}`]);
     } else if (state.level === 'phase') {
       lbl.textContent = 'Phase';
       opts = (c.phases || []).map((p, i) =>
@@ -441,6 +494,22 @@
     return e && (e.scenarios || []).length > 1 ? ` · ${e.scenario}` : '';
   }
 
+  // Phase / Section views can't show an entity-level import: say which model
+  // stands in for it, and where a comparison only exists at entity level.
+  function sectionNotes(c, entities) {
+    const notes = [];
+    for (const ent of entities) {
+      const f = (c.section_fallback || {})[ent];
+      if (f) notes.push(`${ent} · ${f.picked} has entity totals only — ` +
+        (f.using ? `this view uses ${f.using}.` : `no section detail to show.`));
+      if ((c.no_section_compare || []).includes(ent)) {
+        const e = (c.entities || []).find(x => x.name === ent) || {};
+        notes.push(`${ent}: ${e.scenario} vs ${e.compare_scenario} compares at the Entity and Community levels only.`);
+      }
+    }
+    return notes;
+  }
+
   function currentView() {
     const c = currentCommunity();
     if (!c || !(c.entities || []).length) return null;
@@ -448,34 +517,43 @@
     if (state.level === 'entity') {
       const e = c.entities[state.item || 0];
       return e && {
-        name: e.name + scenarioTag(c, e.name), tag: 'Entity', rows: e.rows, units: e.units,
-        meta: `Actuals through ${fmtDate(e.actuals_date)}`,
+        name: e.name + scenarioTag(c, e.name), tag: e.kind === 'summary' ? 'Entity · totals only' : 'Entity',
+        rows: e.rows, units: e.units, baseUnits: e.base_units,
+        meta: e.kind === 'summary' ? `Pro forma to date through ${fmtDate(e.actuals_date)}`
+                                   : `Actuals through ${fmtDate(e.actuals_date)}`,
         rail: railEntity(c, e), compare, hasBase: e.has_base !== false,
+        aName: e.scenario, bName: e.compare_scenario, returns: e.returns, baseReturns: e.base_returns,
       };
     }
     if (state.level === 'phase') {
       const p = c.phases[state.item || 0];
+      const ents = [...new Set(p ? p.sections.map(s => s.entity) : [])];
       return p && {
-        name: p.phase, tag: 'Phase', rows: p.rows, units: p.units,
-        meta: `${p.sections.length} sections across ${new Set(p.sections.map(s => s.entity)).size} ` +
-              `${new Set(p.sections.map(s => s.entity)).size === 1 ? 'entity' : 'entities'}`,
+        name: p.phase, tag: 'Phase', rows: p.rows, units: p.units, baseUnits: p.base_units,
+        meta: `${p.sections.length} sections across ${ents.length} ${ents.length === 1 ? 'entity' : 'entities'}`,
         rail: railPhase(p), compare, hasBase: p.has_base !== false,
+        aName: 'Viewing', bName: 'Compare to', notes: sectionNotes(c, ents),
       };
     }
     if (state.level === 'section') {
       const s = c.sections[state.item || 0];
+      const e = s && (c.entities || []).find(x => x.name === s.entity);
       return s && {
-        name: `${s.entity}${scenarioTag(c, s.entity)} · ${s.key}`, tag: s.phase || 'Section',
-        rows: s.rows, units: s.units,
+        name: `${s.entity}${(e && (e.scenarios || []).length > 1) ? ' · ' + s.scenario : ''} · ${s.key}`,
+        tag: s.phase || 'Section', rows: s.rows, units: s.units, baseUnits: s.base_units,
         meta: '', rail: railSection(s), compare, hasBase: s.has_base !== false,
+        aName: s.scenario, bName: e ? e.compare_scenario : 'Compare to', notes: sectionNotes(c, [s.entity]),
       };
     }
+    const picks = (c.entities || []).filter(e => (e.scenarios || []).length > 1)
+      .map(e => `${e.name}: ${e.scenario}${compare && e.compare_scenario !== e.scenario ? ' vs ' + e.compare_scenario : ''}`);
     return {
       name: c.label, tag: 'Community', rows: (c.community || {}).rows || [],
-      units: (c.community || {}).units || {},
-      meta: `${c.entities.length} ${c.entities.length === 1 ? 'entity' : 'entities'} · ` +
+      units: (c.community || {}).units || {}, baseUnits: (c.community || {}).base_units,
+      meta: picks.length ? picks.join(' · ')
+          : `${c.entities.length} ${c.entities.length === 1 ? 'entity' : 'entities'} · ` +
             `${c.sections.length} sections · ${c.phases.length} phases`,
-      rail: railCommunity(c), compare, hasBase: true,
+      rail: railCommunity(c), compare, hasBase: true, aName: 'Viewing', bName: 'Compare to',
     };
   }
 
@@ -513,12 +591,19 @@
       `<div class="ue-chips">${chips}</div></div>`;
   }
   function railEntity(c, e) {
-    let html = unitsCard(e.units) + factsCard('Model', [
-      ['Actuals Date', fmtDate(e.actuals_date)],
-      ['Uploaded', fmtDate(e.uploaded_at)],
-      ['Source', escapeHtml(e.source_filename || '')],
-      ['Sections', fmtQty(e.section_count)],
-    ]);
+    let html = unitsCard(e.units) + (e.kind === 'summary'
+      ? factsCard('Pro Forma (entity totals only)', [
+          ['To Date Through', fmtDate(e.actuals_date)],
+          ['Imported', fmtDate(e.uploaded_at)],
+          ['Source', escapeHtml(e.source_filename || '')],
+          ['Projected AV', e.projected_av != null ? fmtMoney(e.projected_av) : ''],
+        ])
+      : factsCard('Model', [
+          ['Actuals Date', fmtDate(e.actuals_date)],
+          ['Uploaded', fmtDate(e.uploaded_at)],
+          ['Source', escapeHtml(e.source_filename || '')],
+          ['Sections', fmtQty(e.section_count)],
+        ]));
     if (e.actuals) {
       const a = e.actuals;
       const facts = [
@@ -547,6 +632,7 @@
     const items = list.map(s =>
       `<div class="ue-fact"><span class="ue-fact-label">${escapeHtml(s.name)}` +
       `${s.is_default ? '<span class="ue-badge">default</span>' : ''}` +
+      `${s.kind === 'summary' ? '<span class="ue-badge is-viewing">entity</span>' : ''}` +
       `${s.name === e.scenario && list.length > 1 ? '<span class="ue-badge is-viewing">viewing</span>' : ''}</span>` +
       `<span class="ue-fact-value" title="${escapeHtml(s.source_filename)}">${fmtDate(s.uploaded_at)}</span></div>`).join('');
     let actions = '';
@@ -569,6 +655,24 @@
   }
 
   // ── main render ────────────────────────────────────────────
+  const COST_SUMMARY = new Set(['gross costs', 'net costs', 'operations & overhead', 'financing']);
+  const isCostLike = (r) => r.group === 'cost' || COST_SUMMARY.has(r.label.trim().toLowerCase());
+  // Signed % change of a against b: "+12%" / "-25%"; "new" when b is empty.
+  function fmtChange(a, b) {
+    if (b === null || b === undefined || b === 0) return a ? 'new' : '—';
+    const p = ((a || 0) - b) / Math.abs(b) * 100;
+    if (Math.abs(p) < 0.05) return '—';
+    return (p > 0 ? '+' : '') + p.toFixed(Math.abs(p) < 10 ? 1 : 0) + '%';
+  }
+  // Coloured change cell: more cost is bad, more revenue / margin is good.
+  function deltaTd(a, b, costLike) {
+    if (b === null || b === undefined) return `<td class="pct">${a ? 'new' : '—'}</td>`;
+    const d = (a || 0) - b;
+    if (Math.abs(d) < 0.5) return `<td class="pct">—</td>`;
+    const good = costLike ? d < 0 : d > 0;
+    return `<td class="${good ? 'under' : 'over'}">${fmtDelta(d)}</td>`;
+  }
+
   function render() {
     const c = currentCommunity();
     const view = currentView();
@@ -583,35 +687,39 @@
       return;
     }
     const rows = view.rows || [];
+    const cmp = view.compare && view.hasBase;
     const revTotal = rows.find(r => r.group === 'revenue_total');
     const find = (lbl) => rows.find(r => r.group === 'summary' && r.label.toLowerCase() === lbl);
     const grossMargin = find('gross margin'), netCosts = find('net costs'), netMargin = find('net margin');
     const marginPct = (netMargin && revTotal && revTotal.total) ? netMargin.total / revTotal.total : null;
 
-    // Change vs the default scenario mix, when comparing. costLike flips the
-    // colour: more cost is bad, more revenue / margin is good.
-    const kpiDelta = (row, costLike) => {
+    // Comparing: the viewed figure, the compared one, and the change.
+    const kpiCompare = (row, costLike) => {
       if (!view.compare || !row) return '';
-      if (!view.hasBase || row.base_total == null) return `<div class="ue-kpi-delta">new vs default</div>`;
+      if (!view.hasBase || row.base_total == null)
+        return `<div class="ue-kpi-delta">not in ${escapeHtml(view.bName)}</div>`;
       const d = (row.total || 0) - (row.base_total || 0);
-      if (Math.abs(d) < 0.5) return `<div class="ue-kpi-delta">no change vs default</div>`;
-      return `<div class="ue-kpi-delta ${(costLike ? d < 0 : d > 0) ? 'good' : 'bad'}">${fmtDelta(d)} vs default</div>`;
+      return `<div class="ue-kpi-sub">${escapeHtml(view.bName)}: ${fmtMoney(row.base_total)}</div>` +
+        (Math.abs(d) < 0.5 ? `<div class="ue-kpi-delta">no change</div>`
+          : `<div class="ue-kpi-delta ${(costLike ? d < 0 : d > 0) ? 'good' : 'bad'}">` +
+            `${fmtDelta(d)} (${fmtChange(row.total, row.base_total)})</div>`);
     };
     const kpi = (label, row, cls, costLike) => `
       <div class="ue-kpi"><div class="ue-kpi-label">${label}</div>
         <div class="ue-kpi-value${cls || ''}">${row ? fmtMoney(row.total) : '—'}</div>
-        <div class="ue-kpi-sub">${row && row.per_ff != null ? fmtUnit(row.per_ff) + ' /FF' : ''}</div>
-        ${kpiDelta(row, costLike)}
+        ${view.compare ? kpiCompare(row, costLike)
+          : `<div class="ue-kpi-sub">${row && row.per_ff != null ? fmtUnit(row.per_ff) + ' /FF' : ''}</div>`}
       </div>`;
     const signCls = (row) => row && row.total != null ? (row.total < 0 ? ' bad' : ' good') : '';
-    let pctDelta = '';
-    if (view.compare && view.hasBase && netMargin && revTotal && netMargin.base_total != null && revTotal.base_total) {
-      const pts = (marginPct - netMargin.base_total / revTotal.base_total) * 100;
-      pctDelta = Math.abs(pts) < 0.005 ? `<div class="ue-kpi-delta">no change vs default</div>`
-        : `<div class="ue-kpi-delta ${pts > 0 ? 'good' : 'bad'}">${pts > 0 ? '+' : ''}` +
-          `${pts.toFixed(Math.abs(pts) < 1 ? 2 : 1)} pts vs default</div>`;
+    let pctCompare = `<div class="ue-kpi-sub">of total revenue</div>`;
+    if (cmp && netMargin && revTotal && netMargin.base_total != null && revTotal.base_total) {
+      const basePct = netMargin.base_total / revTotal.base_total;
+      const pts = (marginPct - basePct) * 100;
+      pctCompare = `<div class="ue-kpi-sub">${escapeHtml(view.bName)}: ${fmtPct(basePct)}</div>` +
+        (Math.abs(pts) < 0.005 ? `<div class="ue-kpi-delta">no change</div>`
+          : `<div class="ue-kpi-delta ${pts > 0 ? 'good' : 'bad'}">${pts > 0 ? '+' : ''}` +
+            `${pts.toFixed(Math.abs(pts) < 1 ? 2 : 1)} pts</div>`);
     }
-
     const kpis = `
       <div class="ue-kpis">
         ${kpi('Total Revenue', revTotal)}
@@ -620,21 +728,27 @@
         ${kpi('Net Margin', netMargin, signCls(netMargin))}
         <div class="ue-kpi"><div class="ue-kpi-label">Net Margin %</div>
           <div class="ue-kpi-value${marginPct != null && marginPct < 0 ? ' bad' : ' good'}">${fmtPct(marginPct)}</div>
-          <div class="ue-kpi-sub">of total revenue</div>
-          ${pctDelta}
+          ${pctCompare}
         </div>
       </div>`;
 
-    $('ue-content').innerHTML = kpis +
-      `<div class="ue-body">
+    const notes = (view.notes || []).length
+      ? `<div class="ue-notes">${view.notes.map(n => `<div>${escapeHtml(n)}</div>`).join('')}</div>` : '';
+    const basisNav = view.compare
+      ? `<div class="ue-basis" id="ue-basis">${BASES.map(([k, t]) =>
+          `<button class="ue-basis-btn${state.basis === k ? ' is-active' : ''}" data-basis="${k}">${t}</button>`).join('')}</div>` : '';
+    $('ue-content').innerHTML = kpis + renderReturns(view) +
+      `<div class="ue-body${view.compare ? ' is-compare' : ''}">
          <div class="ue-main">
+           ${notes}
            <div class="ue-statement">
              <div class="ue-stmt-head">
                <span class="ue-stmt-name">${escapeHtml(view.name)}</span>
                <span class="ue-stmt-tag">${escapeHtml(view.tag)}</span>
-               <span class="ue-stmt-meta">${view.meta || ''}</span>
+               ${basisNav}
+               <span class="ue-stmt-meta">${escapeHtml(view.meta || '')}</span>
              </div>
-             ${renderTable(rows, view.compare, view.hasBase)}
+             ${view.compare ? renderCompareTable(rows, view) : renderTable(rows)}
            </div>
          </div>
          <div class="ue-rail">${view.rail || ''}</div>
@@ -643,49 +757,71 @@
     if (del) del.addEventListener('click', () => deleteEntity(del.dataset.entity));
     document.querySelectorAll('.ue-sc-btn').forEach(b =>
       b.addEventListener('click', () => scenarioAction(b.dataset.act, b.dataset.entity, b.dataset.scenario)));
+    const basis = $('ue-basis');
+    if (basis) basis.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-basis]');
+      if (!b) return;
+      state.basis = b.dataset.basis; writeHash(); render();
+    });
   }
 
-  const COST_SUMMARY = new Set(['gross costs', 'net costs', 'operations & overhead', 'financing']);
-  function deltaCell(r, hasBase) {
-    if (!hasBase || r.base_total == null) return r.total ? `<td class="pct">new</td>` : `<td class="pct">—</td>`;
-    const d = (r.total || 0) - (r.base_total || 0);
-    if (Math.abs(d) < 0.5) return `<td class="pct">—</td>`;
-    const costLike = r.group === 'cost' || COST_SUMMARY.has(r.label.trim().toLowerCase());
-    const good = costLike ? d < 0 : d > 0;
-    return `<td class="${good ? 'under' : 'over'}" title="Default: ${fmtMoney(r.base_total)}">${fmtDelta(d)}</td>`;
+  // LP IRR / equity multiple / promote, when the entity's models carry them
+  // (entity-level imports always do; uploaded models from the Returns tab).
+  function renderReturns(view) {
+    const a = view.returns || {}, b = view.compare ? (view.baseReturns || {}) : {};
+    const metrics = [['irr', 'LP IRR'], ['multiple', 'Equity Multiple'], ['promote', 'Promote']]
+      .filter(([k]) => a[k] != null || b[k] != null);
+    if (!metrics.length) return '';
+    const fmt = (k, v) => v == null ? '—' : k === 'irr' ? (v * 100).toFixed(2) + '%'
+      : k === 'multiple' ? v.toFixed(2) + 'x' : fmtMoney(v);
+    const delta = (k) => {
+      if (!view.compare || a[k] == null || b[k] == null) return '';
+      const d = a[k] - b[k];
+      const txt = k === 'irr' ? (d >= 0 ? '+' : '') + (d * 100).toFixed(2) + ' pts'
+        : k === 'multiple' ? (d >= 0 ? '+' : '') + d.toFixed(2) + 'x' : fmtDelta(d);
+      return ` <span class="${d >= 0 ? 'good' : 'bad'}">${txt}</span>`;
+    };
+    return `<div class="ue-returns"><span class="ue-sb-label">Returns</span>` + metrics.map(([k, t]) =>
+      `<div class="ue-ret"><span class="ue-ret-label">${t}</span><b>${fmt(k, a[k])}</b>` +
+      (view.compare ? `<small>${escapeHtml(view.bName)}: ${fmt(k, b[k])}${delta(k)}</small>` : '') + `</div>`).join('') +
+      `</div>`;
   }
 
-  function renderTable(rows, compare, hasBase) {
-    const cols = compare ? 10 : 9;
+  function rowClass(r) {
+    const cls = [];
+    if (r.indent) cls.push('sub');
+    if (r.bold) cls.push('strong');
+    if (r.group === 'revenue_total' || r.label.toLowerCase() === 'net margin') cls.push('accent');
+    else if (r.group === 'summary' && r.bold) cls.push('rule');
+    return cls.join(' ');
+  }
+  function bandRow(r, lastGroup, cols) {
+    if (r.group === 'revenue' && lastGroup !== 'revenue')
+      return `<tr class="band"><td class="left" colspan="${cols}">Revenues</td></tr>`;
+    if (r.group === 'cost' && lastGroup !== 'cost')
+      return `<tr class="band"><td class="left" colspan="${cols}">Costs</td></tr>`;
+    return '';
+  }
+
+  function renderTable(rows) {
     const head = `<thead><tr>
       <th class="left">Line Item</th><th>Actuals</th><th>Remaining</th><th>Total</th>
-      ${compare ? '<th title="Total minus the same line in the default scenario mix">Δ vs Default</th>' : ''}
       <th>$/FF</th><th>$/Lot</th><th>$/Acre</th><th>% of Costs</th><th>% of Rev</th>
     </tr></thead>`;
     let body = '', lastGroup = null;
     for (const r of rows) {
-      if (r.group === 'revenue' && lastGroup !== 'revenue') {
-        body += `<tr class="band"><td class="left" colspan="${cols}">Revenues</td></tr>`;
-      } else if (r.group === 'cost' && lastGroup !== 'cost') {
-        body += `<tr class="band"><td class="left" colspan="${cols}">Costs</td></tr>`;
-      }
+      body += bandRow(r, lastGroup, 9);
       lastGroup = r.group;
       const isMargin = r.group === 'summary' && r.label.toLowerCase().includes('margin');
-      const cls = [];
-      if (r.indent) cls.push('sub');
-      if (r.bold) cls.push('strong');
-      if (r.group === 'revenue_total' || r.label.toLowerCase() === 'net margin') cls.push('accent');
-      else if (r.group === 'summary' && r.bold) cls.push('rule');
       // Margin rows read like BVA variances: green when positive, red when negative.
       const money = (v) => {
         const c = v != null && v < 0 ? ' class="over"'
                 : (isMargin && v != null && v > 0 ? ' class="under"' : '');
         return `<td${c}>${fmtMoney(v)}</td>`;
       };
-      body += `<tr class="${cls.join(' ')}">
+      body += `<tr class="${rowClass(r)}">
         <td class="left">${escapeHtml(r.label)}</td>
         ${money(r.to_date)}${money(r.remaining)}${money(r.total)}
-        ${compare ? deltaCell(r, hasBase) : ''}
         ${money(r.per_ff)}${money(r.per_lot)}${money(r.per_acre)}
         <td class="pct">${fmtPct(r.pct_costs)}</td><td class="pct">${fmtPct(r.pct_rev)}</td>
       </tr>`;
@@ -693,11 +829,64 @@
     return `<table class="ue-table">${head}<tbody>${body}</tbody></table>`;
   }
 
+  // Two scenarios side by side. Total basis mirrors the comparison tables:
+  // To Date (viewed, compared, change) | Life of Project (viewed, compared,
+  // change, %) | % of Rev each. Per-unit bases compare $/FF, $/Lot or $/Acre,
+  // each side over its own units — the fair read when the plan's scope moved.
+  function renderCompareTable(rows, view) {
+    const A = escapeHtml(view.aName || 'Viewing'), B = escapeHtml(view.bName || 'Compare to');
+    const noBase = !view.hasBase;
+    const fmtU = (u) => u ? `${fmtQty(u.front_feet)} FF · ${fmtQty(u.lots)} lots · ${fmtQty(u.acreage, 1)} ac` : '—';
+    const units = `<div class="ue-cmp-units"><span><b>${A}</b> ${fmtU(view.units)}</span>` +
+      `<span><b>${B}</b> ${noBase ? 'not comparable here' : fmtU(view.baseUnits)}</span></div>`;
+    let head, cols;
+    if (state.basis === 'total') {
+      cols = 11;
+      head = `<thead>
+        <tr class="grp"><th></th><th colspan="3">To Date</th><th colspan="4">Life of Project</th><th colspan="2">% of Rev</th></tr>
+        <tr><th class="left">Line Item</th><th>${A}</th><th>${B}</th><th>Δ</th>
+          <th>${A}</th><th>${B}</th><th>Δ</th><th>Δ %</th><th>${A}</th><th>${B}</th></tr></thead>`;
+    } else {
+      cols = 5;
+      const t = BASES.find(x => x[0] === state.basis)[1];
+      head = `<thead>
+        <tr class="grp"><th></th><th colspan="4">${t}</th></tr>
+        <tr><th class="left">Line Item</th><th>${A}</th><th>${B}</th><th>Δ</th><th>Δ %</th></tr></thead>`;
+    }
+    let body = '', lastGroup = null;
+    for (const r of rows) {
+      body += bandRow(r, lastGroup, cols);
+      lastGroup = r.group;
+      const cl = isCostLike(r);
+      const b = (f) => noBase ? null : r['base_' + f];
+      let cells;
+      if (state.basis === 'total') {
+        // To-date change only where both sides report a figure: a model's
+        // To Date column can be empty (e.g. revenue the ledger doesn't feed).
+        const tdBoth = !noBase && r.to_date != null && b('to_date') != null;
+        cells = `<td>${fmtMoney(r.to_date)}</td><td>${fmtMoney(b('to_date'))}</td>` +
+          (tdBoth ? deltaTd(r.to_date, b('to_date'), cl) : '<td class="pct">—</td>') +
+          `<td>${fmtMoney(r.total)}</td><td>${fmtMoney(b('total'))}</td>` +
+          (noBase ? '<td class="pct">—</td>' : deltaTd(r.total, b('total'), cl)) +
+          `<td class="pct">${noBase ? '—' : fmtChange(r.total, b('total'))}</td>` +
+          `<td class="pct">${fmtPct(r.pct_rev)}</td><td class="pct">${fmtPct(b('pct_rev'))}</td>`;
+      } else {
+        const f = state.basis;
+        cells = `<td>${fmtMoney(r[f])}</td><td>${fmtMoney(b(f))}</td>` +
+          (noBase ? '<td class="pct">—</td>' : deltaTd(r[f], b(f), cl)) +
+          `<td class="pct">${noBase ? '—' : fmtChange(r[f], b(f))}</td>`;
+      }
+      body += `<tr class="${rowClass(r)}"><td class="left">${escapeHtml(r.label)}</td>${cells}</tr>`;
+    }
+    return units + `<table class="ue-table ue-cmp">${head}<tbody>${body}</tbody></table>`;
+  }
+
   function footer(c) {
     if (!c || !(c.entities || []).length) return '';
     const parts = c.entities.map(e =>
       `<span class="ddf-item"><span class="ddf-lbl">${escapeHtml(e.name + scenarioTag(c, e.name))}</span>` +
-      `<span class="ddf-val">actuals ${fmtDate(e.actuals_date)} · uploaded ${fmtDate(e.uploaded_at)}</span></span>`);
+      `<span class="ddf-val">${e.kind === 'summary' ? 'to date' : 'actuals'} ${fmtDate(e.actuals_date)} · ` +
+      `uploaded ${fmtDate(e.uploaded_at)}</span></span>`);
     return `<div class="ue-data-dates">${parts.join('<span class="ddf-sep">|</span>')}</div>`;
   }
 
@@ -719,7 +908,7 @@
     const names = [];
     for (const e of (c && c.entities) || [])       // defaults first, then the rest
       for (const s of [...(e.scenarios || [])].sort((a, b) => b.is_default - a.is_default))
-        if (!names.includes(s.name)) names.push(s.name);
+        if (s.kind !== 'summary' && !names.includes(s.name)) names.push(s.name);
     const sel = $('ue-up-existing');
     sel.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
     $('ue-up-existing-wrap').style.display = names.length ? '' : 'none';
@@ -797,6 +986,7 @@
         res = await fetch('/api/unit-economics/scenario', {method: 'PUT',
           headers: {'Content-Type': 'application/json'}, body: JSON.stringify({...base, name})});
         if (res.ok && state.sel[entity] === scenario) state.sel[entity] = name;
+        if (res.ok && state.cmp[entity] === scenario) state.cmp[entity] = name;
       } else if (act === 'remove') {
         if (!confirm(`Remove the ${entity} scenario "${scenario}"? This deletes its uploaded model.`)) return;
         res = await fetch(`/api/unit-economics/entity?community=${encodeURIComponent(state.community)}` +
@@ -804,7 +994,7 @@
       }
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error || 'Request failed');
-      if (act !== 'rename') delete state.sel[entity];
+      if (act !== 'rename') { delete state.sel[entity]; delete state.cmp[entity]; }
       setStatus(act === 'default' ? `"${scenario}" is now the default for ${entity}.`
               : act === 'rename' ? `Renamed to "${d.scenario}".` : `Removed "${scenario}".`, 'ok');
       await loadData(true);
@@ -820,14 +1010,15 @@
     setStatus(`Removed ${name}.`, 'ok');
     state.item = null;
     delete state.sel[name];
+    delete state.cmp[name];
     await loadData(true);
   }
 
   // ── wiring ─────────────────────────────────────────────────
   $('ue-community').addEventListener('change', (e) => {
     // Picks belong to one community; the others were built on defaults.
-    const hadPicks = Object.keys(state.sel).length > 0;
-    state.community = e.target.value; state.item = null; state.sel = {};
+    const hadPicks = Object.keys(state.sel).length + Object.keys(state.cmp).length > 0;
+    state.community = e.target.value; state.item = null; state.sel = {}; state.cmp = {};
     writeHash();
     if (hadPicks) { loadData(true); return; }
     renderScenarioBar(); renderItemSelect(); render();
@@ -838,14 +1029,15 @@
     const c = currentCommunity();
     const ent = (c.entities || []).find(x => x.name === sel.dataset.entity);
     const dflt = ent && (ent.scenarios || []).find(s => s.is_default);
-    if (dflt && sel.value === dflt.name) delete state.sel[sel.dataset.entity];
-    else state.sel[sel.dataset.entity] = sel.value;
+    const picks = sel.dataset.side === 'cmp' ? state.cmp : state.sel;
+    if (dflt && sel.value === dflt.name) delete picks[sel.dataset.entity];
+    else picks[sel.dataset.entity] = sel.value;
     setStatus('Loading ' + sel.dataset.entity + ' · ' + sel.value + '…');
     loadData(true).then(() => setStatus(''));
   });
   $('ue-scenario-bar').addEventListener('click', (e) => {
     if (!e.target.closest('#ue-sb-reset')) return;
-    state.sel = {};
+    state.sel = {}; state.cmp = {};
     loadData(true);
   });
   $('ue-levelnav').addEventListener('click', (e) => {
@@ -895,6 +1087,79 @@
     $('ue-assign-panel').style.display = 'none';
     setStatus('Upload cancelled.');
   });
+
+  // ── import an entity-level pro forma (admin) ───────────────
+  // A Pro-Forma Comparison Table holds several statement columns; preview
+  // lists them, the admin picks one plus the entity and scenario name.
+  const importBtn = $('ue-import-btn');
+  if (importBtn) {
+    let importFile = null;
+    const fmtM = (n) => n == null ? '—' : '$' + (n / 1e6).toFixed(1) + 'M';
+    importBtn.addEventListener('click', () => $('ue-import-file').click());
+    $('ue-import-file').addEventListener('change', async (e) => {
+      const f = e.target.files[0];
+      e.target.value = '';
+      if (!f) return;
+      const fd = new FormData(); fd.append('file', f);
+      setStatus('Reading ' + f.name + '…');
+      let d;
+      try {
+        const res = await fetch('/api/unit-economics/import-summary/preview', {method: 'POST', body: fd});
+        d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'Could not read the workbook');
+      } catch (err) { setStatus(err.message, 'err'); return; }
+      importFile = f;
+      $('ue-im-file').textContent = f.name;
+      $('ue-im-blocks').innerHTML = d.blocks.map((b, i) =>
+        `<label class="ue-radio"><input type="radio" name="ue-im-block" value="${b.index}"${i === 0 ? ' checked' : ''}>` +
+        `<span>${escapeHtml(b.title || 'Column ' + (i + 1))}</span>` +
+        `<small class="ue-im-meta">revenue ${fmtM(b.revenue)} · net margin ${fmtM(b.net_margin)} · ` +
+        `${fmtQty(b.units.lots)} lots · ${fmtQty(b.units.front_feet)} FF` +
+        `${b.as_of ? ' · to date through ' + fmtDate(b.as_of) : ''}</small></label>`).join('');
+      const c = currentCommunity();
+      const ents = ((c && c.entities) || []).map(x => x.name);
+      $('ue-im-entity').innerHTML = ents.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('') +
+        `<option value="__new__">New entity…</option>`;
+      $('ue-im-entity-new').style.display = ents.length ? 'none' : '';
+      if (!ents.length) $('ue-im-entity').value = '__new__';
+      $('ue-im-scenario').value = 'Original UW';
+      $('ue-upload-panel').style.display = 'none';
+      $('ue-import-panel').style.display = '';
+      setStatus('');
+    });
+    $('ue-im-entity').addEventListener('change', (e) => {
+      $('ue-im-entity-new').style.display = e.target.value === '__new__' ? '' : 'none';
+    });
+    $('ue-im-cancel').addEventListener('click', () => {
+      importFile = null; $('ue-import-panel').style.display = 'none'; setStatus('Import cancelled.');
+    });
+    $('ue-im-confirm').addEventListener('click', async () => {
+      if (!importFile) return;
+      const block = (document.querySelector('input[name="ue-im-block"]:checked') || {}).value;
+      const ent = $('ue-im-entity').value === '__new__' ? $('ue-im-entity-new').value.trim() : $('ue-im-entity').value;
+      const scenario = $('ue-im-scenario').value.trim();
+      if (!ent) { setStatus('Pick or name the entity this pro forma belongs to.', 'err'); return; }
+      if (!scenario) { setStatus('Name the scenario first.', 'err'); return; }
+      const fd = new FormData();
+      fd.append('file', importFile); fd.append('community', state.community || '');
+      fd.append('entity', ent); fd.append('scenario', scenario); fd.append('block', block || '0');
+      try {
+        const res = await fetch('/api/unit-economics/import-summary', {method: 'POST', body: fd});
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error || 'Import failed');
+        importFile = null;
+        $('ue-import-panel').style.display = 'none';
+        // Open the entity compared against what was just imported.
+        if (!d.is_default) state.cmp[d.entity] = d.scenario;
+        state.level = 'entity'; state.item = null;
+        document.querySelectorAll('.ue-level').forEach(b => b.classList.toggle('is-active', b.dataset.level === 'entity'));
+        setStatus(`Imported "${d.title}" as ${d.entity} · ${d.scenario}${d.new_scenario ? '' : ' (replaced)'}.`, 'ok');
+        await loadData(true);
+        const i = (currentCommunity().entities || []).findIndex(x => x.name === d.entity);
+        if (i >= 0) { state.item = i; renderItemSelect(); render(); }
+      } catch (err) { setStatus(err.message, 'err'); }
+    });
+  }
 
   // ── manage communities (admin) ─────────────────────────────
   const manageBtn = $('ue-manage-btn');
@@ -962,12 +1227,16 @@
   const fromHash = readHash();
   state.community = fromHash.community;
   state.sel = fromHash.sel;
+  state.cmp = fromHash.cmp;
+  state.basis = fromHash.basis;
   loadData(!!fromHash.community);
   // A shared link pasted into an open tab (writeHash's replaceState doesn't fire this).
   window.addEventListener('hashchange', () => {
     const h = readHash();
     state.community = h.community || state.community;
     state.sel = h.sel;
+    state.cmp = h.cmp;
+    state.basis = h.basis;
     state.item = null;
     loadData(true);
   });

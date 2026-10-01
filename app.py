@@ -27,8 +27,8 @@ from waller_parser import parse_waller_monthly
 from hpermits_parser import parse_hpermits
 from uw_parser import parse_uw
 from ember_budget_parser import parse_ember_budget
-from unit_economics_parser import (parse_unit_economics, blend_blocks, sum_units,
-                                   line_key, restate_units)
+from unit_economics_parser import (parse_unit_economics, parse_comparison_table,
+                                   blend_blocks, sum_units, line_key, restate_units)
 
 # Acquisitions GIS tab. acq_gis is the engine lifted from the standalone app
 # (live GIS layer queries, geometry, spatial enrichment); acq_parcels is the
@@ -5329,50 +5329,94 @@ def _ue_load_community(cur, community: str) -> list:
     return cur.fetchall()
 
 
-def _ue_pick_scenarios(rows: list, picks: dict) -> tuple:
-    """One model per entity for the viewer's scenario picks ({entity:
-    scenario}, unknown names fall back) and one per entity for the defaults,
-    plus each entity's scenario menu for the page."""
+def _ue_is_summary(model) -> bool:
+    """An imported entity-level pro forma (e.g. Original UW): an entity
+    statement with no sections."""
+    return (model["data"] or {}).get("kind") == "summary"
+
+
+def _ue_pick_scenarios(rows: list, picks: dict, compare_picks: dict) -> dict:
+    """Per entity: the model being viewed (picks {entity: scenario}, else the
+    default), the model it is compared with (compare_picks, else the
+    default) and each entity's scenario menu.
+
+    Entity-level imports have no sections, so the Phase and Section views
+    stand in the entity's default (or another sectioned) model for a picked
+    one; `fallback` names those, and `no_section_compare` the entities whose
+    comparison exists only at entity / community level."""
     by_entity = {}
     for r in rows:
         by_entity.setdefault(r["entity_name"], []).append(r)
-    chosen, defaults, menus = [], [], {}
+    out = {"view": [], "compare": [], "view_sec": [], "compare_sec": [],
+           "menus": {}, "fallback": {}, "no_section_compare": []}
     for entity, models in by_entity.items():
         default = next((m for m in models if m["is_default"]), models[0])
-        want = (picks or {}).get(entity)
-        chosen.append(next((m for m in models if m["scenario"] == want), default))
-        defaults.append(default)
-        menus[entity] = [{
+        sectioned = (default if not _ue_is_summary(default)
+                     else next((m for m in models if not _ue_is_summary(m)), None))
+        view = next((m for m in models if m["scenario"] == (picks or {}).get(entity)), default)
+        comp = next((m for m in models if m["scenario"] == (compare_picks or {}).get(entity)), default)
+        out["view"].append(view)
+        out["compare"].append(comp)
+        view_sec = sectioned if _ue_is_summary(view) else view
+        comp_sec = sectioned if _ue_is_summary(comp) else comp
+        if view_sec is not None:
+            out["view_sec"].append(view_sec)
+        if comp_sec is not None:
+            out["compare_sec"].append(comp_sec)
+        if view_sec is not view:
+            out["fallback"][entity] = {"picked": view["scenario"],
+                                       "using": view_sec["scenario"] if view_sec else None}
+        if view is not comp and (_ue_is_summary(view) or _ue_is_summary(comp)):
+            out["no_section_compare"].append(entity)
+        out["menus"][entity] = [{
             "name": m["scenario"],
             "is_default": m is default,
+            "kind": "summary" if _ue_is_summary(m) else "model",
             "source_filename": m["source_filename"] or "",
             "actuals_date": m["actuals_date"] or (m["data"] or {}).get("actuals_date") or "",
             "uploaded_at": m["uploaded_at"].isoformat() if m["uploaded_at"] else "",
         } for m in models]
-    return chosen, defaults, menus
+    return out
 
 
-def _ue_stamp_baseline(block: dict, base: dict) -> None:
-    """Give every row of the viewer's scenario mix the default mix's Total
-    for the same line (base_total), so the page can show the change. Blocks
-    are matched by identity — section by entity + number, phase by name —
-    and a block the default mix doesn't have is flagged has_base False."""
+_UE_BASE_FIELDS = ("total", "to_date", "per_ff", "per_lot", "per_acre", "pct_rev")
+
+
+def _ue_stamp_baseline(block: dict, base: dict, sec_base: dict, no_section=()) -> None:
+    """Give every row of the viewed mix the compared mix's figures for the
+    same line (base_total, base_to_date, base_per_ff / _lot / _acre,
+    base_pct_rev), so the page can show both and the change. Entities and
+    the community pair with `base`; sections and phases with `sec_base`
+    (its sectioned stand-ins). Blocks are matched by identity — section by
+    entity + key, phase by name — and one with no counterpart, or touching an
+    entity in `no_section`, is flagged has_base False."""
     def stamp(rows, base_rows):
-        idx = {(r["group"], line_key(r["label"])): r.get("total") for r in base_rows or []}
+        idx = {(r["group"], line_key(r["label"])): r for r in base_rows or []}
         for r in rows:
-            r["base_total"] = idx.get((r["group"], line_key(r["label"])))
+            b = idx.get((r["group"], line_key(r["label"]))) or {}
+            for f in _UE_BASE_FIELDS:
+                r["base_" + f] = b.get(f)
 
-    def pair(items, base_items, key):
-        lookup = {key(b): b["rows"] for b in base_items}
+    def pair(items, base_items, key, comparable=lambda it: True):
+        lookup = {key(b): b for b in base_items}
         for it in items:
-            base_rows = lookup.get(key(it))
-            it["has_base"] = base_rows is not None
-            stamp(it["rows"], base_rows)
+            b = lookup.get(key(it)) if comparable(it) else None
+            it["has_base"] = b is not None
+            it["base_units"] = b.get("units") if b else None
+            stamp(it["rows"], b["rows"] if b else None)
+        return lookup
 
-    pair(block["sections"], base["sections"], lambda s: (s["entity"], s["key"]))
-    pair(block["phases"], base["phases"], lambda p: p["phase"])
-    pair(block["entities"], base["entities"], lambda e: e["name"])
+    no_section = set(no_section)
+    pair(block["sections"], sec_base["sections"], lambda s: (s["entity"], s["key"]),
+         lambda s: s["entity"] not in no_section)
+    pair(block["phases"], sec_base["phases"], lambda p: p["phase"],
+         lambda p: not any(s["entity"] in no_section for s in p["sections"]))
+    ents = pair(block["entities"], base["entities"], lambda e: e["name"])
+    for e in block["entities"]:
+        b = ents.get(e["name"]) or {}
+        e["base_returns"] = b.get("returns")
     if block.get("community") and base.get("community"):
+        block["community"]["base_units"] = base["community"].get("units")
         stamp(block["community"]["rows"], base["community"]["rows"])
 
 
@@ -5581,7 +5625,10 @@ def _ue_attach_bva_actuals(rows: list, bva_blocks: list) -> None:
     routed to the sibling model that owns that section. Pro-rata spend
     stays within the paying entity's own model, whose line Totals carry
     its allocation weights. Entity rollups keep the full ledger spend of
-    their own BVA entity, so the community blend counts dollars once."""
+    their own BVA entity, so the community blend counts dollars once.
+    Imported entity-level pro formas (kind "summary", e.g. Original UW) keep
+    their own To Date — what that pro forma projected through its cutoff."""
+    rows = [r for r in rows if (r["data"] or {}).get("kind") != "summary"]
     by_label = {b.get("label"): b.get("rows") or [] for b in (bva_blocks or [])}
     owners = {}                          # section number -> [entity rows holding it]
     for row in rows:
@@ -5727,6 +5774,9 @@ def _ue_build_community(rows: list) -> dict:
             "name": row["entity_name"],
             "scenario": row.get("scenario") or "Base",
             "is_default": bool(row.get("is_default", True)),
+            "kind": d.get("kind") or "model",
+            "returns": d.get("returns") or {},
+            "projected_av": d.get("projected_av"),
             "actuals_date": row["actuals_date"] or d.get("actuals_date") or "",
             "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else "",
             "source_filename": row["source_filename"] or "",
@@ -5770,48 +5820,65 @@ def _ue_build_community(rows: list) -> dict:
 def api_ue_data():
     """All communities with their four computed levels.
 
-    ?sel={"<community key>": {"<entity>": "<scenario>"}} picks a scenario per
-    entity for this viewer; entities not named use their default. When a
-    pick differs from the defaults, every row also carries base_total (the
-    default mix's Total for that line) and the community is flagged
-    comparing, so the page can show the change."""
+    ?sel={"<community key>": {"<entity>": "<scenario>"}} picks the scenario
+    each entity is viewed at, ?cmp= (same shape) the one it is compared to;
+    entities not named use their default on either side. When the two sides
+    differ, every row also carries the compared side's figures (base_total,
+    base_to_date, base_per_*, base_pct_rev) and the community is flagged
+    comparing, so the page can show both and the change."""
     if not _ue_can_view():
         return jsonify({"error": "forbidden"}), 403
-    try:
-        sel = json.loads(request.args.get("sel") or "{}")
-        sel = sel if isinstance(sel, dict) else {}
-    except ValueError:
-        sel = {}
+
+    def json_arg(name):
+        try:
+            val = json.loads(request.args.get(name) or "{}")
+        except ValueError:
+            return {}
+        return val if isinstance(val, dict) else {}
+
+    sel, cmp_sel = json_arg("sel"), json_arg("cmp")
     conn = get_db(); cur = conn.cursor()
     try:
         out = []
         bva_blocks = None       # built once, only when some community has data
+
+        def build(models):
+            # Each mix gets its own copies: attaching actuals and restating
+            # rewrite the model rows in place, and mixes share models.
+            ms = [dict(m, data=copy.deepcopy(m["data"])) for m in models]
+            _ue_attach_bva_actuals(ms, bva_blocks)
+            return _ue_build_community(ms)
+
         for key, label in _ue_communities(cur):
             rows = _ue_load_community(cur, key)
-            picks = sel.get(key) if isinstance(sel.get(key), dict) else {}
-            chosen, defaults, menus = _ue_pick_scenarios(rows, picks)
-            comparing = any(c is not d for c, d in zip(chosen, defaults))
+            as_dict = lambda v: v if isinstance(v, dict) else {}
+            p = _ue_pick_scenarios(rows, as_dict(sel.get(key)), as_dict(cmp_sel.get(key)))
+            comparing = any(a is not b for a, b in zip(p["view"], p["compare"]))
             if rows and bva_blocks is None:
                 try:
                     bva_blocks, _hg, _hc = _bva_build_blocks()
                 except Exception:
                     bva_blocks = []
-            base = None
-            if comparing:
-                # The default mix is built from its own copies: attaching
-                # actuals and restating rewrite the model rows in place.
-                base_rows = [dict(r, data=copy.deepcopy(r["data"])) for r in defaults]
-                _ue_attach_bva_actuals(base_rows, bva_blocks)
-                base = _ue_build_community(base_rows)
-            if chosen:
-                _ue_attach_bva_actuals(chosen, bva_blocks)
-            block = _ue_build_community(chosen) if chosen else {
-                "entities": [], "sections": [], "phases": [], "community": None}
+            if rows:
+                block = build(p["view"])
+                if p["fallback"]:
+                    sec = build(p["view_sec"])
+                    block["sections"], block["phases"] = sec["sections"], sec["phases"]
+                if comparing:
+                    base = build(p["compare"])
+                    same = all(a is b for a, b in zip(p["compare"], p["compare_sec"])) \
+                        and len(p["compare"]) == len(p["compare_sec"])
+                    _ue_stamp_baseline(block, base, base if same else build(p["compare_sec"]),
+                                       p["no_section_compare"])
+            else:
+                block = {"entities": [], "sections": [], "phases": [], "community": None}
+            compare_name = {m["entity_name"]: m["scenario"] for m in p["compare"]}
             for e in block["entities"]:
-                e["scenarios"] = menus.get(e["name"], [])
-            if base:
-                _ue_stamp_baseline(block, base)
-            out.append(dict(block, key=key, label=label, comparing=comparing))
+                e["scenarios"] = p["menus"].get(e["name"], [])
+                e["compare_scenario"] = compare_name.get(e["name"])
+            out.append(dict(block, key=key, label=label, comparing=comparing,
+                            section_fallback=p["fallback"],
+                            no_section_compare=p["no_section_compare"]))
     finally:
         cur.close(); conn.close()
     return jsonify({"communities": out})
@@ -5939,6 +6006,101 @@ def api_ue_delete_entity():
     finally:
         cur.close(); conn.close()
     return jsonify({"ok": True, "deleted": deleted})
+
+
+def _ue_read_comparison_upload():
+    """(file, parsed comparison table) from the request, or an error response."""
+    f = request.files.get("file")
+    if not f:
+        return None, None, (jsonify({"error": "No file uploaded"}), 400)
+    if not (f.filename or "").lower().endswith((".xlsx", ".xlsm")):
+        return None, None, (jsonify({"error": "Expected an .xlsx/.xlsm workbook"}), 400)
+    try:
+        return f, parse_comparison_table(f.read()), None
+    except ValueError as e:
+        return None, None, (jsonify({"error": str(e)}), 400)
+    except Exception as e:
+        return None, None, (jsonify({"error": "Could not parse workbook: %s" % e}), 400)
+
+
+@app.route("/api/unit-economics/import-summary/preview", methods=["POST"])
+@login_required
+@admin_required
+def api_ue_import_summary_preview():
+    """List the statement columns of a pro-forma comparison table (e.g.
+    "Original Pro Forma - Jordan") so an admin can pick one to import."""
+    _f, parsed, err = _ue_read_comparison_upload()
+    if err:
+        return err
+    out = []
+    for i, b in enumerate(parsed["blocks"]):
+        tot = {line_key(r["label"]): r.get("total") for r in b["rows"]}
+        out.append({"index": i, "title": b["title"], "sheet": b["sheet"], "as_of": b["as_of"],
+                    "revenue": tot.get("total"), "net_margin": tot.get("net margin"),
+                    "units": b["units"], "returns": b["returns"]})
+    return jsonify({"blocks": out})
+
+
+@app.route("/api/unit-economics/import-summary", methods=["POST"])
+@login_required
+@admin_required
+def api_ue_import_summary():
+    """Save one statement column of a pro-forma comparison table as an
+    entity-level scenario (no sections) — how the original underwriting of
+    models built in an older format (Grand Prairie, Windrose) comes in.
+
+    Form fields: file, community, entity, scenario, block (index from the
+    preview). Replaces a same-named scenario of that entity; becomes the
+    default only when the entity has no other model."""
+    f, parsed, err = _ue_read_comparison_upload()
+    if err:
+        return err
+    community = (request.form.get("community") or "").strip()
+    entity = (request.form.get("entity") or "").strip()[:80]
+    scenario = re.sub(r"\s+", " ", request.form.get("scenario") or "").strip()[:60] or "Original UW"
+    try:
+        block = parsed["blocks"][int(request.form.get("block") or 0)]
+    except (ValueError, IndexError):
+        return jsonify({"error": "Unknown statement column"}), 400
+    if not entity:
+        return jsonify({"error": "Pick the entity this pro forma belongs to"}), 400
+    data = {
+        "kind": "summary",
+        "source_block": block["title"],
+        "actuals_date": block["as_of"],
+        "sections": [],
+        "entity_rollup": block["rows"],
+        "entity_units": block["units"],
+        "returns": block["returns"],
+        "projected_av": block["projected_av"],
+    }
+    conn = get_db(); cur = conn.cursor()
+    try:
+        if community not in {k for k, _l in _ue_communities(cur)}:
+            return jsonify({"error": "Unknown community %r" % community}), 400
+        cur.execute("""
+            INSERT INTO ue_models (community, entity_name, scenario, is_default, data,
+                                   source_filename, actuals_date, uploaded_by, uploaded_at)
+            VALUES (%s, %s, %s,
+                    NOT EXISTS (SELECT 1 FROM ue_models
+                                WHERE community = %s AND entity_name = %s AND is_default),
+                    %s, %s, %s, %s, NOW())
+            ON CONFLICT (community, entity_name, scenario) DO UPDATE
+              SET data = EXCLUDED.data,
+                  source_filename = EXCLUDED.source_filename,
+                  actuals_date = EXCLUDED.actuals_date,
+                  uploaded_by = EXCLUDED.uploaded_by,
+                  uploaded_at = NOW()
+            RETURNING (xmax = 0) AS inserted, is_default
+        """, (community, entity, scenario, community, entity, json.dumps(data),
+              "%s · %s" % (f.filename, block["title"]), block["as_of"], session.get("user_id")))
+        saved = cur.fetchone()
+        conn.commit()
+    finally:
+        cur.close(); conn.close()
+    return jsonify({"ok": True, "community": community, "entity": entity, "scenario": scenario,
+                    "new_scenario": bool(saved["inserted"]), "is_default": bool(saved["is_default"]),
+                    "title": block["title"]})
 
 
 @app.route("/api/unit-economics/scenario", methods=["PUT"])
