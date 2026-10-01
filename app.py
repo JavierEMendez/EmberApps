@@ -156,6 +156,7 @@ def _publish_all_views():
     _step("operations", _operations)
     _step("loans", _loans)
     _step("verticals_lighthaven", _vd_lighthaven_snapshot)
+    _step("unit_economics", _build_ue_view_context)
     print("[publish_views] daily refresh complete", flush=True)
 
 _scheduler.add_job(_publish_all_views, CronTrigger(hour=4, minute=0), id="publish_views_daily")
@@ -5906,6 +5907,87 @@ def api_ue_data():
     return jsonify({"communities": out})
 
 
+# ── view:unit_economics — every scenario at entity level ────────────────────
+# The Maquina dashboard's Unit Economics tab lays every uploaded scenario of
+# an entity side by side. Each scenario's statement is built exactly as
+# /api/unit-economics/data builds it when that scenario is picked — the other
+# entities at their defaults, BVA actuals attached across the community — so
+# the two pages can't drift.
+
+_ue_view_lock = threading.Lock()
+
+
+def _build_ue_view_context(loaded=None, bva_blocks=None) -> dict:
+    """Payload for view:unit_economics: per community, per entity, every
+    scenario's entity-level statement (default first), its units, returns and
+    provenance. Each row carries its line_key as `key`, so the consumer lines
+    scenarios up on the same identity the comparison here uses.
+
+    loaded ([(key, label, rows)]) and bva_blocks may be injected (for offline
+    verification); otherwise they're loaded from the DB."""
+    if loaded is None:
+        conn = get_db(); cur = conn.cursor()
+        try:
+            loaded = [(k, l, _ue_load_community(cur, k)) for k, l in _ue_communities(cur)]
+        finally:
+            cur.close(); conn.close()
+    if bva_blocks is None:
+        bva_blocks = []
+        if any(rows for _k, _l, rows in loaded):
+            try:
+                bva_blocks, _hg, _hc = _bva_build_blocks()
+            except Exception:
+                bva_blocks = []
+
+    def build(models):
+        # Same copy-then-attach as api_ue_data: attaching actuals and
+        # restating rewrite the model rows in place, and mixes share models.
+        ms = [dict(m, data=copy.deepcopy(m["data"])) for m in models]
+        _ue_attach_bva_actuals(ms, bva_blocks)
+        return {e["name"]: e for e in _ue_build_community(ms)["entities"]}
+
+    communities = []
+    for key, label, rows in loaded:
+        by_entity = {}
+        for r in rows:
+            by_entity.setdefault(r["entity_name"], []).append(r)
+        defaults = {ent: next((m for m in ms if m["is_default"]), ms[0])
+                    for ent, ms in by_entity.items()}
+        base = build(list(defaults.values())) if rows else {}
+        entities = []
+        for ent, models in by_entity.items():
+            scenarios = []
+            for m in models:
+                is_default = m is defaults[ent]
+                e = base[ent] if is_default else build(
+                    [m if x == ent else defaults[x] for x in by_entity])[ent]
+                actuals = {k: v for k, v in (e["actuals"] or {}).items() if k != "project_pairs"}
+                scenarios.append({
+                    "name": m["scenario"], "is_default": is_default, "kind": e["kind"],
+                    "actuals_date": e["actuals_date"], "uploaded_at": e["uploaded_at"],
+                    "source_filename": e["source_filename"], "section_count": e["section_count"],
+                    "units": e["units"], "returns": e["returns"], "projected_av": e["projected_av"],
+                    "actuals": actuals or None,
+                    "rows": [dict(r, key=line_key(r["label"])) for r in e["rows"]],
+                })
+            entities.append({"name": ent, "scenarios": scenarios})
+        communities.append({"key": key, "label": label, "entities": entities})
+    return {"communities": communities}
+
+
+def _ue_publish_view() -> None:
+    """Republish view:unit_economics off the request thread: it builds the
+    community once per scenario, which an upload response shouldn't wait on.
+    Serialized, so the last write reflects the latest models."""
+    def run():
+        with _ue_view_lock:
+            try:
+                publish_view("unit_economics", _build_ue_view_context())
+            except Exception as e:
+                print(f"[publish_view:unit_economics] failed: {e}", flush=True)
+    threading.Thread(target=run, daemon=True).start()
+
+
 @app.route("/api/unit-economics/upload", methods=["POST"])
 @login_required
 def api_ue_upload():
@@ -5985,6 +6067,7 @@ def api_ue_upload():
         conn.commit()
     finally:
         cur.close(); conn.close()
+    _ue_publish_view()
     return jsonify({
         "ok": True, "community": community, "entity": entity, "matched": matched,
         "scenario": scenario, "new_scenario": bool(saved["inserted"]),
@@ -6027,6 +6110,7 @@ def api_ue_delete_entity():
         conn.commit()
     finally:
         cur.close(); conn.close()
+    _ue_publish_view()
     return jsonify({"ok": True, "deleted": deleted})
 
 
@@ -6120,6 +6204,7 @@ def api_ue_import_summary():
         conn.commit()
     finally:
         cur.close(); conn.close()
+    _ue_publish_view()
     return jsonify({"ok": True, "community": community, "entity": entity, "scenario": scenario,
                     "new_scenario": bool(saved["inserted"]), "is_default": bool(saved["is_default"]),
                     "title": block["title"]})
@@ -6163,6 +6248,7 @@ def api_ue_scenario():
         conn.commit()
     finally:
         cur.close(); conn.close()
+    _ue_publish_view()
     return jsonify({"ok": True, "scenario": new_name or scenario})
 
 
@@ -6188,6 +6274,7 @@ def api_ue_community():
             if not cur.rowcount:
                 return jsonify({"error": "Unknown community %r" % key}), 404
             conn.commit()
+            _ue_publish_view()
             return jsonify({"ok": True, "deleted": key})
 
         body = request.get_json(silent=True) or {}
@@ -6210,6 +6297,7 @@ def api_ue_community():
         conn.commit()
     finally:
         cur.close(); conn.close()
+    _ue_publish_view()
     return jsonify({"ok": True, "key": key, "label": label})
 
 
@@ -6219,6 +6307,9 @@ def unit_economics_page():
     pa = _refresh_page_access_from_db() or {}
     if not session.get("is_admin") and not pa.get("unit_economics", False):
         return redirect(url_for("home"))
+    # Views republish on page render (cross-app view contract) — this one
+    # in the background, since the page itself loads its data by API.
+    _ue_publish_view()
     return render_template("unit_economics.html",
                            username=session.get("username"),
                            is_admin=session.get("is_admin", False),
