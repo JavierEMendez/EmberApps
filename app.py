@@ -5385,7 +5385,8 @@ _UE_BASE_FIELDS = ("total", "to_date", "per_ff", "per_lot", "per_acre", "pct_rev
 def _ue_stamp_baseline(block: dict, base: dict, sec_base: dict, no_section=()) -> None:
     """Give every row of the viewed mix the compared mix's figures for the
     same line (base_total, base_to_date, base_per_ff / _lot / _acre,
-    base_pct_rev), so the page can show both and the change. Entities and
+    base_pct_rev), so the page can show both and the change; lines only the
+    compared side has are added as base_only rows. Entities and
     the community pair with `base`; sections and phases with `sec_base`
     (its sectioned stand-ins). Blocks are matched by identity — section by
     entity + key, phase by name — and one with no counterpart, or touching an
@@ -5396,6 +5397,27 @@ def _ue_stamp_baseline(block: dict, base: dict, sec_base: dict, no_section=()) -
             b = idx.get((r["group"], line_key(r["label"]))) or {}
             for f in _UE_BASE_FIELDS:
                 r["base_" + f] = b.get(f)
+        # Lines only the compared side breaks out (e.g. an original pro
+        # forma's sub-lines that the current model's rollup doesn't carry)
+        # slot in after the line preceding them there, flagged base_only.
+        have = {(r["group"], line_key(r["label"])): r for r in rows}
+        prev = None
+        for b in base_rows or []:
+            k = (b["group"], line_key(b["label"]))
+            if k in have:
+                prev = have[k]
+                continue
+            if not (b.get("total") or b.get("to_date")):
+                continue
+            new = {"label": b["label"], "group": b["group"], "indent": b.get("indent", 0),
+                   "bold": b.get("bold", False), "base_only": True}
+            for f in ("to_date", "remaining", "total", "per_ff", "per_lot", "per_acre",
+                      "pct_costs", "pct_rev"):
+                new[f] = None
+            for f in _UE_BASE_FIELDS:
+                new["base_" + f] = b.get(f)
+            rows.insert(rows.index(prev) + 1 if prev is not None else 0, new)
+            have[k] = prev = new
 
     def pair(items, base_items, key, comparable=lambda it: True):
         lookup = {key(b): b for b in base_items}

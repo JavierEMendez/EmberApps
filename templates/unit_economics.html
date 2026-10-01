@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/theme.css?v=5"/>
-<link rel="stylesheet" href="/static/css/unit_economics.css?v=4"/>
+<link rel="stylesheet" href="/static/css/unit_economics.css?v=5"/>
 <script>(function(){var t=localStorage.getItem('ember-theme');document.documentElement.dataset.theme=(t==='dark')?'dark':'light';})();</script>
 <style>
   /* App shell — canonical sidebar chrome (same as /financials). */
@@ -859,24 +859,29 @@
       lastGroup = r.group;
       const cl = isCostLike(r);
       const b = (f) => noBase ? null : r['base_' + f];
+      // A line only the compared side breaks out: no change to show.
+      const noDelta = noBase || !!r.base_only;
       let cells;
       if (state.basis === 'total') {
         // To-date change only where both sides report a figure: a model's
-        // To Date column can be empty (e.g. revenue the ledger doesn't feed).
-        const tdBoth = !noBase && r.to_date != null && b('to_date') != null;
+        // To Date column can be empty or zero (e.g. revenue the ledger
+        // doesn't feed), which would read as the whole plan missing.
+        const tdBoth = !noBase && !!r.to_date && !!b('to_date');
         cells = `<td>${fmtMoney(r.to_date)}</td><td>${fmtMoney(b('to_date'))}</td>` +
           (tdBoth ? deltaTd(r.to_date, b('to_date'), cl) : '<td class="pct">—</td>') +
           `<td>${fmtMoney(r.total)}</td><td>${fmtMoney(b('total'))}</td>` +
-          (noBase ? '<td class="pct">—</td>' : deltaTd(r.total, b('total'), cl)) +
-          `<td class="pct">${noBase ? '—' : fmtChange(r.total, b('total'))}</td>` +
+          (noDelta ? '<td class="pct">—</td>' : deltaTd(r.total, b('total'), cl)) +
+          `<td class="pct">${noDelta ? '—' : fmtChange(r.total, b('total'))}</td>` +
           `<td class="pct">${fmtPct(r.pct_rev)}</td><td class="pct">${fmtPct(b('pct_rev'))}</td>`;
       } else {
         const f = state.basis;
         cells = `<td>${fmtMoney(r[f])}</td><td>${fmtMoney(b(f))}</td>` +
-          (noBase ? '<td class="pct">—</td>' : deltaTd(r[f], b(f), cl)) +
-          `<td class="pct">${noBase ? '—' : fmtChange(r[f], b(f))}</td>`;
+          (noDelta ? '<td class="pct">—</td>' : deltaTd(r[f], b(f), cl)) +
+          `<td class="pct">${noDelta ? '—' : fmtChange(r[f], b(f))}</td>`;
       }
-      body += `<tr class="${rowClass(r)}"><td class="left">${escapeHtml(r.label)}</td>${cells}</tr>`;
+      const only = r.base_only ? ` title="${A} doesn't break this line out; it's inside the line above"` : '';
+      body += `<tr class="${rowClass(r)}${r.base_only ? ' base-only' : ''}"><td class="left"${only}>` +
+        `${escapeHtml(r.label)}</td>${cells}</tr>`;
     }
     return units + `<table class="ue-table ue-cmp">${head}<tbody>${body}</tbody></table>`;
   }

@@ -546,3 +546,6 @@
   align-items: start;
 }
 .ue-body.is-compare .ue-rail .ue-card { margin-bottom: 0; }
+/* A line only the compared side breaks out (e.g. the original's sub-lines). */
+.ue-table.ue-cmp tr.base-only td { color: var(--eax-subtle); }
+.ue-table.ue-cmp tr.base-only td.left { font-style: italic; }
