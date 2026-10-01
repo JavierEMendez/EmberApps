@@ -5,7 +5,10 @@ gunicorn==22.0.0
 openpyxl==3.1.5
 APScheduler==3.10.4
 fpdf2==2.7.9
-weasyprint>=62.0
+# Pinned: an open >= let a rebuild pull WeasyPrint 70, which dropped the
+# function-style url_fetcher the report PDFs used, and the Returns PDF fell
+# back to the legacy layout. Bump deliberately; /api/diagnostics/pdf checks it.
+weasyprint==70.0
 Pillow>=10.0.0
 requests>=2.28.0
 pandas>=2.0.0
