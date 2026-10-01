@@ -9315,7 +9315,7 @@ def ember_capital_report_pdf():
         pdf_bytes = HTML(
             string=html,
             base_url=request.host_url,
-            url_fetcher=_weasyprint_local_fetcher,
+            url_fetcher=_weasyprint_url_fetcher(),
         ).write_pdf()
     except (ImportError, OSError) as e:
         app.logger.warning(
@@ -10141,7 +10141,7 @@ def ember_capital_investors_pdf():
     try:
         from weasyprint import HTML
         pdf_bytes = HTML(string=html, base_url=request.host_url,
-                         url_fetcher=_weasyprint_local_fetcher).write_pdf()
+                         url_fetcher=_weasyprint_url_fetcher()).write_pdf()
     except (ImportError, OSError) as e:
         app.logger.warning("WeasyPrint unavailable for investor positions "
                            "(%s: %s); returning HTML", type(e).__name__, e)
@@ -10393,7 +10393,7 @@ def _load_project_metadata():
         else:
             # Legacy path (kept for back-compat with older uploads): a
             # filename pointing at /static/img/projects/. WeasyPrint's
-            # _weasyprint_local_fetcher serves this from disk if present.
+            # _weasyprint_url_fetcher serves this from disk if present.
             img_filename = meta.get("image_filename")
             if img_filename:
                 entry["hero_image_url"] = f"/static/img/projects/{img_filename}"
@@ -10524,6 +10524,23 @@ def diagnostics_pdf():
         except Exception as e:
             o["weasyprint_render_ok"] = False
             o["weasyprint_render_error"] = f"{type(e).__name__}: {e}"
+        # Exercise our URL fetcher the way the reports do: a /static/ font
+        # and a data: image. The ping above never touches it, which is how
+        # WeasyPrint 70 broke every report's fetches while this said ok.
+        try:
+            from weasyprint.urls import fetch
+            base = "http://localhost"
+            with fetch(_weasyprint_url_fetcher(),
+                       base + "/static/fonts/PlusJakartaSans-Bold.ttf") as r:
+                o["weasyprint_static_font_bytes"] = len(r.read())
+            png = ("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf"
+                   "FcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==")
+            wp.HTML(string=f'<img src="{png}">', base_url=base,
+                    url_fetcher=_weasyprint_url_fetcher()).write_pdf()
+            o["weasyprint_fetcher_ok"] = True
+        except Exception as e:
+            o["weasyprint_fetcher_ok"] = False
+            o["weasyprint_fetcher_error"] = f"{type(e).__name__}: {e}"
 
     def _pillow(o):
         try:
@@ -10721,8 +10738,11 @@ def admin_project_meta_delete(name):
 _STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
 
-def _weasyprint_local_fetcher(url, timeout=10, ssl_context=None):
-    """Custom WeasyPrint URL fetcher.
+_LOCAL_FETCHER_CLS = None
+
+
+def _weasyprint_url_fetcher():
+    """A fresh WeasyPrint URL fetcher for one render.
 
     /static/... URLs (font files, project hero images, the Ember logo)
     are read directly from disk instead of going back through HTTP. This
@@ -10732,47 +10752,51 @@ def _weasyprint_local_fetcher(url, timeout=10, ssl_context=None):
     waits for a slow recursive request. Reading from disk is also ~100x
     faster than the round-trip.
 
-    Anything else (data:, file://, or external https://) falls through
-    to WeasyPrint's default fetcher.
-    """
-    import urllib.parse
-    import mimetypes
+    Anything else (data:, file://, or external https://) goes to
+    WeasyPrint's own fetcher.
 
-    try:
-        parsed = urllib.parse.urlparse(url)
-        path = parsed.path or ""
-        if path.startswith("/static/"):
-            rel = path[len("/static/"):]
-            disk_path = os.path.normpath(os.path.join(_STATIC_DIR, rel))
-            # Refuse to escape the static directory.
-            if not disk_path.startswith(_STATIC_DIR):
-                raise FileNotFoundError(f"refused: {url}")
-            if os.path.isfile(disk_path):
+    WeasyPrint 70 only accepts a `URLFetcher` instance here. The plain
+    function this used to be (returning a dict, deferring to
+    `default_url_fetcher`) was deprecated in 69 and removed in 70: every
+    fetch through it failed, fonts silently fell back to system fonts,
+    and any <img> (the Returns hero photos) crashed the render, so the
+    Returns PDF quietly fell back to the legacy fpdf2 report — in the
+    October 2026 monthly email and on the download button alike.
+
+    Built lazily so importing app.py never needs WeasyPrint (Windows /
+    dev machines don't have it), and one instance per render because a
+    URLFetcher carries per-request state and gunicorn runs threads.
+    """
+    global _LOCAL_FETCHER_CLS
+    if _LOCAL_FETCHER_CLS is None:
+        import mimetypes
+        import urllib.parse
+        from weasyprint.urls import URLFetcher, URLFetcherResponse
+
+        class _LocalStaticFetcher(URLFetcher):
+            def fetch(self, url, headers=None):
+                path = urllib.parse.urlparse(url).path or ""
+                if not path.startswith("/static/"):
+                    return super().fetch(url, headers)
+                rel = path[len("/static/"):]
+                disk_path = os.path.normpath(os.path.join(_STATIC_DIR, rel))
+                # Refuse to escape the static directory.
+                if not disk_path.startswith(_STATIC_DIR + os.sep):
+                    raise FileNotFoundError(f"refused: {url}")
+                # A missing file raises here, so WeasyPrint logs a warning
+                # and falls back to the next font in the CSS font-family
+                # chain. We never hand /static/ URLs to super().fetch(),
+                # which would HTTP-fetch ourselves (the deadlock).
                 with open(disk_path, "rb") as f:
                     data = f.read()
                 mime, _ = mimetypes.guess_type(disk_path)
-                return {
-                    "string": data,
-                    "mime_type": mime or "application/octet-stream",
-                    "redirected_url": url,
-                    "filename": os.path.basename(disk_path),
-                }
-            # File missing — raise so WeasyPrint logs a warning and falls
-            # back to the next font in the CSS font-family chain. We do
-            # NOT fall through to default_url_fetcher for /static/ URLs
-            # because that would HTTP-fetch ourselves (the deadlock).
-            raise FileNotFoundError(disk_path)
-    except FileNotFoundError:
-        raise
-    except Exception:
-        # Don't let a fetcher bug crash the whole render.
-        pass
+                return URLFetcherResponse(
+                    url, body=data,
+                    headers={"Content-Type": mime or "application/octet-stream"},
+                )
 
-    # Non-/static URL: defer to WeasyPrint's default. Import lazily so
-    # the fetcher itself never triggers a WeasyPrint import error on
-    # Windows / dev machines where it isn't installed.
-    from weasyprint.urls import default_url_fetcher
-    return default_url_fetcher(url, timeout=timeout, ssl_context=ssl_context)
+        _LOCAL_FETCHER_CLS = _LocalStaticFetcher
+    return _LOCAL_FETCHER_CLS()
 
 
 def _render_returns_report_pdf(raw_data, uploaded_at, tone="institutional",
@@ -10812,7 +10836,7 @@ def _render_returns_report_pdf(raw_data, uploaded_at, tone="institutional",
     return HTML(
         string=html,
         base_url=request.host_url,
-        url_fetcher=_weasyprint_local_fetcher,
+        url_fetcher=_weasyprint_url_fetcher(),
     ).write_pdf()
 
 
@@ -11643,7 +11667,7 @@ def loans_pdf_view():
         pdf_bytes = HTML(
             string=html,
             base_url=request.host_url,
-            url_fetcher=_weasyprint_local_fetcher,
+            url_fetcher=_weasyprint_url_fetcher(),
         ).write_pdf()
     except (ImportError, OSError) as e:
         app.logger.warning(
@@ -12785,7 +12809,7 @@ def operations_pdf_view():
         pdf_bytes = HTML(
             string=html,
             base_url=request.host_url,
-            url_fetcher=_weasyprint_local_fetcher,
+            url_fetcher=_weasyprint_url_fetcher(),
         ).write_pdf()
     except (ImportError, OSError) as e:
         app.logger.warning(
@@ -15208,7 +15232,7 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
 
     # Manufacture a request context so render_template / url_for /
     # request.host_url all resolve. Base URL doesn't matter much because
-    # _weasyprint_local_fetcher serves /static/* from disk.
+    # _weasyprint_url_fetcher serves /static/* from disk.
     base_url = os.environ.get("APP_BASE_URL") or "http://localhost"
     try:
         with app.test_request_context(base_url=base_url):
@@ -15221,7 +15245,7 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
                 ctx = _capital_report_context()
                 html = render_template("capital_report.html", capital=ctx)
                 return HTML(string=html, base_url=base_url,
-                            url_fetcher=_weasyprint_local_fetcher).write_pdf()
+                            url_fetcher=_weasyprint_url_fetcher()).write_pdf()
 
             if rt == "operations":
                 from weasyprint import HTML
@@ -15231,7 +15255,7 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
                 rpt_ctx = _build_operations_report_context(view_ctx, run_date=uploaded_at)
                 html = render_template("operations_report.html", **rpt_ctx)
                 return HTML(string=html, base_url=base_url,
-                            url_fetcher=_weasyprint_local_fetcher).write_pdf()
+                            url_fetcher=_weasyprint_url_fetcher()).write_pdf()
 
             if rt == "loans":
                 from weasyprint import HTML
@@ -15241,7 +15265,7 @@ def _gen_new_pdf_report(rt, data, uploaded_at=None):
                 rpt_ctx = _build_loans_report_context(view_ctx, run_date=uploaded_at)
                 html = render_template("loans_report.html", **rpt_ctx)
                 return HTML(string=html, base_url=base_url,
-                            url_fetcher=_weasyprint_local_fetcher).write_pdf()
+                            url_fetcher=_weasyprint_url_fetcher()).write_pdf()
 
             # Any future rt without a redesigned report — caller hits
             # the legacy fpdf2 generator.
