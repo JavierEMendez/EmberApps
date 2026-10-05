@@ -63,43 +63,138 @@ def _ff_of(label):
 
 
 
-def lot_bands(cbas):
-    """The ring's lot-width bands, as CBAS actually aggregates them.
+# How the market is bucketed for reading. Builders talk in decades -- the 40s,
+# the 50s, the 60s -- not in ranges, and CBAS's own five bands ("40-50 FF",
+# "50-60 FF") read as ranges that straddle the products a mix is actually built
+# from. A 42 and a 47 are both 40s; neither is a product of its own.
+BUCKET_MIN = 40      # below this is one bucket
+BUCKET_MAX = 90      # at or above this is one bucket
 
-    CBAS does not publish a row per front footage across the ring; it buckets
-    into five bands (under 40, 40-50, 50-60, 60-70, 70+) because that is the
-    grain the underlying survey supports. An earlier version of this module
-    read a top-level `lot_widths` that does not exist, so every width came
-    back with no market read and the whole market half silently did nothing.
 
-    Working in bands keeps the evidence at the grain it was measured.
+def bucket_of(ff):
+    """(sort key, label) for a front footage. Decades, with ends grouped."""
+    ff = _num(ff)
+    if ff <= 0:
+        return None
+    if ff < BUCKET_MIN:
+        return (0, "Under 40 FF")
+    if ff >= BUCKET_MAX:
+        return (BUCKET_MAX, "90+ FF")
+    lo = int(ff // 10 * 10)
+    return (lo, "%d FF" % lo)
+
+
+def width_buckets(cbas):
+    """The ring's supply and pricing by lot width, in decades.
+
+    Built from each community's own lot-width detail, which carries the real
+    frontage, rather than from the ring-level `lot_bands` CBAS publishes. Those
+    bands are five wide ranges; aggregating the detail ourselves gives the
+    product grain an underwriter actually mixes in, and keeps a 45 from being
+    presented as if it were a category.
+
+    Prices weight by lot count, so a band is the market's average rather than
+    the average of community averages.
     """
+    agg = {}
+    for c in ((cbas or {}).get("communities") or []):
+        cname = c.get("name")
+        for r in (((c.get("detail") or {}).get("lot_widths")) or []):
+            b = bucket_of(r.get("lot_width_ff"))
+            if not b:
+                continue
+            key, label = b
+            a = agg.setdefault(key, {
+                "key": key, "label": label, "lots": 0.0, "_pw": 0.0, "_w": 0.0,
+                "_sw": 0.0, "_sfw": 0.0, "min_price": None, "max_price": None,
+                "communities": set(), "widths": set(), "plans": 0.0})
+            lots = _num(r.get("lots"))
+            price = _num(r.get("avg_price"))
+            a["lots"] += lots
+            a["communities"].add(cname)
+            a["widths"].add(int(_num(r.get("lot_width_ff"))))
+            a["plans"] += _num(r.get("plans"))
+            if price > 0:
+                w = max(lots, 1.0)
+                a["_pw"] += price * w
+                a["_w"] += w
+                lo = _num(r.get("min_price")) or price
+                hi = _num(r.get("max_price")) or price
+                a["min_price"] = lo if a["min_price"] is None else min(a["min_price"], lo)
+                a["max_price"] = hi if a["max_price"] is None else max(a["max_price"], hi)
+            sf = _num(r.get("avg_sqft"))
+            if sf > 0:
+                a["_sw"] += sf * max(lots, 1.0)
+                a["_sfw"] += max(lots, 1.0)
+
+    out = []
+    for key in sorted(agg):
+        a = agg[key]
+        price = (a["_pw"] / a["_w"]) if a["_w"] else 0.0
+        sqft = (a["_sw"] / a["_sfw"]) if a["_sfw"] else 0.0
+        out.append({
+            "key": key, "label": a["label"],
+            "min_ff": key if key else 0,
+            "max_ff": (BUCKET_MIN if key == 0 else
+                       200 if key == BUCKET_MAX else key + 10),
+            "lots": int(a["lots"]),
+            "communities": len(a["communities"]),
+            "widths": sorted(a["widths"]),
+            "plans": int(a["plans"]),
+            "avg_price": int(round(price)) or None,
+            "min_price": int(round(a["min_price"])) if a["min_price"] else None,
+            "max_price": int(round(a["max_price"])) if a["max_price"] else None,
+            "avg_sqft": int(round(sqft)) or None,
+            "avg_ppsf": round(price / sqft, 2) if price and sqft else None,
+        })
+    return out
+
+
+def lot_bands(cbas):
+    """Market supply and pricing by lot width.
+
+    Prefers the per-community detail aggregated into decades. Falls back to
+    CBAS's own five ring-level bands when a payload carries no community
+    detail, so an older stored read still charts.
+    """
+    buckets = width_buckets(cbas)
+    if buckets:
+        return buckets
     out = []
     for b in ((cbas or {}).get("lot_bands") or []):
         if not _num(b.get("lots")) and not _num(b.get("avg_price")):
             continue
         out.append({
+            "key": int(_num(b.get("min_ff"))),
             "label": b.get("label"),
             "min_ff": int(_num(b.get("min_ff"))),
             "max_ff": int(_num(b.get("max_ff"))),
             "lots": int(_num(b.get("lots"))),
             "communities": int(_num(b.get("communities"))),
-            "builders": int(_num(b.get("builders"))),
+            "widths": [],
+            "plans": int(_num(b.get("plans"))),
             "avg_price": int(round(_num(b.get("avg_price")))) or None,
             "min_price": int(round(_num(b.get("min_price")))) or None,
             "max_price": int(round(_num(b.get("max_price")))) or None,
             "avg_sqft": int(round(_num(b.get("avg_sqft")))) or None,
             "avg_ppsf": _num(b.get("avg_ppsf")) or None,
-            "plans": int(_num(b.get("plans"))),
         })
     return out
 
 
 def band_for_width(bands, ff):
-    """The band a front footage falls in. Bands are [min, max)."""
-    for b in bands or []:
-        if b["min_ff"] <= ff < b["max_ff"]:
-            return b
+    """The bucket a front footage falls in."""
+    b = bucket_of(ff)
+    if not b:
+        return None
+    key = b[0]
+    for row in bands or []:
+        if row.get("key") == key:
+            return row
+    # A stored read from before buckets existed still has min/max ranges.
+    for row in bands or []:
+        if _num(row.get("min_ff")) <= ff < _num(row.get("max_ff")):
+            return row
     return None
 
 
@@ -424,14 +519,20 @@ def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
     rows = []
     for b in bands:
         home = _num(b.get("avg_price"))
-        # Price a band at the midpoint of the widths it covers, which is what
-        # a $/FF derived from it actually describes.
-        mid = (b["min_ff"] + min(b["max_ff"], b["min_ff"] + 20)) / 2.0
-        in_mix = sorted(w for w in mix_widths if b["min_ff"] <= w < b["max_ff"])
+        # Price a bucket at the average frontage actually seen in it, not at
+        # the middle of its nominal range. "50 FF" covering a market that
+        # builds 50s and 52s should price off 51, not off 55.
+        ws = b.get("widths") or []
+        mid = (sum(ws) / len(ws)) if ws else (
+            (b["min_ff"] + min(b["max_ff"], b["min_ff"] + 10)) / 2.0)
+        in_mix = sorted(w for w in mix_widths
+                        if (bucket_of(w) or (None,))[0] == b.get("key"))
         rows.append({
             "label": b["label"],
             "min_ff": b["min_ff"], "max_ff": b["max_ff"],
             "mid_ff": round(mid, 1),
+            "widths": b.get("widths") or [],
+            "plans": b.get("plans"),
             "in_mix": bool(in_mix),
             "mix_widths": in_mix,
             "lots": b["lots"],
@@ -467,7 +568,7 @@ def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
             round(blended_price_per_ff(in_mix_rows, lot_ratio), 2)
             if in_mix_rows else None),
         "suggested_basis": (
-            "Blended over the %s bands your mix falls in, weighted by lot count "
+            "Blended over the %s widths your mix falls in, weighted by lot count "
             "and frontage so total lot revenue matches pricing each band on its "
             "own." % ", ".join(r["label"] for r in rows if r["in_mix"])
             if in_mix_rows else None),

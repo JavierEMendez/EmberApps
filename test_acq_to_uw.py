@@ -62,7 +62,16 @@ CBAS = {
         "target_ff": [40, 50], "target_bands": [B40, B50],
     }},
     "communities": [
-        {"name": "Community A", "detail": {"builder_lot_widths": [
+        {"name": "Community A", "detail": {"lot_widths": [
+            {"lot_width_ff": 45, "lots": 200, "avg_price": 309000, "min_price": 264000,
+             "max_price": 358000, "avg_sqft": 1790, "plans": 7},
+            {"lot_width_ff": 42, "lots": 120, "avg_price": 331000, "min_price": 290000,
+             "max_price": 372000, "avg_sqft": 1850, "plans": 4},
+            {"lot_width_ff": 55, "lots": 280, "avg_price": 412000, "min_price": 352000,
+             "max_price": 489000, "avg_sqft": 2310, "plans": 9},
+            {"lot_width_ff": 95, "lots": 40, "avg_price": 712000, "min_price": 640000,
+             "max_price": 820000, "avg_sqft": 3600, "plans": 3},
+        ], "builder_lot_widths": [
             {"name": "Lennar", "lot_width_ff": 45, "lots": 200, "avg_price": 309000,
              "min_price": 264000, "max_price": 358000, "avg_sqft": 1790, "plans": 7},
             {"name": "Builder TBD", "lot_width_ff": 45, "lots": 60, "avg_price": 300000},
@@ -84,20 +93,42 @@ ANALYSIS_NETOUTS = [
     {"label": "Layer failed", "applied": True, "error": True, "acres": 40.0},
 ]
 
-# --- bands are the grain CBAS publishes ------------------------------------
+# --- buckets are decades, built from real widths ---------------------------
+# Builders talk in 40s, 50s, 60s. CBAS's own five bands ("40-50 FF") read as
+# ranges that straddle the products a mix is built from, and a 45 is not a
+# category of its own -- it is a 40.
+results.append(check("45 is a 40", A.bucket_of(45)[1], "40 FF"))
+results.append(check("47 is a 40", A.bucket_of(47)[1], "40 FF"))
+results.append(check("50 starts the 50s", A.bucket_of(50)[1], "50 FF"))
+results.append(check("55 is a 50", A.bucket_of(55)[1], "50 FF"))
+results.append(check("80 is its own bucket", A.bucket_of(80)[1], "80 FF"))
+results.append(check("everything under 40 groups", A.bucket_of(32)[1], "Under 40 FF"))
+results.append(check("90 and up group", A.bucket_of(120)[1], "90+ FF"))
+results.append(check("a zero width has no bucket", A.bucket_of(0), None))
+
 bands = A.lot_bands(CBAS)
-results.append(check("lot_bands reads the key that exists", len(bands), 5))
-results.append(check("a 45 FF lot falls in the 40-50 band",
-                     A.band_for_width(bands, 45)["min_ff"], 40))
-results.append(check("bands are half-open, so 50 FF is not in 40-50",
-                     A.band_for_width(bands, 50)["min_ff"], 50))
-results.append(check("a 90 FF lot falls in 70+",
-                     A.band_for_width(bands, 90)["min_ff"], 70))
+labels = [b["label"] for b in bands]
+results.append(check("buckets come from the community detail, not the ring bands",
+                     labels, ["40 FF", "50 FF", "90+ FF"]))
+b40 = next(b for b in bands if b["label"] == "40 FF")
+results.append(check("the 45s and 42s merge into the 40s", b40["lots"], 320))
+results.append(check("the real widths behind a bucket are kept", b40["widths"], [42, 45]))
+results.append(check("bucket price weights by lot count",
+                     b40["avg_price"], round((309000 * 200 + 331000 * 120) / 320)))
+results.append(check("bucket range spans its widths",
+                     (b40["min_price"], b40["max_price"]), (264000, 372000)))
+results.append(check("band_for_width finds the bucket",
+                     A.band_for_width(bands, 47)["label"], "40 FF"))
 results.append(check("no bands means no match", A.band_for_width([], 45), None))
+
+# a payload with no community detail still charts off CBAS's own bands
+legacy = A.lot_bands({"lot_bands": CBAS["lot_bands"]})
+results.append(check("falls back to the ring bands when there is no detail",
+                     len(legacy), 5))
 
 # --- builders are merged across the ring, not counted per community --------
 bb = A.builders_by_band(CBAS, bands)
-lennar = next(r for r in bb[B40] if r["name"] == "Lennar")
+lennar = next(r for r in bb["40 FF"] if r["name"] == "Lennar")
 results.append(check("a builder in two communities is merged once",
                      lennar["communities"], 2))
 results.append(check("merged builder lots add", lennar["lots"], 300))
@@ -106,9 +137,9 @@ results.append(check("merged builder price weights by lot count",
 results.append(check("merged range spans both communities",
                      (lennar["min_price"], lennar["max_price"]), (264000, 380000)))
 results.append(check("CBAS's placeholder builder is not a competitor",
-                     any(r["name"] == "Builder TBD" for r in bb.get(B40, [])), False))
+                     any(r["name"] == "Builder TBD" for r in bb.get("40 FF", [])), False))
 results.append(check("a builder lands in the band its width falls in",
-                     [r["name"] for r in bb[B50]], ["Perry Homes"]))
+                     [r["name"] for r in bb["50 FF"]], ["Perry Homes"]))
 
 # --- pace off addressable starts, the way the endpoint models it -----------
 pace, note = A.addressable_pace(CBAS, 0.20)
@@ -178,15 +209,16 @@ results.append(check("$/FF is NOT applied", inp["price_per_ff"]["0"], 1800))
 
 # --- evidence ---------------------------------------------------------------
 ev = A.market_evidence(CBAS, mix_widths={40, 50}, lot_ratio=0.22)
-b40 = next(b for b in ev["bands"] if b["min_ff"] == 40)
-results.append(check("evidence is banded, not per-FF", len(ev["bands"]), 5))
-results.append(check("the mix's bands are flagged", b40["in_mix"], True))
-results.append(check("a band outside the mix is not flagged",
-                     next(b for b in ev["bands"] if b["min_ff"] == 70)["in_mix"], False))
-results.append(check("builders come through on the band",
-                     [r["name"] for r in b40["builders"]], ["Lennar"]))
-results.append(check("implied lot $/FF uses the band midpoint",
-                     b40["implied_lot_ff"], round(318000 * 0.22 / 45, 2)))
+ev40 = next(b for b in ev["bands"] if b["label"] == "40 FF")
+results.append(check("evidence is bucketed by decade", [b["label"] for b in ev["bands"]], ["40 FF", "50 FF", "90+ FF"]))
+results.append(check("the mix's buckets are flagged", ev40["in_mix"], True))
+results.append(check("a bucket outside the mix is not flagged",
+                     next(b for b in ev["bands"] if b["label"] == "90+ FF")["in_mix"], False))
+results.append(check("builders come through on the bucket",
+                     [r["name"] for r in ev40["builders"]], ["Lennar"]))
+results.append(check("implied lot $/FF prices off the real average frontage",
+                     ev40["implied_lot_ff"],
+                     round(ev40["avg_price"] * 0.22 / 43.5, 2)))
 results.append(check("the capture block travels with the evidence",
                      ev["capture"]["addressable_starts"], 300))
 results.append(check("a suggestion is offered", ev["suggested_price_per_ff"] > 0, True))

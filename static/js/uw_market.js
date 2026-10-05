@@ -108,7 +108,9 @@
                   'Implied lot $/FF: $' + w.implied_lot_ff.toFixed(0),
                   'Lot value: ' + money(w.implied_lot_value)
                     + ' = ' + money(w.avg_price) + ' x ' + ratioPct + '%',
-                  'Priced off the ' + w.mid_ff + ' FF midpoint of the band',
+                  'Priced off ' + w.mid_ff + ' FF, the average frontage built here'
+                    + ((w.widths || []).length > 1
+                       ? ' (' + w.widths.join(', ') + ' FF)' : ''),
                   w.lots ? w.lots.toLocaleString() + ' lots across '
                     + w.communities + ' communities' : '',
                 ].filter(Boolean);
@@ -343,12 +345,12 @@
           <span style="color:${MUTED}">· 75th ${cap.share_p75_pct ?? '—'}%</span></div>
       </div>` : ''}
 
-      <div class="section-header" style="margin-top:0">Implied finished lot $/FF by band</div>
+      <div class="section-header" style="margin-top:0">Implied finished lot $/FF by lot width</div>
       <div style="font-size:11px;color:${MUTED};margin:-4px 0 8px">
-        Finished lot taken at <b>${ratioPct}%</b> of the average new-home price in that
-        band, divided by the band's midpoint frontage. CBAS aggregates the ring into
-        these five bands, so this is the grain the market was actually measured at.
-        Bands your product mix does not fall in are faded.
+        Finished lot taken at <b>${ratioPct}%</b> of the average new-home price at that
+        width, divided by the average frontage actually built there. Widths are grouped
+        the way builders talk about them — the 40s, the 50s — with everything under 40
+        and over 90 in one bucket each. Widths your product mix does not use are faded.
       </div>
       <div style="height:${Math.max(170, (mk.bands || []).length * 32 + 60)}px">
         <canvas id="uw-mk-ff"></canvas>
@@ -367,10 +369,10 @@
         </button>
       </div>` : ''}
 
-      <div class="section-header" style="margin-top:22px">New-home price by band and builder</div>
+      <div class="section-header" style="margin-top:22px">New-home price by lot width and builder</div>
       <div style="font-size:11px;color:${MUTED};margin:-4px 0 8px">
         The bar is each builder's min-to-max; the dot is their average. The orange row
-        per band is the market as a whole. A wide bar means the band is not really one
+        per width is the market as a whole. A wide bar means that width is not really one
         price. Builders active in several communities are merged, weighted by lot count.
       </div>
       <div style="height:${nH}px"><canvas id="uw-mk-home"></canvas></div>
