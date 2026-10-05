@@ -17002,6 +17002,10 @@ app.config["ACQ_LOGIN_REQUIRED"] = login_required
 app.config["ACQ_REFRESH_PAGE_ACCESS"] = _refresh_page_access_from_db
 app.config["ACQ_LOG_ACTIVITY"] = _log_activity
 app.config["ACQ_ADMIN_REQUIRED"] = admin_required
+# The acquisitions blueprint builds an underwriting model from an analysis;
+# it needs this model's own defaults so every field it cannot speak to keeps
+# the value the underwriter would otherwise have started from.
+app.config["ACQ_UW_DEFAULT_INPUTS"] = default_inputs
 
 import acq_routes
 acq_routes.init_app(app)

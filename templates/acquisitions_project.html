@@ -215,6 +215,28 @@
                 title="Executive acquisition summary — cover, thesis, site, market, competition, schools, access, amenities and macro">
           Export Executive PDF
         </button>
+
+        <!-- Hand the deal to MPC Underwriting. Disabled until an analysis
+             exists, because every assumption it carries is derived from one. -->
+        <button id="btn-underwrite" style="width:100%;margin-top:6px" disabled
+                title="Create an underwriting model pre-filled from this analysis and the submarket">
+          Underwrite this →
+        </button>
+        <div id="uw-settings" style="display:none;margin-top:6px;font-size:11px;color:#6B7B8B">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+            <label style="flex:1;margin:0" title="Share of the submarket's annual starts this community is assumed to take">
+              Capture of submarket starts</label>
+            <input id="uw-capture" type="text" inputmode="decimal" value="20"
+                   style="width:52px;text-align:right;padding:2px 4px;margin:0"><span>%</span>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <label style="flex:1;margin:0" title="Finished lot value as a share of the home price it carries">
+              Finished lot / home price</label>
+            <input id="uw-ratio" type="text" inputmode="decimal" value="22"
+                   style="width:52px;text-align:right;padding:2px 4px;margin:0"><span>%</span>
+          </div>
+        </div>
+        <div id="uw-status" class="status-msg"></div>
       </div>
     </div>
   </div>

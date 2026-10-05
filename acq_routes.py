@@ -39,6 +39,7 @@ login_required = None
 admin_required = None
 _refresh_page_access_from_db = None
 _log_activity = None
+_uw_default_inputs = None       # app.default_inputs, for the underwriting handoff
 
 
 def init_app(app):
@@ -83,6 +84,8 @@ def init_app(app):
     admin_required = app.config["ACQ_ADMIN_REQUIRED"]
     _refresh_page_access_from_db = app.config["ACQ_REFRESH_PAGE_ACCESS"]
     _log_activity = app.config["ACQ_LOG_ACTIVITY"]
+    global _uw_default_inputs
+    _uw_default_inputs = app.config["ACQ_UW_DEFAULT_INPUTS"]
     app.register_blueprint(acq_bp)
 
 
@@ -824,6 +827,106 @@ def api_acq_parcel_acres(prop_id):
         return jsonify(res), 400
     _acq_log("acreage_override", {"prop_id": prop_id, "acres": res.get("acres")})
     return jsonify(res)
+
+
+@acq_bp.route("/api/acq/projects/<pid>/underwrite", methods=["POST"])
+@_login_required
+def api_acq_project_underwrite(pid):
+    """Open an underwriting model pre-filled from this acquisition.
+
+    The two tools know different halves of the same deal: the GIS knows the
+    dirt and the constraints, CBAS knows what the submarket is starting and
+    at what price, and the model needs both. Until now that was re-keyed by
+    hand, which is slow and quietly lossy -- the basis for a number never
+    made the trip.
+
+    Everything derived is an ordinary input afterwards. Nothing here locks a
+    field; the model's own defaults survive wherever the acquisition side has
+    nothing to say, and `_acq_link` records what this was built from so the
+    numbers can be traced or refreshed later.
+    """
+    import acq_to_uw
+    guard = _acq_guard()
+    if guard:
+        return guard
+    body = request.get_json(silent=True) or {}
+
+    conn = get_db()
+    try:
+        proj = acq_store.get_object(conn, "project", pid, _acq_owner(), _acq_is_admin())
+    finally:
+        conn.close()
+    if not proj:
+        return jsonify({"error": "project not found"}), 404
+    analysis = proj.get("analysis_cache")
+    if not analysis:
+        return jsonify({"error": "Run the acquisition analysis first -- the "
+                                 "underwriting assumptions are built from it."}), 400
+
+    try:
+        capture = float(body.get("capture_pct", acq_to_uw.CAPTURE_PCT_DEFAULT))
+    except (TypeError, ValueError):
+        capture = acq_to_uw.CAPTURE_PCT_DEFAULT
+    try:
+        ratio = float(body.get("lot_ratio", acq_to_uw.LOT_RATIO_DEFAULT))
+    except (TypeError, ValueError):
+        ratio = acq_to_uw.LOT_RATIO_DEFAULT
+    capture = min(max(capture, 0.0), 1.0)
+    ratio = min(max(ratio, 0.0), 1.0)
+
+    # The market read is optional. Without it the deal still carries over --
+    # acreage, constraints, product mix -- and pace and pricing stay on the
+    # model's defaults rather than the export failing.
+    cbas = None
+    try:
+        cbas = (_report_payloads(pid, want=("cbas",)) or {}).get("cbas")
+    except Exception as e:
+        print(f"[underwrite] CBAS unavailable for {pid}: {type(e).__name__}: {e}",
+              flush=True)
+
+    name = (body.get("name") or proj.get("name") or "Untitled").strip()[:120]
+    inputs, basis = acq_to_uw.derive_uw_inputs(
+        _uw_default_inputs(name), analysis, cbas,
+        capture_pct=capture, lot_ratio=ratio)
+    inputs["project_name"] = name
+    inputs["_acq_link"] = {
+        "acq_project_id": pid,
+        "derived_at": _utcnow(),
+        "capture_pct": capture,
+        "lot_ratio": ratio,
+        "had_market_data": bool(cbas),
+        "basis": {k: v for k, v in basis.items() if not k.startswith("_")},
+        "widths_no_market": basis.get("_widths_no_market") or [],
+    }
+
+    try:
+        from calc import calculate
+        outputs = calculate(inputs)
+    except Exception as e:
+        print(f"[underwrite] calc failed for {pid}: {type(e).__name__}: {e}", flush=True)
+        outputs = {}
+
+    conn = get_db()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO projects (name, address, created_by, inputs, outputs, status) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            (name, "", session["user_id"], _json.dumps(inputs),
+             _json.dumps(outputs), "Initial UW"))
+        uw_id = cur.fetchone()["id"]
+        conn.commit()
+        cur.close()
+    finally:
+        conn.close()
+
+    _acq_log("underwrite_handoff", {"acq_project": pid, "uw_project": uw_id,
+                                    "capture_pct": capture, "lot_ratio": ratio,
+                                    "had_market_data": bool(cbas)})
+    return jsonify({"uw_project_id": uw_id, "name": name,
+                    "had_market_data": bool(cbas),
+                    "widths_no_market": basis.get("_widths_no_market") or [],
+                    "basis": {k: v for k, v in basis.items() if not k.startswith("_")}})
 
 
 @acq_bp.route("/api/acq/parcel-overrides")

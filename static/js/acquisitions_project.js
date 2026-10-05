@@ -559,7 +559,60 @@ function _syncSummaryBtn(hasAnalysis) {
   b.title = hasAnalysis
     ? 'Ten-page report: executive summary, constraint map, yield, topography, submarket and tract roster'
     : 'Run the acquisition analysis first — the report is built from it';
+
+  // Same rule for the underwriting handoff: every assumption it carries is
+  // derived from the analysis, so there is nothing to hand over without one.
+  const u = document.getElementById('btn-underwrite');
+  const cfg = document.getElementById('uw-settings');
+  if (u) {
+    u.disabled = !hasAnalysis;
+    u.title = hasAnalysis
+      ? 'Create an underwriting model pre-filled from this analysis and the submarket'
+      : 'Run the acquisition analysis first — the assumptions are built from it';
+  }
+  if (cfg) cfg.style.display = hasAnalysis ? 'block' : 'none';
 }
+
+// Hand the deal to MPC Underwriting.
+//
+// The acreage, the constraints and the product mix come from the analysis;
+// pace, home price and lot pricing come from the submarket. Both settings
+// below are assumptions rather than findings, so they are inputs: the capture
+// of submarket starts, and what share of a home price a finished lot carries.
+document.getElementById('btn-underwrite')?.addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  const label = btn.textContent;
+  const status = document.getElementById('uw-status');
+  const pct = (id, dflt) => {
+    const el = document.getElementById(id);
+    const n = el ? parseFloat((el.value || '').replace(/[%,\s]/g, '')) : NaN;
+    return (isFinite(n) && n >= 0 && n <= 100) ? n / 100 : dflt;
+  };
+  btn.disabled = true;
+  btn.textContent = 'Building model…';
+  if (status) status.textContent = 'Deriving assumptions from the analysis and the submarket…';
+  try {
+    const r = await fetch(`/api/acq/projects/${PROJECT_ID}/underwrite`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ capture_pct: pct('uw-capture', 0.20),
+                             lot_ratio:   pct('uw-ratio',   0.22) }),
+    });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    if (status) {
+      const gaps = (d.widths_no_market || []);
+      status.textContent = d.had_market_data
+        ? ('Model created. Pace and pricing came from the submarket'
+           + (gaps.length ? `; ${gaps.join(', ')} FF had no market read and kept the model's defaults.` : '.'))
+        : 'Model created. No submarket data was available, so pace and pricing kept the model defaults.';
+    }
+    window.location.href = `/?project=${d.uw_project_id}`;
+  } catch (e) {
+    if (status) status.textContent = 'Could not build the model: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = label;
+  }
+});
 
 // Executive summary. Fetched rather than window.open'd so the button can show
 // a real progress state -- the report draws a satellite map and several charts
