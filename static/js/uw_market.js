@@ -1,12 +1,11 @@
 /* Market evidence for pricing decisions in MPC Underwriting.
  *
  * A model created from an acquisition carries the submarket read with it, in
- * inputs._acq_link.market. Pace, yield and acreage were measured and came
- * across as values; price was not. A price is a judgement about a market and
- * this model prices thousands of lots off it, so the number stays the
- * underwriter's. These charts put the evidence in front of that decision and
- * nothing more: what each width is achieving, which builders make up the
- * average, and how wide the range behind it is.
+ * inputs._acq_link.market. Pricing is filled from that read like everything
+ * else, and like everything else it stays an ordinary input. What these charts
+ * owe the underwriter is an account of the figure sitting in the field: what
+ * each width is achieving, which builders make up the average, how wide the
+ * range behind it is, and which comps it came from.
  *
  * Chart colours are the two that pass the palette checks against a light
  * surface — #2a78d6 for a measured value, #F25929 for a reference. The brand
@@ -279,8 +278,9 @@
       <div style="font-size:11.5px;color:${MUTED};margin:0 0 10px">
         CBAS communities within <b style="color:${INK}">${ring.radius_mi} miles</b> of the
         site${ring.district_name ? `, ${esc(ring.district_name)} flagged` : ''}${ring.quarter_label
-          ? ` · ${esc(ring.quarter_label)}` : ''}. <b style="color:${INK}">Price is yours</b> —
-        nothing here writes into the model unless you press the button.
+          ? ` · ${esc(ring.quarter_label)}` : ''}. This is the read the model's
+        pricing was filled from — <b style="color:${INK}">every figure is still yours to
+        type over</b>.
       </div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin:0 0 16px;padding:10px 12px;
                   background:#F7F9FA;border:1px solid #E5E8EC;border-radius:8px;font-size:11.5px">
@@ -369,8 +369,8 @@
           <span style="color:#6B7B8B">${mk.suggested_basis || ''}</span>
         </div>
         <button id="uw-mk-apply" class="btn accent"
-                title="Writes this into Year 0 of the $/FF table. Later years and escalation stay yours.">
-          Use $${Number(sug).toFixed(0)} for Year 0
+                title="Re-applies the blend to Year 0 — useful after changing the lot ratio. Later years and escalation stay yours.">
+          Re-apply $${Number(sug).toFixed(0)} to Year 0
         </button>
       </div>` : ''}
 
@@ -458,9 +458,9 @@
       </div>` : ''}
 
       <div style="font-size:11px;color:${MUTED};margin-top:10px">
-        Home price per lot width drives assessed value through the <b>AV %</b> already set
-        on each row of the lot table, which is what carries into MUD capacity. Type the
-        figure you want to underwrite into <b>Home Price</b> on that table.
+        Home price per lot width was filled from these figures and drives assessed value
+        through the <b>AV %</b> on each row of the lot table, which is what carries into
+        MUD capacity. Change it on that table if you disagree with the read.
       </div>`;
 
     overlay.classList.add('open');

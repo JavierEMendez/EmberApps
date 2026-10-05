@@ -18,13 +18,12 @@ Two conventions are Carlos's, not defaults picked here:
   * Finished lot value is a share of home price (22%), divided by front
     footage to reach the $/FF the model prices lots in.
 
-Pricing is the one thing this module will not decide. Pace, yield, acreage
-and constraints are measurements and carry straight over; a price is a
-judgement about a market, and silently writing one into a model that prices
-3,000 lots is the wrong kind of automation. So `market_evidence` assembles
-what the submarket actually shows -- price by width, by builder, with the
-range -- and the underwriter types the number. The model's own defaults stand
-until they do.
+Pricing is filled in like everything else, and like everything else it is an
+ordinary input afterwards. Nothing is locked. What the automation owes the
+underwriter is not restraint but an account of itself: every derived number
+records where it came from in `basis`, and `market_evidence` assembles the
+read behind the price -- by width, by builder, with the range and the comp
+set -- so the figure in the field can be checked rather than trusted.
 
 What this module deliberately does NOT do: it never touches the development
 programme. Plants, amenities, detention, roads and parks are the
@@ -435,14 +434,38 @@ def derive_uw_inputs(base, analysis, cbas=None, *,
                         "%.2f lots/mo = %.0f%% of the project's %.2f lots/mo. %s"
                         % (row["pace"], share * 100, total_pace, pace_note or ""))
 
-        # Home price is NOT written. It prices every home in the deal and
-        # feeds assessed value straight into MUD capacity, so it stays the
-        # underwriter's call -- the evidence for it is assembled separately.
+        # Home price is filled from the market and stays an ordinary input.
+        # It prices every home in the deal and feeds assessed value straight
+        # into MUD capacity, so where it came from is recorded beside it and
+        # the charts behind it are a click away.
+        if band and band.get("avg_price"):
+            row["home_price"] = int(band["avg_price"])
+            basis["lot_sizes.%d.home_price" % i] = (
+                "$%s average new-home price in the %s the submarket builds "
+                "(%s lots, %d communities, %d builders, %d published plans). "
+                "Feeds assessed value through the AV %% on this row."
+                % ("{:,.0f}".format(band["avg_price"]), band["label"],
+                   "{:,}".format(int(_num(band.get("lots")))),
+                   int(_num(band.get("communities"))),
+                   int(_num(band.get("builders"))),
+                   int(_num(band.get("plans")))))
         if row["on"] and band and band.get("avg_price"):
             priced.append((ff, max(_num(x.get("allocation_pct")), 1.0),
                            band["avg_price"]))
         rows[i] = row
     inputs["lot_sizes"] = rows
+
+    # ---- lot pricing -----------------------------------------------------
+    ppff = blended_price_per_ff(priced, lot_ratio)
+    if ppff:
+        rate = int(round(ppff))
+        inputs["price_per_ff"] = {str(y): rate for y in range(11)}
+        basis["price_per_ff"] = (
+            "$%s/FF, flat across years. Finished lot at %.0f%% of home price, "
+            "blended over the widths in the mix and weighted by allocation and "
+            "frontage so total lot revenue matches pricing each width on its "
+            "own. Escalation across later years is yours to set."
+            % ("{:,.0f}".format(rate), lot_ratio * 100))
 
     basis["_settings"] = {"capture_pct": capture_pct, "lot_ratio": lot_ratio}
     basis["_suggested_price_per_ff"] = blended_price_per_ff(priced, lot_ratio)

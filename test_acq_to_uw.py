@@ -203,9 +203,30 @@ results.append(check("the widths' paces sum to the project's",
 results.append(check("project pace is reported", bas["_project_pace"], round(proj_pace, 2)))
 results.append(check("every mix width found a band", bas["_widths_no_market"], []))
 
-# Pricing is the underwriter's call. Nothing may quietly set it.
-results.append(check("home price is NOT applied", on[40]["home_price"], 200000))
-results.append(check("$/FF is NOT applied", inp["price_per_ff"]["0"], 1800))
+# Pricing is filled from the market and stays overridable -- an ordinary input.
+# The 40s bucket is the lot-weighted blend of the 42s and 45s the ring builds,
+# not the ring band's own rounded figure.
+results.append(check("home price is filled from the market",
+                     on[40]["home_price"], round((309000 * 200 + 331000 * 120) / 320)))
+results.append(check("each width takes its own bucket's price",
+                     on[50]["home_price"], 412000))
+results.append(check("$/FF is filled from the blend",
+                     inp["price_per_ff"]["0"] != 1800, True))
+results.append(check("$/FF is flat across years, escalation left alone",
+                     len({v for v in inp["price_per_ff"].values()}), 1))
+results.append(check("home price records where it came from",
+                     "40 FF" in bas["lot_sizes.3.home_price"], True))
+results.append(check("$/FF records the ratio it used",
+                     "22%" in bas["price_per_ff"], True))
+# Widths that are off still get their bucket's price, so switching one on
+# later starts from the market rather than from a generic default.
+results.append(check("an off width in a priced bucket still gets that price",
+                     [r for r in inp["lot_sizes"] if r["front_footage"] == 45][0]["home_price"],
+                     on[40]["home_price"]))
+# But a bucket the market does not price must not be invented.
+results.append(check("a width in an unpriced bucket keeps the model default",
+                     [r for r in inp["lot_sizes"] if r["front_footage"] == 70][0]["home_price"],
+                     200000))
 
 # --- evidence ---------------------------------------------------------------
 ev = A.market_evidence(CBAS, mix_widths={40, 50}, lot_ratio=0.22)
@@ -245,6 +266,8 @@ results.append(check("no analysis leaves gross at the model default",
                      empty_in["gross_acreage"], 0))
 results.append(check("no market leaves $/FF at the model default",
                      empty_in["price_per_ff"]["0"], 1800))
+results.append(check("no market leaves home price at the model default",
+                     empty_in["lot_sizes"][3]["home_price"], 200000))
 results.append(check("no mix switches nothing on",
                      sum(r["on"] for r in empty_in["lot_sizes"]), 0))
 results.append(check("no market means no evidence",
