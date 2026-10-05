@@ -340,6 +340,70 @@ def derive_uw_inputs(base, analysis, cbas=None, *,
     return inputs, basis
 
 
+def nearby_communities(cbas, limit=30):
+    """The ring's communities, trimmed to what an underwriter reads.
+
+    `detail` is dropped: it is the per-builder breakdown the pricing charts
+    already aggregate, and carrying it per community would multiply the size
+    of what is stored on the model by an order of magnitude for data nothing
+    reads twice.
+    """
+    out = []
+    for c in ((cbas or {}).get("communities") or []):
+        out.append({
+            "name": c.get("name"),
+            "developer": c.get("developer"),
+            "city": c.get("city"),
+            "status": c.get("status"),
+            "distance_mi": _num(c.get("distance_mi")) or None,
+            "direction": c.get("direction"),
+            "lat": c.get("lat"), "lon": c.get("lon"),
+            "in_district": bool(c.get("in_district")),
+            "school_district": c.get("school_district"),
+            "lot_type_range": c.get("lot_type_range"),
+            "lot_types_ff": c.get("lot_types_ff") or [],
+            "builder_count": int(_num(c.get("builder_count"))),
+            "price_min": int(_num(c.get("price_min"))) or None,
+            "price_max": int(_num(c.get("price_max"))) or None,
+            "annual_starts": _num(c.get("annual_starts")) or None,
+            "annual_closings": _num(c.get("annual_closings")) or None,
+            "vdls": int(_num(c.get("vdls"))) or None,
+            "futures": int(_num(c.get("futures"))) or None,
+            "total_lots": int(_num(c.get("total_lots"))) or None,
+            "pct_built_out": _num(c.get("pct_built_out")) or None,
+            "months_lot_supply": _num(c.get("months_lot_supply")) or None,
+            "years_to_sellout": _num(c.get("years_to_sellout")) or None,
+        })
+    # Already sorted district-first then by closings upstream; keep that order.
+    return out[:limit]
+
+
+def ring_summary(cbas):
+    """How the submarket was measured, so the figures can be judged."""
+    c = cbas or {}
+    me = (c.get("market_entry") or {})
+    return {
+        "radius_mi": _num(c.get("radius_mi")) or None,
+        "center": c.get("center"),
+        "district_name": c.get("district_name"),
+        "district_names": c.get("district_names") or [],
+        "community_count": int(_num(c.get("community_count"))) or None,
+        "active_count": int(_num(c.get("active_count"))) or None,
+        "builder_count": int(_num(c.get("builder_count"))) or None,
+        "annual_starts": _num(c.get("submarket_annual_starts")) or None,
+        "annual_closings": _num(c.get("submarket_annual_closings")) or None,
+        "avg_closings_per_community": _num(c.get("avg_annual_closings_per_community")) or None,
+        "months_lot_supply": _num(me.get("months_lot_supply")) or None,
+        "lot_market": me.get("lot_market"),
+        "years_of_pipeline": _num(me.get("years_of_pipeline")) or None,
+        "dominant_product": me.get("dominant_product"),
+        "top3_builders": me.get("top3_builders"),
+        "top3_start_share_pct": _num(me.get("top3_start_share_pct")) or None,
+        "builder_concentration": me.get("builder_concentration"),
+        "quarter_label": c.get("quarter_label"),
+    }
+
+
 def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
     """What the submarket shows about pricing, shaped for a chart.
 
@@ -389,6 +453,8 @@ def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
     return {
         "lot_ratio": lot_ratio,
         "bands": rows,
+        "ring": ring_summary(cbas),
+        "communities": nearby_communities(cbas),
         "capture": {
             "ring_annual_starts": _num(cap.get("ring_annual_starts")) or None,
             "addressable_starts": _num(cap.get("addressable_starts")) or None,

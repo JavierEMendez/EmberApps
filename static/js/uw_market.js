@@ -230,6 +230,25 @@
 
     const ratioPct = Math.round((mk.lot_ratio || 0.22) * 100);
     const sug = mk.suggested_price_per_ff;
+    const ring = mk.ring || {};
+    const comms = mk.communities || [];
+    const esc = (t) => String(t == null ? '' : t)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const num = (n) => (n == null || !isFinite(n)) ? '—'
+      : Number(n).toLocaleString(undefined, { maximumFractionDigits: 1 });
+    const range$ = (c) => (c.price_min && c.price_max)
+      ? (money1(c.price_min) + '–' + money1(c.price_max))
+      : (c.price_min ? money1(c.price_min) : '—');
+    // Carlos's standing rule: a distance on screen opens driving directions.
+    const dist = (c) => {
+      const label = (c.distance_mi != null ? c.distance_mi.toFixed(1) + ' mi' : '—')
+        + (c.direction ? ' ' + esc(c.direction) : '');
+      if (c.lat == null || c.lon == null) return label;
+      const dest = c.lat + ',' + c.lon;
+      return `<a href="https://www.google.com/maps/dir/?api=1&destination=${dest}"
+                 target="_blank" rel="noopener" style="color:${BLUE};text-decoration:none"
+                 title="Driving directions">${label}</a>`;
+    };
     const nH = Math.max(220, (mk.bands || []).reduce(
       (n, w) => n + 1 + (w.builders || []).length, 0) * 20 + 70);
     const cap = mk.capture || {};
@@ -241,6 +260,77 @@
         and stays yours</b> — nothing here writes a number into the model unless you press
         the button below.
       </div>
+
+      ${ring.radius_mi ? `
+      <div class="section-header" style="margin-top:0">How this submarket is measured</div>
+      <div style="font-size:11.5px;color:${MUTED};margin:-4px 0 10px;line-height:1.55">
+        Every figure below comes from CBAS communities within
+        <b style="color:${INK}">${ring.radius_mi} miles</b> of the project centroid, by true
+        great-circle distance from each community's own coordinates — not a ZIP or county
+        approximation. ${ring.district_name
+          ? `Communities in <b style="color:${INK}">${esc(ring.district_name)}</b> are listed
+             first and flagged, because school district is the submarket boundary that
+             matters. ` : ''}${ring.quarter_label ? `CBAS quarter ${esc(ring.quarter_label)}. ` : ''}
+        Only tracked communities appear — large communities and MPCs, not every subdivision.
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin:0 0 16px;padding:10px 12px;
+                  background:#F7F9FA;border:1px solid #E5E8EC;border-radius:8px;font-size:11.5px">
+        <div><b>${ring.community_count ?? '—'}</b> communities
+          <span style="color:${MUTED}">· ${ring.active_count ?? '—'} active</span></div>
+        <div><b>${ring.builder_count ?? '—'}</b> builders</div>
+        ${ring.months_lot_supply != null ? `<div><b>${ring.months_lot_supply}</b> months of lot supply
+          <span style="color:${MUTED}">${ring.lot_market ? '· ' + ring.lot_market : ''}</span></div>` : ''}
+        ${ring.years_of_pipeline != null ? `<div><b>${ring.years_of_pipeline}</b> yrs of pipeline</div>` : ''}
+        ${ring.dominant_product ? `<div>Dominant product <b>${esc(ring.dominant_product)}</b></div>` : ''}
+        ${ring.top3_start_share_pct != null ? `<div>Top 3 builders <b>${ring.top3_start_share_pct}%</b>
+          <span style="color:${MUTED}">of starts${ring.builder_concentration ? ' · ' + esc(ring.builder_concentration) : ''}</span></div>` : ''}
+      </div>` : ''}
+
+      ${comms.length ? `
+      <div class="section-header">Communities nearby <span style="font-weight:400;color:${MUTED};
+        text-transform:none;letter-spacing:0">${comms.length} within ${ring.radius_mi || '—'} mi</span></div>
+      <div style="overflow-x:auto;margin-bottom:6px">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="text-align:left;color:${MUTED};border-bottom:1px solid #E5E8EC">
+            <th style="padding:5px 7px;font-weight:600">Community</th>
+            <th style="padding:5px 7px;font-weight:600">Dist</th>
+            <th style="padding:5px 7px;font-weight:600">Status</th>
+            <th style="padding:5px 7px;font-weight:600">Lot widths</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Price range</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Starts/yr</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Closings/yr</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">VDL</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Future</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">MoS</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Built</th>
+          </tr></thead>
+          <tbody>${comms.map(c => `
+            <tr style="border-bottom:1px solid #F1F4F6">
+              <td style="padding:5px 7px">
+                <span style="font-weight:600;color:${INK}">${esc(c.name || '—')}</span>
+                ${c.in_district ? `<span style="margin-left:5px;font-size:9px;font-weight:700;
+                   background:#E8F1EA;color:#1C6B47;padding:1px 5px;border-radius:3px">IN DISTRICT</span>` : ''}
+                ${c.developer ? `<div style="color:${MUTED};font-size:10px">${esc(c.developer)}</div>` : ''}
+              </td>
+              <td style="padding:5px 7px;white-space:nowrap">${dist(c)}</td>
+              <td style="padding:5px 7px;color:${MUTED}">${esc(c.status || '—')}</td>
+              <td style="padding:5px 7px;white-space:nowrap">${esc(c.lot_type_range || '—')}
+                ${c.builder_count ? `<span style="color:${MUTED}">· ${c.builder_count} blt</span>` : ''}</td>
+              <td style="padding:5px 7px;text-align:right;white-space:nowrap">${range$(c)}</td>
+              <td style="padding:5px 7px;text-align:right">${num(c.annual_starts)}</td>
+              <td style="padding:5px 7px;text-align:right">${num(c.annual_closings)}</td>
+              <td style="padding:5px 7px;text-align:right">${num(c.vdls)}</td>
+              <td style="padding:5px 7px;text-align:right">${num(c.futures)}</td>
+              <td style="padding:5px 7px;text-align:right">${num(c.months_lot_supply)}</td>
+              <td style="padding:5px 7px;text-align:right">${c.pct_built_out != null
+                 ? Math.round(c.pct_built_out) + '%' : '—'}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div style="font-size:10.5px;color:${MUTED};margin:0 0 20px">
+        VDL = vacant developed lots. MoS = months of lot supply at the community's own
+        closing rate. Distances open driving directions.
+      </div>` : ''}
 
       ${cap.addressable_starts ? `
       <div style="display:flex;gap:18px;flex-wrap:wrap;margin:0 0 14px;padding:10px 12px;
