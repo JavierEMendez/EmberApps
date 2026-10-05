@@ -76,14 +76,14 @@
   };
 
   function lotPriceChart(canvas, mk) {
-    const rows = (mk.widths || []).filter(w => w.implied_lot_ff);
+    const rows = (mk.bands || []).filter(w => w.implied_lot_ff);
     if (!rows.length) return null;
     const ratioPct = Math.round((mk.lot_ratio || 0.22) * 100);
     const c = new Chart(canvas, {
       type: 'bar',
       plugins: [printValues],
       data: {
-        labels: rows.map(w => w.ff + ' FF' + (w.in_mix ? '' : '  (not in mix)')),
+        labels: rows.map(w => w.label + (w.in_mix ? '' : '  (not in mix)')),
         datasets: [{
           label: 'Implied lot $/FF',
           data: rows.map(w => w.implied_lot_ff),
@@ -108,7 +108,9 @@
                   'Implied lot $/FF: $' + w.implied_lot_ff.toFixed(0),
                   'Lot value: ' + money(w.implied_lot_value)
                     + ' = ' + money(w.avg_price) + ' x ' + ratioPct + '%',
-                  w.lots ? w.lots.toLocaleString() + ' lots in the submarket' : '',
+                  'Priced off the ' + w.mid_ff + ' FF midpoint of the band',
+                  w.lots ? w.lots.toLocaleString() + ' lots across '
+                    + w.communities + ' communities' : '',
                 ].filter(Boolean);
               }
             }
@@ -134,9 +136,9 @@
      * is $180k wide is not really one price, and an average over two builders
      * is not the same claim as an average over nine. */
     const labels = [], ranges = [], avgs = [], meta = [];
-    (mk.widths || []).forEach(w => {
+    (mk.bands || []).forEach(w => {
       if (!w.avg_price) return;
-      labels.push(w.ff + ' FF — market');
+      labels.push(w.label + ' — market');
       ranges.push((w.min_price && w.max_price) ? [w.min_price, w.max_price] : null);
       avgs.push(w.avg_price);
       meta.push({ kind: 'market', w, name: 'All builders', lots: w.lots });
@@ -180,7 +182,7 @@
             callbacks: {
               title: (items) => {
                 const m = meta[items[0].dataIndex];
-                return m.w.ff + ' FF — ' + m.name;
+                return m.w.label + ' — ' + m.name;
               },
               label: (ctx) => {
                 const m = meta[ctx.dataIndex];
@@ -216,7 +218,7 @@
     if (!overlay || !body) return;
     destroyCharts();
 
-    if (!mk || !(mk.widths || []).length) {
+    if (!mk || !(mk.bands || []).length) {
       body.innerHTML =
         '<div class="notice info" style="margin:0">No submarket read is attached to this '
         + 'model. It is carried over when a model is created from an acquisition project '
@@ -228,8 +230,9 @@
 
     const ratioPct = Math.round((mk.lot_ratio || 0.22) * 100);
     const sug = mk.suggested_price_per_ff;
-    const nH = Math.max(220, (mk.widths || []).reduce(
+    const nH = Math.max(220, (mk.bands || []).reduce(
       (n, w) => n + 1 + (w.builders || []).length, 0) * 20 + 70);
+    const cap = mk.capture || {};
 
     body.innerHTML = `
       <div class="notice info" style="margin:0 0 14px">
@@ -239,13 +242,25 @@
         the button below.
       </div>
 
-      <div class="section-header" style="margin-top:0">Implied finished lot $/FF by width</div>
+      ${cap.addressable_starts ? `
+      <div style="display:flex;gap:18px;flex-wrap:wrap;margin:0 0 14px;padding:10px 12px;
+                  background:#F7F9FA;border:1px solid #E5E8EC;border-radius:8px;font-size:11.5px">
+        <div><b>${Math.round(cap.ring_annual_starts || 0)}</b> starts/yr in the ring
+          <span style="color:${MUTED}">across ${cap.active_communities || '—'} active communities</span></div>
+        <div><b>${Math.round(cap.addressable_starts)}</b> addressable
+          <span style="color:${MUTED}">in the widths you target</span></div>
+        <div>Median community share <b>${cap.share_median_pct ?? '—'}%</b>
+          <span style="color:${MUTED}">· 75th ${cap.share_p75_pct ?? '—'}%</span></div>
+      </div>` : ''}
+
+      <div class="section-header" style="margin-top:0">Implied finished lot $/FF by band</div>
       <div style="font-size:11px;color:${MUTED};margin:-4px 0 8px">
-        Finished lot taken at <b>${ratioPct}%</b> of the average new-home price on that
-        width, divided by its front footage. Widths not in your product mix are shown
-        faded for context.
+        Finished lot taken at <b>${ratioPct}%</b> of the average new-home price in that
+        band, divided by the band's midpoint frontage. CBAS aggregates the ring into
+        these five bands, so this is the grain the market was actually measured at.
+        Bands your product mix does not fall in are faded.
       </div>
-      <div style="height:${Math.max(170, (mk.widths || []).length * 30 + 60)}px">
+      <div style="height:${Math.max(170, (mk.bands || []).length * 32 + 60)}px">
         <canvas id="uw-mk-ff"></canvas>
       </div>
 
@@ -262,11 +277,11 @@
         </button>
       </div>` : ''}
 
-      <div class="section-header" style="margin-top:22px">New-home price by width and builder</div>
+      <div class="section-header" style="margin-top:22px">New-home price by band and builder</div>
       <div style="font-size:11px;color:${MUTED};margin:-4px 0 8px">
         The bar is each builder's min-to-max; the dot is their average. The orange row
-        per width is the market as a whole. A wide bar means the width is not really
-        one price.
+        per band is the market as a whole. A wide bar means the band is not really one
+        price. Builders active in several communities are merged, weighted by lot count.
       </div>
       <div style="height:${nH}px"><canvas id="uw-mk-home"></canvas></div>
       <div style="font-size:11px;color:${MUTED};margin-top:10px">
@@ -317,7 +332,7 @@
    * to go looking for it. Dimmed it still reads as available, and the popup's
    * empty state explains how to get the data. */
   window.syncUwMarketButtons = function () {
-    const has = !!(market() && (market().widths || []).length);
+    const has = !!(market() && (market().bands || []).length);
     document.querySelectorAll('.uw-market-btn').forEach(b => {
       b.style.opacity = has ? '' : '0.55';
       b.title = has

@@ -62,45 +62,125 @@ def _ff_of(label):
     return int(float(m.group(1))) if m else None
 
 
-def _nearest_width(ff, available):
-    """The modelled width closest to `ff`.
 
-    CBAS reports what builders actually plat -- 46 FF, 52 FF -- while the
-    model's table moves in fives. Snapping to the nearest row keeps a real
-    market width from being dropped on the floor for not being round.
+def lot_bands(cbas):
+    """The ring's lot-width bands, as CBAS actually aggregates them.
+
+    CBAS does not publish a row per front footage across the ring; it buckets
+    into five bands (under 40, 40-50, 50-60, 60-70, 70+) because that is the
+    grain the underlying survey supports. An earlier version of this module
+    read a top-level `lot_widths` that does not exist, so every width came
+    back with no market read and the whole market half silently did nothing.
+
+    Working in bands keeps the evidence at the grain it was measured.
     """
-    if not available:
-        return None
-    return min(available, key=lambda w: (abs(w - ff), w))
-
-
-def market_by_width(cbas):
-    """{front footage: CBAS row}, snapped onto the model's lot table."""
-    out = {}
-    for row in ((cbas or {}).get("lot_widths") or []):
-        ff = _num(row.get("lot_width_ff"))
-        if ff <= 0:
+    out = []
+    for b in ((cbas or {}).get("lot_bands") or []):
+        if not _num(b.get("lots")) and not _num(b.get("avg_price")):
             continue
-        w = _nearest_width(ff, UW_LOT_WIDTHS)
-        if w is None:
-            continue
-        # Two CBAS widths can snap to one model row (46 and 47 both land on
-        # 45). Merge them: lots add, prices weight by lot count.
-        prev = out.get(w)
-        if prev is None:
-            out[w] = dict(row, _snapped_from=[ff])
-            continue
-        a, b = _num(prev.get("lots")), _num(row.get("lots"))
-        tot = a + b
-        for k in ("avg_price", "avg_sqft", "avg_ppsf"):
-            pa, pb = _num(prev.get(k)), _num(row.get(k))
-            if tot > 0 and (pa or pb):
-                prev[k] = round((pa * a + pb * b) / tot, 2)
-        for k in ("lots", "est_vdls", "est_futures",
-                  "est_annual_starts", "est_annual_closings"):
-            prev[k] = round(_num(prev.get(k)) + _num(row.get(k)), 1)
-        prev["_snapped_from"].append(ff)
+        out.append({
+            "label": b.get("label"),
+            "min_ff": int(_num(b.get("min_ff"))),
+            "max_ff": int(_num(b.get("max_ff"))),
+            "lots": int(_num(b.get("lots"))),
+            "communities": int(_num(b.get("communities"))),
+            "builders": int(_num(b.get("builders"))),
+            "avg_price": int(round(_num(b.get("avg_price")))) or None,
+            "min_price": int(round(_num(b.get("min_price")))) or None,
+            "max_price": int(round(_num(b.get("max_price")))) or None,
+            "avg_sqft": int(round(_num(b.get("avg_sqft")))) or None,
+            "avg_ppsf": _num(b.get("avg_ppsf")) or None,
+            "plans": int(_num(b.get("plans"))),
+        })
     return out
+
+
+def band_for_width(bands, ff):
+    """The band a front footage falls in. Bands are [min, max)."""
+    for b in bands or []:
+        if b["min_ff"] <= ff < b["max_ff"]:
+            return b
+    return None
+
+
+def builders_by_band(cbas, bands):
+    """{band label: [builder rows]} aggregated across the ring.
+
+    Builder pricing is published per community, so a builder active in six
+    communities appears six times. They are merged here, weighting price by
+    lot count, because the question a chart answers is what a builder sells
+    for in this submarket -- not what they sell for in one subdivision.
+    """
+    agg = {}
+    for c in ((cbas or {}).get("communities") or []):
+        for r in (((c.get("detail") or {}).get("builder_lot_widths")) or []):
+            ff = _num(r.get("lot_width_ff"))
+            band = band_for_width(bands, ff)
+            price = _num(r.get("avg_price"))
+            if not band or price <= 0:
+                continue
+            name = str(r.get("name") or "").strip()
+            if not name or name.lower() == "builder tbd":
+                continue           # CBAS's placeholder for "not yet assigned"
+            key = (band["label"], name)
+            cur = agg.get(key)
+            lots = _num(r.get("lots"))
+            if cur is None:
+                agg[key] = {"name": name, "lots": lots, "_pw": price * max(lots, 1),
+                            "_w": max(lots, 1),
+                            "min_price": _num(r.get("min_price")) or price,
+                            "max_price": _num(r.get("max_price")) or price,
+                            "avg_sqft": _num(r.get("avg_sqft")) or None,
+                            "plans": _num(r.get("plans")), "communities": 1}
+            else:
+                cur["lots"] += lots
+                cur["_pw"] += price * max(lots, 1)
+                cur["_w"] += max(lots, 1)
+                lo = _num(r.get("min_price")) or price
+                hi = _num(r.get("max_price")) or price
+                cur["min_price"] = min(cur["min_price"], lo)
+                cur["max_price"] = max(cur["max_price"], hi)
+                cur["plans"] += _num(r.get("plans"))
+                cur["communities"] += 1
+    out = {}
+    for (label, _name), r in agg.items():
+        r["avg_price"] = int(round(r.pop("_pw") / r.pop("_w")))
+        r["lots"] = int(r["lots"])
+        r["min_price"] = int(round(r["min_price"]))
+        r["max_price"] = int(round(r["max_price"]))
+        r["plans"] = int(r["plans"])
+        out.setdefault(label, []).append(r)
+    for rows in out.values():
+        rows.sort(key=lambda x: -x["lots"])
+    return out
+
+
+def addressable_pace(cbas, capture_pct):
+    """Lots per month for the whole project, from the ring's addressable starts.
+
+    The CBAS endpoint already works this out properly and the reasoning is its
+    own: you do not compete for every start in the ring, only for starts in
+    the widths you intend to build, so ring starts are apportioned by the
+    share of ring lots sitting in the project's target bands. Capture of that
+    addressable figure is the number worth arguing about -- capture of all
+    starts understates it whenever a project targets part of the range.
+
+    Returns (lots_per_month, note) or (None, None).
+    """
+    cap = (((cbas or {}).get("market_entry") or {}).get("capture")) or {}
+    addressable = _num(cap.get("addressable_starts"))
+    if addressable <= 0:
+        return None, None
+    pace = addressable * capture_pct / 12.0
+    note = ("%.2f lots/mo = %.0f addressable starts a year x %.0f%% capture / 12. "
+            "Addressable is the ring's %.0f starts apportioned to the %s FF this "
+            "project targets. The median community in the ring runs %.1f%% share; "
+            "the 75th runs %.1f%%."
+            % (pace, addressable, capture_pct * 100,
+               _num(cap.get("ring_annual_starts")),
+               ", ".join(str(int(f)) for f in (cap.get("target_ff") or [])) or "targeted",
+               _num(cap.get("share_median_pct")), _num(cap.get("share_p75_pct"))))
+    return pace, note
 
 
 def mix_by_width(analysis):
@@ -114,18 +194,6 @@ def mix_by_width(analysis):
     return out
 
 
-def recommended_pace(mkt_row, capture_pct):
-    """Lots per month for one width, off the submarket's annual starts."""
-    starts = _num((mkt_row or {}).get("est_annual_starts"))
-    if starts <= 0:
-        return None
-    return starts * capture_pct / 12.0
-
-
-def lot_value(mkt_row, lot_ratio):
-    """Finished lot value implied by the home price that sits on it."""
-    home = _num((mkt_row or {}).get("avg_price"))
-    return home * lot_ratio if home > 0 else None
 
 
 def blended_price_per_ff(priced_widths, lot_ratio):
@@ -199,7 +267,7 @@ def derive_uw_inputs(base, analysis, cbas=None, *,
     basis = {}
     analysis = analysis or {}
 
-    mkt = market_by_width(cbas)
+    bands = lot_bands(cbas)
     mix = mix_by_width(analysis)
 
     # ---- acreage ---------------------------------------------------------
@@ -222,16 +290,23 @@ def derive_uw_inputs(base, analysis, cbas=None, *,
             "overlapping layers are deducted once. The development programme "
             "(plants, amenities, detention, roads, parks) is still yours." % named)
 
-    # ---- lot table -------------------------------------------------------
+    # ---- pace ------------------------------------------------------------
+    # One project-level absorption, split across the widths being built in
+    # proportion to how much of the mix each carries. Pace is a claim about
+    # the whole community competing for the ring's starts; apportioning it is
+    # honest, whereas giving every width the ring's full capture would
+    # multiply the project's absorption by the number of products in it.
+    total_pace, pace_note = addressable_pace(cbas, capture_pct)
+    alloc_total = sum(max(0.0, _num(r.get("allocation_pct"))) for r in mix.values()) or 0.0
+
     rows = [dict(r) for r in (inputs.get("lot_sizes") or [])]
     priced = []
     for i, row in enumerate(rows):
         ff = int(_num(row.get("front_footage"),
                       UW_LOT_WIDTHS[i] if i < len(UW_LOT_WIDTHS) else 0))
-        m, x = mkt.get(ff), mix.get(ff)
+        x = mix.get(ff)
+        band = band_for_width(bands, ff)
 
-        # The analyst's mix decides what is built. The market decides how fast
-        # it sells and what it sells for.
         row["on"] = 1 if x else 0
         if x:
             upa = _num(x.get("units_per_acre"))
@@ -240,101 +315,94 @@ def derive_uw_inputs(base, analysis, cbas=None, *,
                 basis["lot_sizes.%d.yield_per_ac" % i] = (
                     "%.2f u/ac from the acquisition product mix." % upa)
 
-        if m:
-            pace = recommended_pace(m, capture_pct)
-            if pace:
-                row["pace"] = round(pace, 2)
-                basis["lot_sizes.%d.pace" % i] = (
-                    "%.2f lots/mo = %.0f %d FF starts a year in the submarket "
-                    "x %.0f%% capture / 12." % (pace, _num(m.get("est_annual_starts")),
-                                                ff, capture_pct * 100))
-            # Home price is NOT written. It prices every home in the deal and
-            # feeds assessed value straight into MUD capacity, so it stays the
-            # underwriter's call -- the evidence for it is assembled below.
-            home = _num(m.get("avg_price"))
-            if row["on"] and home > 0:
-                priced.append((ff, _num(m.get("lots")), home))
+            if total_pace and alloc_total > 0:
+                share = max(0.0, _num(x.get("allocation_pct"))) / alloc_total
+                if share > 0:
+                    row["pace"] = round(total_pace * share, 2)
+                    basis["lot_sizes.%d.pace" % i] = (
+                        "%.2f lots/mo = %.0f%% of the project's %.2f lots/mo. %s"
+                        % (row["pace"], share * 100, total_pace, pace_note or ""))
+
+        # Home price is NOT written. It prices every home in the deal and
+        # feeds assessed value straight into MUD capacity, so it stays the
+        # underwriter's call -- the evidence for it is assembled separately.
+        if row["on"] and band and band.get("avg_price"):
+            priced.append((ff, max(_num(x.get("allocation_pct")), 1.0),
+                           band["avg_price"]))
         rows[i] = row
     inputs["lot_sizes"] = rows
 
     basis["_settings"] = {"capture_pct": capture_pct, "lot_ratio": lot_ratio}
     basis["_suggested_price_per_ff"] = blended_price_per_ff(priced, lot_ratio)
-    basis["_widths_matched"] = sorted(set(mix) & set(mkt))
-    basis["_widths_no_market"] = sorted(set(mix) - set(mkt))
+    basis["_project_pace"] = round(total_pace, 2) if total_pace else None
+    basis["_widths_matched"] = sorted(w for w in mix if band_for_width(bands, w))
+    basis["_widths_no_market"] = sorted(w for w in mix if not band_for_width(bands, w))
     return inputs, basis
 
 
 def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
     """What the submarket shows about pricing, shaped for a chart.
 
-    Deliberately evidence and not a decision. Each width carries the average
+    Deliberately evidence and not a decision. Each band carries the average
     the market is achieving, the range behind that average, and the builders
     making it up -- because an average over two builders and an average over
-    nine are not the same claim, and a width whose range is $180k wide is not
+    nine are not the same claim, and a band whose range is $180k wide is not
     really one price at all.
 
-    `implied_lot_ff` is what the finished-lot share works out to per width. It
-    is shown beside the home price rather than applied, so the underwriter can
-    see whether one width is carrying the blend.
+    Bands, not front footages: that is the grain CBAS aggregates the ring at,
+    and showing a per-FF number would imply a precision the survey does not
+    carry.
     """
-    widths = []
-    by_width = market_by_width(cbas)
-    builder_rows = ((cbas or {}).get("builder_lot_widths") or [])
+    bands = lot_bands(cbas)
+    builders = builders_by_band(cbas, bands)
+    mix_widths = set(mix_widths or [])
 
-    for ff in sorted(by_width):
-        m = by_width[ff]
-        home = _num(m.get("avg_price"))
-        lots = _num(m.get("lots"))
-        builders = []
-        for b in builder_rows:
-            bff = _num(b.get("lot_width_ff"))
-            if not bff or _nearest_width(bff, UW_LOT_WIDTHS) != ff:
-                continue
-            bp = _num(b.get("avg_price"))
-            if bp <= 0:
-                continue
-            builders.append({
-                "name": str(b.get("name") or "Builder")[:40],
-                "lots": int(_num(b.get("lots"))),
-                "avg_price": int(round(bp)),
-                "min_price": int(round(_num(b.get("min_price")))) or None,
-                "max_price": int(round(_num(b.get("max_price")))) or None,
-                "avg_sqft": int(round(_num(b.get("avg_sqft")))) or None,
-                "plans": int(_num(b.get("plans"))),
-            })
-        builders.sort(key=lambda r: -r["lots"])
-        widths.append({
-            "ff": ff,
-            "in_mix": bool(mix_widths and ff in mix_widths),
-            "lots": int(lots),
-            "avg_price": int(round(home)) if home > 0 else None,
-            "min_price": int(round(_num(m.get("min_price")))) or None,
-            "max_price": int(round(_num(m.get("max_price")))) or None,
-            "avg_sqft": int(round(_num(m.get("avg_sqft")))) or None,
-            "avg_ppsf": _num(m.get("avg_ppsf")) or None,
-            "annual_starts": _num(m.get("est_annual_starts")) or None,
-            "vdls": int(_num(m.get("est_vdls"))) or None,
-            "futures": int(_num(m.get("est_futures"))) or None,
+    rows = []
+    for b in bands:
+        home = _num(b.get("avg_price"))
+        # Price a band at the midpoint of the widths it covers, which is what
+        # a $/FF derived from it actually describes.
+        mid = (b["min_ff"] + min(b["max_ff"], b["min_ff"] + 20)) / 2.0
+        in_mix = sorted(w for w in mix_widths if b["min_ff"] <= w < b["max_ff"])
+        rows.append({
+            "label": b["label"],
+            "min_ff": b["min_ff"], "max_ff": b["max_ff"],
+            "mid_ff": round(mid, 1),
+            "in_mix": bool(in_mix),
+            "mix_widths": in_mix,
+            "lots": b["lots"],
+            "communities": b["communities"],
+            "avg_price": b["avg_price"],
+            "min_price": b["min_price"],
+            "max_price": b["max_price"],
+            "avg_sqft": b["avg_sqft"],
+            "avg_ppsf": b["avg_ppsf"],
             "implied_lot_value": int(round(home * lot_ratio)) if home > 0 else None,
-            "implied_lot_ff": round(home * lot_ratio / ff, 2) if home > 0 and ff else None,
-            "builders": builders[:10],
-            "builder_count": len(builders),
-            "snapped_from": sorted(set(m.get("_snapped_from") or [])),
+            "implied_lot_ff": round(home * lot_ratio / mid, 2) if home > 0 and mid else None,
+            "builders": builders.get(b["label"], [])[:10],
+            "builder_count": len(builders.get(b["label"], [])),
         })
 
-    in_mix = [(w["ff"], w["lots"], w["avg_price"]) for w in widths
-              if w["in_mix"] and w["avg_price"]]
+    cap = (((cbas or {}).get("market_entry") or {}).get("capture")) or {}
+    in_mix_rows = [(r["mid_ff"], r["lots"], r["avg_price"]) for r in rows
+                   if r["in_mix"] and r["avg_price"]]
     return {
         "lot_ratio": lot_ratio,
-        "widths": widths,
-        # The blend over the widths actually being built, which is the number
-        # that would hold total lot revenue if it were adopted.
+        "bands": rows,
+        "capture": {
+            "ring_annual_starts": _num(cap.get("ring_annual_starts")) or None,
+            "addressable_starts": _num(cap.get("addressable_starts")) or None,
+            "active_communities": _num(cap.get("active_communities")) or None,
+            "share_median_pct": _num(cap.get("share_median_pct")) or None,
+            "share_p75_pct": _num(cap.get("share_p75_pct")) or None,
+            "target_ff": cap.get("target_ff") or [],
+        },
         "suggested_price_per_ff": (
-            round(blended_price_per_ff(in_mix, lot_ratio), 2)
-            if in_mix else None),
+            round(blended_price_per_ff(in_mix_rows, lot_ratio), 2)
+            if in_mix_rows else None),
         "suggested_basis": (
-            "Blended over the %s FF in the product mix, weighted by lot count "
-            "and frontage so total lot revenue matches pricing each width on "
-            "its own." % ", ".join(str(ff) for ff, _l, _p in sorted(in_mix))
-            if in_mix else None),
+            "Blended over the %s bands your mix falls in, weighted by lot count "
+            "and frontage so total lot revenue matches pricing each band on its "
+            "own." % ", ".join(r["label"] for r in rows if r["in_mix"])
+            if in_mix_rows else None),
     }

@@ -216,27 +216,41 @@
           Export Executive PDF
         </button>
 
-        <!-- Hand the deal to MPC Underwriting. Disabled until an analysis
-             exists, because every assumption it carries is derived from one. -->
-        <button id="btn-underwrite" style="width:100%;margin-top:6px" disabled
-                title="Create an underwriting model pre-filled from this analysis and the submarket">
-          Underwrite this →
-        </button>
-        <div id="uw-settings" style="display:none;margin-top:6px;font-size:11px;color:#6B7B8B">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
-            <label style="flex:1;margin:0" title="Share of the submarket's annual starts this community is assumed to take">
-              Capture of submarket starts</label>
-            <input id="uw-capture" type="text" inputmode="decimal" value="20"
-                   style="width:52px;text-align:right;padding:2px 4px;margin:0"><span>%</span>
+        <!-- Hand the deal to MPC Underwriting. A separate block from the two
+             actions above: those produce something about this acquisition,
+             this one leaves for another tool. It is deliberately not a third
+             orange button -- the page would then have three equal shouts. -->
+        <div id="uw-handoff" style="margin-top:14px;padding-top:12px;
+                                     border-top:1px solid var(--eax-line, #E3DED5)">
+          <div style="font-size:10px;font-weight:700;letter-spacing:0.12em;
+                      text-transform:uppercase;color:var(--eax-muted,#8C8578);margin-bottom:7px">
+            Underwriting
           </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <label style="flex:1;margin:0" title="Finished lot value as a share of the home price it carries">
-              Finished lot / home price</label>
-            <input id="uw-ratio" type="text" inputmode="decimal" value="22"
-                   style="width:52px;text-align:right;padding:2px 4px;margin:0"><span>%</span>
+          <button id="btn-underwrite" class="acq-btn" disabled
+                  style="width:100%;height:38px;border-color:var(--eax-accent,#F25929);
+                         color:var(--eax-accent,#F25929);font-weight:700"
+                  title="Create an underwriting model pre-filled from this analysis and the submarket">
+            Underwrite this &rarr;
+          </button>
+          <div id="uw-settings" style="display:none;margin-top:9px;font-size:11px;
+                                        color:var(--eax-muted,#8C8578)">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:5px">
+              <label style="flex:1;margin:0"
+                     title="Share of the ring's addressable starts this community is assumed to take. Addressable means starts in the lot widths you are actually building.">
+                Capture of addressable starts</label>
+              <input id="uw-capture" type="text" inputmode="decimal" value="20"
+                     style="width:50px;text-align:right;padding:3px 5px;margin:0"><span>%</span>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <label style="flex:1;margin:0"
+                     title="Finished lot value as a share of the home price it carries. Used only to suggest a $/FF in the model; nothing is written without your say-so.">
+                Finished lot / home price</label>
+              <input id="uw-ratio" type="text" inputmode="decimal" value="22"
+                     style="width:50px;text-align:right;padding:3px 5px;margin:0"><span>%</span>
+            </div>
           </div>
+          <div id="uw-status" class="status-msg" style="margin-top:7px"></div>
         </div>
-        <div id="uw-status" class="status-msg"></div>
       </div>
     </div>
   </div>

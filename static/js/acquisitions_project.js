@@ -571,6 +571,9 @@ function _syncSummaryBtn(hasAnalysis) {
       : 'Run the acquisition analysis first — the assumptions are built from it';
   }
   if (cfg) cfg.style.display = hasAnalysis ? 'block' : 'none';
+  // Pace is now a project-level figure split across the mix, so the label
+  // says addressable starts rather than per-width starts.
+
 }
 
 // Hand the deal to MPC Underwriting.
@@ -613,7 +616,7 @@ document.getElementById('btn-underwrite')?.addEventListener('click', async (ev) 
         (d.had_market_data
           ? ('Model created from the submarket read'
              + (gaps.length
-                ? `; ${gaps.join(', ')} FF had no market read and kept the model's defaults. `
+                ? `; ${gaps.join(', ')} FF fell outside every band CBAS reported and kept the model's defaults. `
                 : '. '))
           : 'Model created. No submarket data was available, so pace and pricing kept '
             + 'the model defaults. ')
