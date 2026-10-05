@@ -452,6 +452,45 @@ def derive_uw_inputs(base, analysis, cbas=None, *,
     return inputs, basis
 
 
+def community_products(community, limit=24):
+    """Builder x lot width inside one community, merged and ordered by size."""
+    agg = {}
+    for r in (((community or {}).get("detail") or {}).get("builder_lot_widths") or []):
+        name = str(r.get("name") or "").strip()
+        ff = int(_num(r.get("lot_width_ff")))
+        if not name or name.lower() == "builder tbd" or ff <= 0:
+            continue
+        key = (name, ff)
+        a = agg.setdefault(key, {"builder": name, "ff": ff, "lots": 0.0,
+                                 "_pw": 0.0, "_w": 0.0, "min_price": None,
+                                 "max_price": None, "plans": 0.0, "avg_sqft": None})
+        lots = _num(r.get("lots"))
+        price = _num(r.get("avg_price"))
+        a["lots"] += lots
+        a["plans"] += _num(r.get("plans"))
+        if price > 0:
+            w = max(lots, 1.0)
+            a["_pw"] += price * w
+            a["_w"] += w
+            lo = _num(r.get("min_price")) or price
+            hi = _num(r.get("max_price")) or price
+            a["min_price"] = lo if a["min_price"] is None else min(a["min_price"], lo)
+            a["max_price"] = hi if a["max_price"] is None else max(a["max_price"], hi)
+        sf = _num(r.get("avg_sqft"))
+        if sf > 0 and not a["avg_sqft"]:
+            a["avg_sqft"] = int(round(sf))
+    out = []
+    for a in agg.values():
+        price = (a.pop("_pw") / a.pop("_w")) if a["_w"] else 0.0
+        out.append({"builder": a["builder"], "ff": a["ff"], "lots": int(a["lots"]),
+                    "plans": int(a["plans"]), "avg_sqft": a["avg_sqft"],
+                    "avg_price": int(round(price)) or None,
+                    "min_price": int(round(a["min_price"])) if a["min_price"] else None,
+                    "max_price": int(round(a["max_price"])) if a["max_price"] else None})
+    out.sort(key=lambda r: (r["ff"], -r["lots"]))
+    return out[:limit]
+
+
 def nearby_communities(cbas, limit=30):
     """The ring's communities, trimmed to what an underwriter reads.
 
@@ -472,8 +511,11 @@ def nearby_communities(cbas, limit=30):
             "lat": c.get("lat"), "lon": c.get("lon"),
             "in_district": bool(c.get("in_district")),
             "school_district": c.get("school_district"),
-            "lot_type_range": c.get("lot_type_range"),
-            "lot_types_ff": c.get("lot_types_ff") or [],
+            # lot_type_range comes straight from CBAS and is an object, not a
+            # string -- rendering it put "[object Object]" in the table. The
+            # widths are derived here from the list we already compute.
+            "lot_types_ff": sorted({int(_num(f)) for f in (c.get("lot_types_ff") or [])
+                                    if _num(f) > 0}),
             "builder_count": int(_num(c.get("builder_count"))),
             "price_min": int(_num(c.get("price_min"))) or None,
             "price_max": int(_num(c.get("price_max"))) or None,
@@ -485,6 +527,11 @@ def nearby_communities(cbas, limit=30):
             "pct_built_out": _num(c.get("pct_built_out")) or None,
             "months_lot_supply": _num(c.get("months_lot_supply")) or None,
             "years_to_sellout": _num(c.get("years_to_sellout")) or None,
+            # What each builder is doing at each width inside this community.
+            # The ring-level numbers answer "what does the submarket do"; this
+            # answers "who is doing it next door", which is the question when
+            # a comp is two miles away.
+            "products": community_products(c),
         })
     # Already sorted district-first then by closings upstream; keep that order.
     return out[:limit]
