@@ -76,18 +76,23 @@
   };
 
   function lotPriceChart(canvas, mk) {
-    const rows = (mk.bands || []).filter(w => w.implied_lot_ff);
+    // Widths in the mix with no market read are kept, as a zero-length bar
+    // labelled so. Dropping them made the chart look like it had forgotten a
+    // product the deal is actually built on.
+    const rows = (mk.bands || []).filter(w => w.implied_lot_ff || w.in_mix);
     if (!rows.length) return null;
     const ratioPct = Math.round((mk.lot_ratio || 0.22) * 100);
     const c = new Chart(canvas, {
       type: 'bar',
       plugins: [printValues],
       data: {
-        labels: rows.map(w => w.label + (w.in_mix ? '' : '  (not in mix)')),
+        labels: rows.map(w => w.label
+          + (w.no_market ? '  (no market read)' : (w.in_mix ? '' : '  (not in mix)'))),
         datasets: [{
           label: 'Implied lot $/FF',
-          data: rows.map(w => w.implied_lot_ff),
-          backgroundColor: rows.map(w => w.in_mix ? BLUE : BLUE_SOFT),
+          data: rows.map(w => w.implied_lot_ff || 0),
+          backgroundColor: rows.map(w => w.no_market ? 'rgba(19,52,78,0.07)'
+                                        : (w.in_mix ? BLUE : BLUE_SOFT)),
           borderRadius: 4,
           borderSkipped: 'start',
           barThickness: 16,
@@ -99,11 +104,17 @@
         layout: { padding: { right: 64 } },
         plugins: {
           legend: { display: false },     // one series; the title names it
-          printValues: { fmt: v => '$' + Number(v).toFixed(0) + '/FF' },
+          printValues: { fmt: (v, i) => (rows[i] && rows[i].no_market)
+            ? 'no community nearby builds this width'
+            : '$' + Number(v).toFixed(0) + '/FF' },
           tooltip: {
             callbacks: {
               label: (ctx) => {
                 const w = rows[ctx.dataIndex];
+                if (w.no_market) return [
+                  'Your product mix uses this width.',
+                  'No community in the ring builds it, so there is no price to read.',
+                  'Pace and pricing here stay on the model defaults.'];
                 return [
                   'Implied lot $/FF: $' + w.implied_lot_ff.toFixed(0),
                   'Lot value: ' + money(w.implied_lot_value)

@@ -548,6 +548,30 @@ def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
             "builder_count": len(builders.get(b["label"], [])),
         })
 
+    # Every width in the product mix gets a row, including one the ring does
+    # not build. Dropping it made the chart look like it had forgotten a
+    # product, when the real finding is that nobody nearby builds it -- which
+    # is worth knowing before underwriting absorption on it.
+    have = {r["label"] for r in rows}
+    for w in sorted(mix_widths):
+        bk = bucket_of(w)
+        if not bk or bk[1] in have:
+            continue
+        key, label = bk
+        rows.append({
+            "label": label, "min_ff": key,
+            "max_ff": 200 if key >= BUCKET_MAX else key + 10,
+            "mid_ff": float(w), "in_mix": True, "mix_widths": [w],
+            "no_market": True,
+            "lots": 0, "communities": 0, "widths": [], "plans": 0,
+            "avg_price": None, "min_price": None, "max_price": None,
+            "avg_sqft": None, "avg_ppsf": None,
+            "implied_lot_value": None, "implied_lot_ff": None,
+            "builders": [], "builder_count": 0,
+        })
+        have.add(label)
+    rows.sort(key=lambda r: (r["min_ff"], r["label"]))
+
     cap = (((cbas or {}).get("market_entry") or {}).get("capture")) or {}
     in_mix_rows = [(r["mid_ff"], r["lots"], r["avg_price"]) for r in rows
                    if r["in_mix"] and r["avg_price"]]

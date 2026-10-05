@@ -223,6 +223,22 @@ results.append(check("the capture block travels with the evidence",
                      ev["capture"]["addressable_starts"], 300))
 results.append(check("a suggestion is offered", ev["suggested_price_per_ff"] > 0, True))
 
+# A width the deal is built on must never vanish because the ring lacks it.
+thin = A.market_evidence(CBAS, mix_widths={40, 50, 60, 70}, lot_ratio=0.22)
+labels = [b["label"] for b in thin["bands"]]
+results.append(check("every mix width gets a row, market or not",
+                     all(w in labels for w in ("40 FF", "50 FF", "60 FF", "70 FF")), True))
+missing = {b["label"] for b in thin["bands"] if b.get("no_market")}
+results.append(check("the ones with nothing behind them are flagged",
+                     missing, {"60 FF", "70 FF"}))
+results.append(check("a flagged row carries no invented price",
+                     next(b for b in thin["bands"] if b["label"] == "70 FF")["avg_price"], None))
+results.append(check("rows stay in width order",
+                     labels, sorted(labels, key=lambda l: next(
+                         b["min_ff"] for b in thin["bands"] if b["label"] == l))))
+results.append(check("a flagged row is not blended into the suggestion",
+                     thin["suggested_price_per_ff"], ev["suggested_price_per_ff"]))
+
 # --- nothing to go on: the model's defaults must come through untouched -----
 empty_in, _ = A.derive_uw_inputs(_base(), {}, {})
 results.append(check("no analysis leaves gross at the model default",
