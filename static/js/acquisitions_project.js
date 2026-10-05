@@ -598,7 +598,28 @@ document.getElementById('btn-underwrite')?.addEventListener('click', async (ev) 
   // Opened here, inside the click, rather than after the await. A window.open
   // that happens once the fetch resolves is no longer tied to a user gesture
   // and browsers block it, which would land the model nowhere.
+  //
+  // It gets something to say immediately. Deriving the model pulls the CBAS
+  // submarket read, which takes tens of seconds, and an about:blank tab
+  // sitting there for that long reads as a broken page rather than a busy one.
   const tab = window.open('', '_blank');
+  if (tab) {
+    try {
+      tab.document.write(
+        '<!doctype html><meta charset=utf-8><title>Building underwriting model…</title>'
+        + '<style>body{margin:0;height:100vh;display:flex;align-items:center;'
+        + 'justify-content:center;font-family:Inter,system-ui,sans-serif;background:#F7F5F1;'
+        + 'color:#13344E}.w{text-align:center;max-width:340px}'
+        + '.s{width:26px;height:26px;margin:0 auto 16px;border:3px solid #E3DED5;'
+        + 'border-top-color:#F25929;border-radius:50%;animation:r .8s linear infinite}'
+        + '@keyframes r{to{transform:rotate(360deg)}}'
+        + 'h1{font-size:15px;margin:0 0 6px}p{font-size:12.5px;color:#8C8578;margin:0;line-height:1.5}'
+        + '</style><div class=w><div class=s></div><h1>Building the underwriting model</h1>'
+        + '<p>Deriving acreage and constraints from the analysis, and pace from the '
+        + 'submarket. This usually takes a few seconds.</p></div>');
+      tab.document.close();
+    } catch (e) { /* a blocked write is not worth failing the handoff over */ }
+  }
   try {
     const r = await fetch(`/api/acq/projects/${PROJECT_ID}/underwrite`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -628,7 +649,14 @@ document.getElementById('btn-underwrite')?.addEventListener('click', async (ev) 
     btn.disabled = false;
     btn.textContent = label;
   } catch (e) {
-    if (tab) tab.close();          // nothing landed in it
+    // Say what happened in the tab too — it is probably the one being looked at.
+    if (tab) {
+      try {
+        tab.document.body.innerHTML =
+          '<div class="w"><h1>Could not build the model</h1><p>'
+          + String(e.message).replace(/[<>&]/g, '') + '</p></div>';
+      } catch (_) { try { tab.close(); } catch (__) {} }
+    }
     if (status) status.textContent = 'Could not build the model: ' + e.message;
     btn.disabled = false;
     btn.textContent = label;

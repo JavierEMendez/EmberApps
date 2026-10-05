@@ -3230,6 +3230,12 @@ function collectInputs() {
         return saved !== '' && saved !== null ? parseFloat(saved) : null;
       };
       return {
+    // collectInputs builds a fresh object from the form, so anything the model
+    // carries that has no field on screen would be dropped on the first save.
+    // _acq_link is what ties this model back to the acquisition it came from
+    // and holds the submarket read the pricing charts draw — losing it on an
+    // unrelated edit would quietly empty them.
+    ...(inputs._acq_link ? { _acq_link: inputs._acq_link } : {}),
         ff: ls.ff,
         lot_sf: ls.lot_sf,
         depth: ls.depth,
