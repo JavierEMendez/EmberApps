@@ -84,48 +84,38 @@ def bucket_of(ff):
     return (lo, "%d FF" % lo)
 
 
-def width_buckets(cbas):
-    """The ring's supply and pricing by lot width, in decades.
-
-    Built from each community's own lot-width detail, which carries the real
-    frontage, rather than from the ring-level `lot_bands` CBAS publishes. Those
-    bands are five wide ranges; aggregating the detail ourselves gives the
-    product grain an underwriter actually mixes in, and keeps a 45 from being
-    presented as if it were a category.
-
-    Prices weight by lot count, so a band is the market's average rather than
-    the average of community averages.
-    """
+def _bucket_rows(rows, ff_key="lot_width_ff"):
+    """Fold exact-width rows into decade buckets, weighting prices by lots."""
     agg = {}
-    for c in ((cbas or {}).get("communities") or []):
-        cname = c.get("name")
-        for r in (((c.get("detail") or {}).get("lot_widths")) or []):
-            b = bucket_of(r.get("lot_width_ff"))
-            if not b:
-                continue
-            key, label = b
-            a = agg.setdefault(key, {
-                "key": key, "label": label, "lots": 0.0, "_pw": 0.0, "_w": 0.0,
-                "_sw": 0.0, "_sfw": 0.0, "min_price": None, "max_price": None,
-                "communities": set(), "widths": set(), "plans": 0.0})
-            lots = _num(r.get("lots"))
-            price = _num(r.get("avg_price"))
-            a["lots"] += lots
-            a["communities"].add(cname)
-            a["widths"].add(int(_num(r.get("lot_width_ff"))))
-            a["plans"] += _num(r.get("plans"))
-            if price > 0:
-                w = max(lots, 1.0)
-                a["_pw"] += price * w
-                a["_w"] += w
-                lo = _num(r.get("min_price")) or price
-                hi = _num(r.get("max_price")) or price
-                a["min_price"] = lo if a["min_price"] is None else min(a["min_price"], lo)
-                a["max_price"] = hi if a["max_price"] is None else max(a["max_price"], hi)
-            sf = _num(r.get("avg_sqft"))
-            if sf > 0:
-                a["_sw"] += sf * max(lots, 1.0)
-                a["_sfw"] += max(lots, 1.0)
+    for r in rows or []:
+        b = bucket_of(r.get(ff_key))
+        if not b:
+            continue
+        key, label = b
+        a = agg.setdefault(key, {
+            "key": key, "label": label, "lots": 0.0, "_pw": 0.0, "_w": 0.0,
+            "_sw": 0.0, "_sfw": 0.0, "min_price": None, "max_price": None,
+            "communities": 0, "builder_names": set(), "widths": set(), "plans": 0.0})
+        lots = _num(r.get("lots"))
+        price = _num(r.get("avg_price"))
+        a["lots"] += lots
+        a["communities"] = max(a["communities"], int(_num(r.get("communities"))))
+        a["widths"].add(int(_num(r.get(ff_key))))
+        a["plans"] += _num(r.get("plans"))
+        for nm in (r.get("builder_names") or []):
+            a["builder_names"].add(nm)
+        if price > 0:
+            w = max(lots, 1.0)
+            a["_pw"] += price * w
+            a["_w"] += w
+            lo = _num(r.get("min_price")) or price
+            hi = _num(r.get("max_price")) or price
+            a["min_price"] = lo if a["min_price"] is None else min(a["min_price"], lo)
+            a["max_price"] = hi if a["max_price"] is None else max(a["max_price"], hi)
+        sf = _num(r.get("avg_sqft"))
+        if sf > 0:
+            a["_sw"] += sf * max(lots, 1.0)
+            a["_sfw"] += max(lots, 1.0)
 
     out = []
     for key in sorted(agg):
@@ -134,12 +124,13 @@ def width_buckets(cbas):
         sqft = (a["_sw"] / a["_sfw"]) if a["_sfw"] else 0.0
         out.append({
             "key": key, "label": a["label"],
-            "min_ff": key if key else 0,
-            "max_ff": (BUCKET_MIN if key == 0 else
-                       200 if key == BUCKET_MAX else key + 10),
+            "min_ff": key,
+            "max_ff": BUCKET_MIN if key == 0 else (200 if key == BUCKET_MAX else key + 10),
             "lots": int(a["lots"]),
-            "communities": len(a["communities"]),
+            "communities": a["communities"],
             "widths": sorted(a["widths"]),
+            "builder_names": sorted(a["builder_names"]),
+            "builders": len(a["builder_names"]),
             "plans": int(a["plans"]),
             "avg_price": int(round(price)) or None,
             "min_price": int(round(a["min_price"])) if a["min_price"] else None,
@@ -148,6 +139,32 @@ def width_buckets(cbas):
             "avg_ppsf": round(price / sqft, 2) if price and sqft else None,
         })
     return out
+
+
+def width_buckets(cbas):
+    """The ring's supply and pricing by lot width, in decades.
+
+    Source order matters and the first version of this got it wrong.
+
+    `lot_widths_ring` is the endpoint's own scan at exact frontage and is the
+    only complete one: lot counts there include supply with no builder
+    assigned yet, which is most of any future phase, and pricing comes from
+    published floorplans. Aggregating the per-community builder rows instead
+    loses both -- it drops every unassigned lot and never sees the floorplan
+    prices at all, which is how whole widths went missing from a market that
+    plainly builds them.
+
+    The per-community detail is kept only as a fallback for a stored read
+    taken before the endpoint published the exact-width scan.
+    """
+    ring = (cbas or {}).get("lot_widths_ring") or []
+    if ring:
+        return _bucket_rows(ring)
+    per_community = []
+    for c in ((cbas or {}).get("communities") or []):
+        for r in (((c.get("detail") or {}).get("lot_widths")) or []):
+            per_community.append(dict(r, communities=1))
+    return _bucket_rows(per_community)
 
 
 def lot_bands(cbas):
@@ -533,10 +550,10 @@ def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
             "mid_ff": round(mid, 1),
             "widths": b.get("widths") or [],
             "plans": b.get("plans"),
+            "communities": b.get("communities"),
             "in_mix": bool(in_mix),
             "mix_widths": in_mix,
             "lots": b["lots"],
-            "communities": b["communities"],
             "avg_price": b["avg_price"],
             "min_price": b["min_price"],
             "max_price": b["max_price"],
@@ -544,8 +561,13 @@ def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
             "avg_ppsf": b["avg_ppsf"],
             "implied_lot_value": int(round(home * lot_ratio)) if home > 0 else None,
             "implied_lot_ff": round(home * lot_ratio / mid, 2) if home > 0 and mid else None,
+            # Per-builder pricing where the community detail carries it; the
+            # names always, because the ring scan knows who is active at a
+            # width even when no plan pricing is published for them.
             "builders": builders.get(b["label"], [])[:10],
-            "builder_count": len(builders.get(b["label"], [])),
+            "builder_count": max(len(builders.get(b["label"], [])),
+                                 int(_num(b.get("builders")))),
+            "builder_names": b.get("builder_names") or [],
         })
 
     # Every width in the product mix gets a row, including one the ring does

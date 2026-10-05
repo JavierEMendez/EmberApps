@@ -367,6 +367,50 @@
         <canvas id="uw-mk-ff"></canvas>
       </div>
 
+      <div style="overflow-x:auto;margin-top:10px">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <thead><tr style="text-align:left;color:${MUTED};border-bottom:1px solid #E5E8EC">
+            <th style="padding:5px 7px;font-weight:600">Width</th>
+            <th style="padding:5px 7px;font-weight:600">Built as</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Lots</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Comms</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Builders</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Plans</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Avg home</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Range</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Avg sf</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">$/sf</th>
+            <th style="padding:5px 7px;font-weight:600;text-align:right">Lot $/FF</th>
+          </tr></thead>
+          <tbody>${(mk.bands || []).map(w => `
+            <tr style="border-bottom:1px solid #F1F4F6;${w.in_mix ? '' : 'opacity:.6'}">
+              <td style="padding:5px 7px;font-weight:600;color:${INK};white-space:nowrap">
+                ${esc(w.label)}${w.in_mix ? `<span style="margin-left:5px;font-size:9px;
+                  font-weight:700;background:#EAF1F8;color:${BLUE};padding:1px 5px;
+                  border-radius:3px">IN MIX</span>` : ''}</td>
+              <td style="padding:5px 7px;color:${MUTED}">${(w.widths || []).length
+                 ? w.widths.join(', ') + ' FF' : '—'}</td>
+              <td style="padding:5px 7px;text-align:right">${num(w.lots)}</td>
+              <td style="padding:5px 7px;text-align:right">${num(w.communities)}</td>
+              <td style="padding:5px 7px;text-align:right"
+                  title="${esc((w.builder_names || []).join(', '))}">${num(w.builder_count)}</td>
+              <td style="padding:5px 7px;text-align:right">${num(w.plans)}</td>
+              <td style="padding:5px 7px;text-align:right">${w.avg_price ? money1(w.avg_price) : '—'}</td>
+              <td style="padding:5px 7px;text-align:right;white-space:nowrap;color:${MUTED}">
+                ${(w.min_price && w.max_price) ? money1(w.min_price) + '–' + money1(w.max_price) : '—'}</td>
+              <td style="padding:5px 7px;text-align:right">${num(w.avg_sqft)}</td>
+              <td style="padding:5px 7px;text-align:right">${w.avg_ppsf ? '$' + w.avg_ppsf : '—'}</td>
+              <td style="padding:5px 7px;text-align:right;font-weight:600;color:${INK}">
+                ${w.implied_lot_ff ? '$' + w.implied_lot_ff.toFixed(0) : '—'}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+      </div>
+      <div style="font-size:10.5px;color:${MUTED};margin-top:6px">
+        Lots include supply with no builder assigned yet, which is most of any future
+        phase. Plans are published floorplans — a width with lots but no plans has
+        supply the market has not priced. Hover a builder count for the names.
+      </div>
+
       ${sug ? `
       <div style="display:flex;align-items:center;gap:12px;margin-top:12px;padding:10px 12px;
                   background:#FEF4EF;border:1px solid #F5B79E;border-radius:8px">

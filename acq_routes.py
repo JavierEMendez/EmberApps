@@ -1656,6 +1656,64 @@ def acq_api_projects_cbas(pid):
                 bands[lbl]["prices"].append(fp["price"])
             if fp.get("sqft"):
                 bands[lbl]["sqfts"].append(fp["sqft"])
+    # The same scan at exact frontage. `lot_bands` buckets into five wide
+    # ranges, which read as ranges rather than as the products a mix is built
+    # from; this keeps the real width so a consumer can group it however it
+    # wants. Both sources matter and neither alone is enough: lot counts
+    # include supply with no builder assigned yet, which is most of any future
+    # phase, while pricing comes from published floorplans. Aggregating only
+    # the per-builder rows loses the unassigned lots and the prices both.
+    wmix = {}
+
+    def _w(ff):
+        if ff not in wmix:
+            wmix[ff] = {"lot_width_ff": ff, "lots": 0, "communities": set(),
+                        "builders": set(), "prices": [], "sqfts": []}
+        return wmix[ff]
+
+    for d_mi, e in near:
+        cname = e.get("public_name") or e.get("name")
+        for sec in (e.get("sections") or []):
+            for lb in (sec.get("lot_types_builders") or []):
+                ff = _cbas_ff(lb.get("lot_type"))
+                if not ff:
+                    continue
+                row = _w(ff)
+                row["lots"] += lb.get("num_lots") or 0
+                row["communities"].add(cname)
+                lbid = lb.get("builder")
+                if (lbid is not None and lbid not in _CBAS_PLACEHOLDER_BUILDERS
+                        and bmap.get(lbid) and bmap[lbid] != "Builder TBD"):
+                    row["builders"].add(bmap[lbid])
+        for fp in ((e.get("latestFloorplanPricing") or {}).get("entries") or []):
+            ff = _cbas_ff(fp.get("lot_type"))
+            if not ff:
+                continue
+            row = _w(ff)
+            if fp.get("price"):
+                row["prices"].append(fp["price"])
+            if fp.get("sqft"):
+                row["sqfts"].append(fp["sqft"])
+
+    lot_widths_ring = []
+    for ff in sorted(wmix):
+        r = wmix[ff]
+        pr, sf = r["prices"], r["sqfts"]
+        lot_widths_ring.append({
+            "lot_width_ff": ff,
+            "lots": round(r["lots"]),
+            "communities": len(r["communities"]),
+            "builder_names": sorted(r["builders"]),
+            "builders": len(r["builders"]),
+            "avg_price": round(sum(pr) / len(pr)) if pr else None,
+            "min_price": min(pr) if pr else None,
+            "max_price": max(pr) if pr else None,
+            "avg_sqft": round(sum(sf) / len(sf)) if sf else None,
+            "avg_ppsf": round((sum(pr) / len(pr)) / (sum(sf) / len(sf)), 2)
+                        if pr and sf and sum(sf) else None,
+            "plans": len(pr),
+        })
+
     lot_bands = []
     for lo, hi, label in _CBAS_LOT_BANDS:
         b = bands[label]
@@ -1876,6 +1934,7 @@ def acq_api_projects_cbas(pid):
         "avg_annual_closings_per_community": round(tot_cl / len(active), 1) if active else None,
         "quarter_series": quarter_series,
         "lot_bands": lot_bands,
+        "lot_widths_ring": lot_widths_ring,
         "builders": builders[:30],
         "communities": comms[:80],
         "source": "CBAS new-home survey (cv-server.cbashome.com)",
