@@ -591,6 +591,11 @@ document.getElementById('btn-underwrite')?.addEventListener('click', async (ev) 
   btn.disabled = true;
   btn.textContent = 'Building model…';
   if (status) status.textContent = 'Deriving assumptions from the analysis and the submarket…';
+
+  // Opened here, inside the click, rather than after the await. A window.open
+  // that happens once the fetch resolves is no longer tied to a user gesture
+  // and browsers block it, which would land the model nowhere.
+  const tab = window.open('', '_blank');
   try {
     const r = await fetch(`/api/acq/projects/${PROJECT_ID}/underwrite`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -599,15 +604,28 @@ document.getElementById('btn-underwrite')?.addEventListener('click', async (ev) 
     });
     const d = await r.json();
     if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    const url = `/?project=${d.uw_project_id}`;
+    if (tab) { tab.location = url; } else { window.open(url, '_blank'); }
     if (status) {
       const gaps = (d.widths_no_market || []);
-      status.textContent = d.had_market_data
-        ? ('Model created. Pace and pricing came from the submarket'
-           + (gaps.length ? `; ${gaps.join(', ')} FF had no market read and kept the model's defaults.` : '.'))
-        : 'Model created. No submarket data was available, so pace and pricing kept the model defaults.';
+      const where = tab ? 'Opened in a new tab.' : '';
+      status.innerHTML =
+        (d.had_market_data
+          ? ('Model created from the submarket read'
+             + (gaps.length
+                ? `; ${gaps.join(', ')} FF had no market read and kept the model's defaults. `
+                : '. '))
+          : 'Model created. No submarket data was available, so pace and pricing kept '
+            + 'the model defaults. ')
+        + where
+        + ` <a href="${url}" target="_blank" rel="noopener">Open again</a>`;
     }
-    window.location.href = `/?project=${d.uw_project_id}`;
+    // The acquisition stays put, so the button goes back to being usable --
+    // pressing it again is a legitimate thing to want after changing the mix.
+    btn.disabled = false;
+    btn.textContent = label;
   } catch (e) {
+    if (tab) tab.close();          // nothing landed in it
     if (status) status.textContent = 'Could not build the model: ' + e.message;
     btn.disabled = false;
     btn.textContent = label;
