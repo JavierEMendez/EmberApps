@@ -109,14 +109,47 @@ on = {r["front_footage"]: r for r in inp["lot_sizes"] if r["on"]}
 results.append(check("only the analyst's mix is switched on", sorted(on), [40, 50, 90]))
 results.append(check("yield comes from the mix", on[40]["yield_per_ac"], 6.0))
 results.append(check("pace comes from the market", on[40]["pace"], round(168 * .2 / 12, 2)))
-results.append(check("home price comes from the market", on[40]["home_price"], 318000))
 results.append(check("a width with no market read keeps the model's pace",
                      on[90]["pace"], 5))
 results.append(check("widths lacking a market read are reported",
                      bas["_widths_no_market"], [90]))
 results.append(check("gross acreage carries its basis", inp["gross_acreage"], 207.5))
-results.append(check("model defaults survive where we have nothing to say",
-                     inp["price_per_ff"]["0"] != 1800, True))
+
+# Pricing is the underwriter's call. Nothing here may quietly set it.
+results.append(check("home price is NOT applied", on[40]["home_price"], 200000))
+results.append(check("$/FF is NOT applied", inp["price_per_ff"]["0"], 1800))
+results.append(check("a $/FF is still suggested for the chart",
+                     round(bas["_suggested_price_per_ff"], 2),
+                     round(A.blended_price_per_ff(
+                         [(40, 820, 318000), (50, 610, 398000)], 0.22), 2)))
+
+# --- market evidence --------------------------------------------------------
+ev_cbas = dict(cbas, builder_lot_widths=[
+    {"name": "Builder A", "lot_width_ff": 40, "lots": 500, "avg_price": 309000,
+     "min_price": 271000, "max_price": 358000, "avg_sqft": 1810, "plans": 7},
+    {"name": "Builder B", "lot_width_ff": 40, "lots": 320, "avg_price": 332000,
+     "min_price": 298000, "max_price": 391000, "avg_sqft": 1950, "plans": 5},
+    {"name": "Builder C", "lot_width_ff": 50, "lots": 610, "avg_price": 398000,
+     "min_price": 344000, "max_price": 470000, "avg_sqft": 2280, "plans": 9},
+])
+ev = A.market_evidence(ev_cbas, mix_widths={40, 50, 90}, lot_ratio=0.22)
+w40 = next(w for w in ev["widths"] if w["ff"] == 40)
+results.append(check("evidence breaks price out by builder",
+                     [b["name"] for b in w40["builders"]], ["Builder A", "Builder B"]))
+results.append(check("builders are ordered by lot count",
+                     w40["builders"][0]["lots"], 500))
+results.append(check("the range behind the average is carried",
+                     (w40["builders"][0]["min_price"], w40["builders"][0]["max_price"]),
+                     (271000, 358000)))
+results.append(check("implied lot $/FF is shown per width",
+                     w40["implied_lot_ff"], round(318000 * 0.22 / 40, 2)))
+results.append(check("widths in the product mix are flagged", w40["in_mix"], True))
+results.append(check("the suggestion blends only the mix widths",
+                     round(ev["suggested_price_per_ff"], 2),
+                     round(A.blended_price_per_ff(
+                         [(40, 820, 318000), (50, 610, 398000)], 0.22), 2)))
+results.append(check("no market means no suggestion",
+                     A.market_evidence({}, {40}, 0.22)["suggested_price_per_ff"], None))
 
 # nothing to go on at all: the model's defaults must come through untouched
 empty_in, empty_bas = A.derive_uw_inputs(_base(), {}, {})

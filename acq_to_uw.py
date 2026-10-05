@@ -18,7 +18,13 @@ Two conventions are Carlos's, not defaults picked here:
   * Finished lot value is a share of home price (22%), divided by front
     footage to reach the $/FF the model prices lots in.
 
-Both are inputs, overridable per deal and per lot width.
+Pricing is the one thing this module will not decide. Pace, yield, acreage
+and constraints are measurements and carry straight over; a price is a
+judgement about a market, and silently writing one into a model that prices
+3,000 lots is the wrong kind of automation. So `market_evidence` assembles
+what the submarket actually shows -- price by width, by builder, with the
+range -- and the underwriter types the number. The model's own defaults stand
+until they do.
 
 What this module deliberately does NOT do: it never touches the development
 programme. Plants, amenities, detention, roads and parks are the
@@ -242,35 +248,93 @@ def derive_uw_inputs(base, analysis, cbas=None, *,
                     "%.2f lots/mo = %.0f %d FF starts a year in the submarket "
                     "x %.0f%% capture / 12." % (pace, _num(m.get("est_annual_starts")),
                                                 ff, capture_pct * 100))
+            # Home price is NOT written. It prices every home in the deal and
+            # feeds assessed value straight into MUD capacity, so it stays the
+            # underwriter's call -- the evidence for it is assembled below.
             home = _num(m.get("avg_price"))
-            if home > 0:
-                row["home_price"] = int(round(home))
-                basis["lot_sizes.%d.home_price" % i] = (
-                    "$%s average new-home price at %d FF in the submarket "
-                    "(%d lots, %d builders). Drives assessed value at the "
-                    "av_pct already set here." % (
-                        "{:,.0f}".format(home), ff,
-                        int(_num(m.get("lots"))), int(_num(m.get("builder_count")))))
             if row["on"] and home > 0:
                 priced.append((ff, _num(m.get("lots")), home))
         rows[i] = row
     inputs["lot_sizes"] = rows
 
-    # ---- lot pricing -----------------------------------------------------
-    ppff = blended_price_per_ff(priced, lot_ratio)
-    if ppff:
-        rate = int(round(ppff))
-        inputs["price_per_ff"] = {str(y): rate for y in range(11)}
-        detail = ", ".join(
-            "%d FF $%s/FF" % (ff, "{:,.0f}".format(home * lot_ratio / ff))
-            for ff, _lots, home in sorted(priced))
-        basis["price_per_ff"] = (
-            "$%s/FF, held flat across years. Finished lot at %.0f%% of home "
-            "price, blended by lot count and frontage so total lot revenue "
-            "matches pricing each width on its own (%s). Escalation is yours "
-            "to set." % ("{:,.0f}".format(rate), lot_ratio * 100, detail))
-
     basis["_settings"] = {"capture_pct": capture_pct, "lot_ratio": lot_ratio}
+    basis["_suggested_price_per_ff"] = blended_price_per_ff(priced, lot_ratio)
     basis["_widths_matched"] = sorted(set(mix) & set(mkt))
     basis["_widths_no_market"] = sorted(set(mix) - set(mkt))
     return inputs, basis
+
+
+def market_evidence(cbas, mix_widths=None, lot_ratio=LOT_RATIO_DEFAULT):
+    """What the submarket shows about pricing, shaped for a chart.
+
+    Deliberately evidence and not a decision. Each width carries the average
+    the market is achieving, the range behind that average, and the builders
+    making it up -- because an average over two builders and an average over
+    nine are not the same claim, and a width whose range is $180k wide is not
+    really one price at all.
+
+    `implied_lot_ff` is what the finished-lot share works out to per width. It
+    is shown beside the home price rather than applied, so the underwriter can
+    see whether one width is carrying the blend.
+    """
+    widths = []
+    by_width = market_by_width(cbas)
+    builder_rows = ((cbas or {}).get("builder_lot_widths") or [])
+
+    for ff in sorted(by_width):
+        m = by_width[ff]
+        home = _num(m.get("avg_price"))
+        lots = _num(m.get("lots"))
+        builders = []
+        for b in builder_rows:
+            bff = _num(b.get("lot_width_ff"))
+            if not bff or _nearest_width(bff, UW_LOT_WIDTHS) != ff:
+                continue
+            bp = _num(b.get("avg_price"))
+            if bp <= 0:
+                continue
+            builders.append({
+                "name": str(b.get("name") or "Builder")[:40],
+                "lots": int(_num(b.get("lots"))),
+                "avg_price": int(round(bp)),
+                "min_price": int(round(_num(b.get("min_price")))) or None,
+                "max_price": int(round(_num(b.get("max_price")))) or None,
+                "avg_sqft": int(round(_num(b.get("avg_sqft")))) or None,
+                "plans": int(_num(b.get("plans"))),
+            })
+        builders.sort(key=lambda r: -r["lots"])
+        widths.append({
+            "ff": ff,
+            "in_mix": bool(mix_widths and ff in mix_widths),
+            "lots": int(lots),
+            "avg_price": int(round(home)) if home > 0 else None,
+            "min_price": int(round(_num(m.get("min_price")))) or None,
+            "max_price": int(round(_num(m.get("max_price")))) or None,
+            "avg_sqft": int(round(_num(m.get("avg_sqft")))) or None,
+            "avg_ppsf": _num(m.get("avg_ppsf")) or None,
+            "annual_starts": _num(m.get("est_annual_starts")) or None,
+            "vdls": int(_num(m.get("est_vdls"))) or None,
+            "futures": int(_num(m.get("est_futures"))) or None,
+            "implied_lot_value": int(round(home * lot_ratio)) if home > 0 else None,
+            "implied_lot_ff": round(home * lot_ratio / ff, 2) if home > 0 and ff else None,
+            "builders": builders[:10],
+            "builder_count": len(builders),
+            "snapped_from": sorted(set(m.get("_snapped_from") or [])),
+        })
+
+    in_mix = [(w["ff"], w["lots"], w["avg_price"]) for w in widths
+              if w["in_mix"] and w["avg_price"]]
+    return {
+        "lot_ratio": lot_ratio,
+        "widths": widths,
+        # The blend over the widths actually being built, which is the number
+        # that would hold total lot revenue if it were adopted.
+        "suggested_price_per_ff": (
+            round(blended_price_per_ff(in_mix, lot_ratio), 2)
+            if in_mix else None),
+        "suggested_basis": (
+            "Blended over the %s FF in the product mix, weighted by lot count "
+            "and frontage so total lot revenue matches pricing each width on "
+            "its own." % ", ".join(str(ff) for ff, _l, _p in sorted(in_mix))
+            if in_mix else None),
+    }

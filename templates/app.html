@@ -11,6 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="/static/js/uw_market.js" defer></script>
 <style>
 :root {
   --bg: #0d0f13;
@@ -897,7 +898,7 @@ tr.pod-inactive input { pointer-events: none; }
           </div>
 
           <!-- LOT SIZE MIX -->
-          <div class="section-header">Sectional Development – Lot Size Assumptions</div>
+          <div class="section-header"><button class="btn uw-market-btn" style="display:none;float:right;font-size:11px;padding:3px 10px" onclick="openUwMarket('home')" title="New-home price by width and builder in the submarket">Market</button>Sectional Development – Lot Size Assumptions</div>
           <div class="overflow-x">
           <table class="data-table">
             <thead><tr>
@@ -1057,7 +1058,7 @@ tr.pod-inactive input { pointer-events: none; }
           </div>
 
           <!-- ② $/FF BY YEAR -->
-          <div class="section-header">Sale Price per Front Foot ($/FF) by Year</div>
+          <div class="section-header"><button class="btn uw-market-btn" style="display:none;float:right;font-size:11px;padding:3px 10px" onclick="openUwMarket('ff')" title="What the submarket implies for lot pricing — evidence, not a value">Market</button>Sale Price per Front Foot ($/FF) by Year</div>
           <div class="overflow-x">
           <table class="data-table" style="max-width:320px">
             <thead><tr><th>Year</th><th>$/FF</th></tr></thead>
@@ -1251,6 +1252,19 @@ tr.pod-inactive input { pointer-events: none; }
 </div>
 
 <!-- Change Log modal -->
+<!-- Market evidence behind a pricing decision. Deliberately read-only
+     except for one explicit button: price is the underwriter's call. -->
+<div class="modal-overlay" id="uw-market-modal">
+  <div class="modal" style="max-width:860px;width:92vw;max-height:88vh;overflow:auto">
+    <div class="modal-title">Submarket pricing evidence</div>
+    <div class="modal-sub" id="uw-market-sub">Carried over from the acquisition analysis</div>
+    <div id="uw-market-body"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeUwMarket()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="changelog-modal">
   <div class="modal" style="max-width:640px;max-height:80vh;display:flex;flex-direction:column">
     <div class="modal-title">Change Log</div>
@@ -2350,6 +2364,8 @@ async function loadInputs(override = null) {
   }
   window._lastOutputs = c;
   window._lastInputs = inputs;
+  // The market buttons only mean anything on a model built from an acquisition.
+  if (window.syncUwMarketButtons) window.syncUwMarketButtons();
   // Backfill arrays missing from older projects
   const _df = (key, val) => {
     const v = inputs[key];

@@ -889,14 +889,21 @@ def api_acq_project_underwrite(pid):
         _uw_default_inputs(name), analysis, cbas,
         capture_pct=capture, lot_ratio=ratio)
     inputs["project_name"] = name
+    # The market read travels with the model so the pricing charts do not
+    # have to reach back to CBAS, and so what was on screen when a price was
+    # chosen is still there months later.
+    evidence = acq_to_uw.market_evidence(
+        cbas, set(acq_to_uw.mix_by_width(analysis)), ratio)
     inputs["_acq_link"] = {
         "acq_project_id": pid,
+        "acq_project_name": proj.get("name"),
         "derived_at": _utcnow(),
         "capture_pct": capture,
         "lot_ratio": ratio,
         "had_market_data": bool(cbas),
         "basis": {k: v for k, v in basis.items() if not k.startswith("_")},
         "widths_no_market": basis.get("_widths_no_market") or [],
+        "market": evidence,
     }
 
     try:
@@ -926,6 +933,7 @@ def api_acq_project_underwrite(pid):
     return jsonify({"uw_project_id": uw_id, "name": name,
                     "had_market_data": bool(cbas),
                     "widths_no_market": basis.get("_widths_no_market") or [],
+                    "suggested_price_per_ff": evidence.get("suggested_price_per_ff"),
                     "basis": {k: v for k, v in basis.items() if not k.startswith("_")}})
 
 
