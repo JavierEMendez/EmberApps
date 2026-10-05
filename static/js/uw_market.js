@@ -312,11 +312,17 @@
   window.openUwMarket = open;
   window.closeUwMarket = close;
 
-  /* The buttons only make sense on a model that carries a market read. */
+  /* The button is always there. Hiding it on models without a market read
+   * made the feature impossible to find -- you had to already know it existed
+   * to go looking for it. Dimmed it still reads as available, and the popup's
+   * empty state explains how to get the data. */
   window.syncUwMarketButtons = function () {
     const has = !!(market() && (market().widths || []).length);
     document.querySelectorAll('.uw-market-btn').forEach(b => {
-      b.style.display = has ? '' : 'none';
+      b.style.opacity = has ? '' : '0.55';
+      b.title = has
+        ? 'What the submarket shows about pricing — evidence, not a value'
+        : 'No submarket read on this model yet — open it to see how to attach one';
     });
   };
 })();
